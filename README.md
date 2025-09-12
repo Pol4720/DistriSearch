@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="DistriSearch/assets/logo.png" alt="DistriSearch Logo" width="200"/>
+</p>
+
 # DistriSearch
 
 DistriSearch is a distributed file search system developed as the **final project for the Distributed Systems course (4th year, Computer Science degree)**.  
