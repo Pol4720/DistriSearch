@@ -1,0 +1,69 @@
+version: '3.8'
+
+services:
+  # API Backend
+  backend:
+    image: distrisearch/backend:latest
+    ports:
+      - "8000:8000"
+    volumes:
+      - backend_data:/app/data
+    environment:
+      - ENVIRONMENT=production
+    networks:
+      - distrisearch_network
+    deploy:
+      replicas: 2
+      update_config:
+        parallelism: 1
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+
+  # Frontend Streamlit
+  frontend:
+    image: distrisearch/frontend:latest
+    ports:
+      - "8501:8501"
+    environment:
+      - BACKEND_URL=http://backend:8000
+    networks:
+      - distrisearch_network
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+
+  # Servicios de agentes (se desplegarán en los nodos trabajadores)
+  agent:
+    image: distrisearch/agent:latest
+    networks:
+      - distrisearch_network
+    environment:
+      - BACKEND_URL=http://backend:8000
+    volumes:
+      - /var/distrisearch/shared:/app/shared
+    deploy:
+      mode: global
+      restart_policy:
+        condition: on-failure
+    configs:
+      - source: agent_config
+        target: /app/config.yaml
+
+volumes:
+  backend_data:
+    driver: local
+
+networks:
+  distrisearch_network:
+    driver: overlay
+    attachable: true
+
+configs:
+  agent_config:
+    file: ./agent_configs/default.yaml
