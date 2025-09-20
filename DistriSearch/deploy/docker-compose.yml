@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  # API Backend
+  backend:
+    build: 
+      context: ../backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - backend_data:/app/data
+    environment:
+      - ENVIRONMENT=development
+    networks:
+      - distrisearch_network
+    restart: unless-stopped
+
+  # Frontend Streamlit
+  frontend:
+    build:
+      context: ../frontend
+    ports:
+      - "8501:8501"
+    environment:
+      - BACKEND_URL=http://backend:8000
+    depends_on:
+      - backend
+    networks:
+      - distrisearch_network
+    restart: unless-stopped
+
+  # Agente 1
+  agent1:
+    build:
+      context: ../agent
+    volumes:
+      - ./shared_folders/agent1:/app/shared
+      - ./agent_configs/agent1.yaml:/app/config.yaml
+    environment:
+      - NODE_ID=node1
+      - NODE_NAME=Agente 1
+      - BACKEND_URL=http://backend:8000
+    ports:
+      - "8081:8081"
+    depends_on:
+      - backend
+    networks:
+      - distrisearch_network
+    restart: unless-stopped
+
+  # Agente 2
+  agent2:
+    build:
+      context: ../agent
+    volumes:
+      - ./shared_folders/agent2:/app/shared
+      - ./agent_configs/agent2.yaml:/app/config.yaml
+    environment:
+      - NODE_ID=node2
+      - NODE_NAME=Agente 2
+      - BACKEND_URL=http://backend:8000
+    ports:
+      - "8082:8081"
+    depends_on:
+      - backend
+    networks:
+      - distrisearch_network
+    restart: unless-stopped
+
+volumes:
+  backend_data:
+
+networks:
+  distrisearch_network:
+    driver: bridge
