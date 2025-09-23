@@ -3,6 +3,16 @@ import requests
 import pandas as pd
 import time
 from utils.api_client import ApiClient
+import os
+
+# Función para formatear tamaño de archivo
+def _format_size(size_bytes):
+    """Convierte bytes a formato legible (KB, MB, GB)"""
+    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+        if size_bytes < 1024.0:
+            return f"{size_bytes:.2f} {unit}"
+        size_bytes /= 1024.0
+    return f"{size_bytes:.2f} PB"
 
 # Configuración de la página
 st.set_page_config(
@@ -15,7 +25,16 @@ st.set_page_config(
 # Inicializar el cliente API
 @st.cache_resource
 def get_api_client():
-    backend_url = st.secrets.get("backend_url", "http://localhost:8000")
+    # Resolver URL del backend de forma segura:
+    # 1) variable de entorno DISTRISEARCH_BACKEND_URL
+    # 2) st.secrets['backend_url'] si existe
+    # 3) valor por defecto
+    backend_url = os.getenv("DISTRISEARCH_BACKEND_URL") or "http://localhost:8000"
+    try:
+        # Puede lanzar si no hay secrets; se ignora y se usa el valor actual
+        backend_url = st.secrets.get("backend_url", backend_url)
+    except Exception:
+        pass
     return ApiClient(backend_url)
 
 api_client = get_api_client()
@@ -146,7 +165,7 @@ if submit_button and query:
                     )
                     
                     # Convertir tamaño a formato legible
-                    size_str = self._format_size(file['size'])
+                    size_str = _format_size(file.get('size', 0))
                     
                     files_data.append({
                         'ID': file['file_id'][:8] + '...',
@@ -189,14 +208,9 @@ if submit_button and query:
                             if download_url:
                                 # Crear link de descarga
                                 st.markdown(f"[Descargar archivo]({download_url})")
-                                st.success("¡Enlace de descarga listo!")
-                            else:
-                                st.error("No se pudo obtener el enlace de descarga")
-            else:
-                st.info("No se encontraron archivos que coincidan con la búsqueda")
-        
         except Exception as e:
-            st.error(f"Error al realizar la búsqueda: {str(e)}")
+            st.error(f"Error al buscar archivos: {str(e)}")
+# Nota: _format_size se movió arriba para que esté definido antes de su uso.
 
 # Función para formatear tamaño de archivo
 def _format_size(size_bytes):
