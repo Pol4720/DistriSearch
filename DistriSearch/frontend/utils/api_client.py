@@ -39,9 +39,7 @@ class ApiClient:
         """
         Obtiene la lista de nodos conectados
         """
-        # Esta endpoint no está implementada explícitamente en las rutas,
-        # pero sería necesaria para la interfaz de usuario
-        response = requests.get(f"{self.base_url}/nodes/")
+        response = requests.get(f"{self.base_url}/search/nodes")
         response.raise_for_status()
         return response.json()
     
