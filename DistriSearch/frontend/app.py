@@ -4,9 +4,11 @@ import os
 from utils.api_client import ApiClient
 from components.styles import inject_css
 
-st.set_page_config(page_title="DistriSearch", page_icon="🔎", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="DistriSearch", page_icon="�", layout="wide")
 
-# ---- Utilities ----
+# ----------------------------------------------------------------------------
+# Helpers
+# ----------------------------------------------------------------------------
 def _format_size(size_bytes: int) -> str:
     for unit in ['B','KB','MB','GB','TB']:
         if size_bytes < 1024:
@@ -15,177 +17,158 @@ def _format_size(size_bytes: int) -> str:
     return f"{size_bytes:.2f} PB"
 
 @st.cache_resource
-def get_api_client():
-    backend_url = os.getenv("DISTRISEARCH_BACKEND_URL") or "http://localhost:8000"
+def api_client():
+    url = os.getenv("DISTRISEARCH_BACKEND_URL") or "http://localhost:8000"
     try:
-        backend_url = st.secrets.get("backend_url", backend_url)  # type: ignore
+        url = st.secrets.get("backend_url", url)  # type: ignore
     except Exception:
         pass
-    return ApiClient(backend_url)
+    return ApiClient(url)
 
-api = get_api_client()
-
-# Inject CSS
+api = api_client()
 inject_css()
 
-# ---- Session State Defaults ----
 ss = st.session_state
-ss.setdefault('theme_mode', 'dark')
-ss.setdefault('active_tab', 'Buscar')
+ss.setdefault('theme', 'dark')
 ss.setdefault('ui_mode', 'Distribuido')
+ss.setdefault('last_central_scan', None)
 
-# ---- Top Nav Bar ----
-logo_path_default = os.path.join(os.path.dirname(__file__), '..', 'assets', 'logo.png')
-logo_path_env = os.getenv('DISTRISEARCH_LOGO')
-logo_path = logo_path_env if (logo_path_env and os.path.isfile(logo_path_env)) else logo_path_default
+# Theme toggle
+top_left, top_mid, top_right = st.columns([1,6,1])
+with top_left:
+    logo_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'assets', 'logo.png'))
+    if os.path.isfile(logo_path):
+        st.image(logo_path, width=72)
+with top_mid:
+    st.markdown("## DistriSearch")
+    st.caption("Búsqueda distribuida y modo centralizado en una sola interfaz moderna.")
+with top_right:
+    if st.button('🌗 Tema'):
+        ss.theme = 'light' if ss.theme == 'dark' else 'dark'
+    st.markdown(f'<script>document.body.classList.{"add" if ss.theme=="light" else "remove"}("light-mode");</script>', unsafe_allow_html=True)
 
-nav_cols = st.columns([6,4,2])
-with nav_cols[0]:
-    st.markdown(f'''<div class="navbar"><div class="logo"><img src="file://{logo_path}" alt="logo"/> DistriSearch</div>''', unsafe_allow_html=True)
-with nav_cols[1]:
-    tabs_html = []
-    for tab in ["Buscar","Nodos","Central","Estadísticas"]:
-        active = 'true' if ss.active_tab == tab else 'false'
-        tabs_html.append(f'<button data-active="{active}" onclick="window.location.search=\'?tab={tab}\'">{tab}</button>')
-    st.markdown(f'<div class="nav-tabs">{"".join(tabs_html)}</div>', unsafe_allow_html=True)
-with nav_cols[2]:
-    toggle_label = '☀️ Claro' if ss.theme_mode == 'dark' else '🌙 Oscuro'
-    if st.button(toggle_label):
-        ss.theme_mode = 'light' if ss.theme_mode == 'dark' else 'dark'
-    st.markdown('</div>', unsafe_allow_html=True)  # close navbar root
+mode_col1, mode_col2 = st.columns([2,8])
+with mode_col1:
+    ss.ui_mode = st.radio("Modo", ["Distribuido","Centralizado"], horizontal=True, index=["Distribuido","Centralizado"].index(ss.ui_mode))
+with mode_col2:
+    st.write("")
 
-st.markdown(f'<script>document.body.classList.{"add" if ss.theme_mode=="light" else "remove"}("light-mode");</script>', unsafe_allow_html=True)
+tabs = st.tabs(["Buscar","Nodos","Central","Estadísticas"])
 
-# Parse tab from query params (workaround for simple routing)
-qp = st.query_params
-if 'tab' in qp:
-    ss.active_tab = qp['tab'] if isinstance(qp['tab'], str) else qp['tab'][0]
+# ---------------------------- TAB: Buscar -----------------------------------
+with tabs[0]:
+    query_col, type_col, btn_col = st.columns([5,2,1])
+    query = query_col.text_input("Consulta", placeholder="Nombre, término o contenido...")
+    tipo = type_col.selectbox("Tipo", ["Todos","Documentos","Imágenes","Videos","Audio","Otros"], index=0)
+    buscar = btn_col.button("Buscar")
 
-# ---- Data Fetch Helpers ----
-def fetch_mode():
-    try:
-        return api.get_mode()
-    except Exception:
-        return {"centralized": False, "distributed": True}
-
-def fetch_nodes():
-    try:
-        return api.get_nodes()
-    except Exception:
-        return []
-
-def fetch_stats():
-    try:
-        return api.get_stats()
-    except Exception:
-        return {}
-
-backend_mode = fetch_mode()
-
-# ---- Panels by Tab ----
-if ss.active_tab == 'Buscar':
-    st.markdown('<div class="panel">', unsafe_allow_html=True)
-    st.markdown("### 🔍 Búsqueda Distribuida")
-    col_search, col_type, col_btn = st.columns([6,2,1])
-    query = col_search.text_input("", placeholder="Escribe nombre, término o contenido...")
-    file_type = col_type.selectbox("Tipo", ["Todos","Documentos","Imágenes","Videos","Audio","Otros"])
-    do_search = col_btn.button("Buscar", use_container_width=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    if do_search and query:
+    if buscar and query:
+        mapping = {"Documentos":"document","Imágenes":"image","Videos":"video","Audio":"audio","Otros":"other"}
+        tipo_api = mapping.get(tipo) if tipo != 'Todos' else None
         with st.spinner("Buscando..."):
-            mapping = {"Documentos":"document","Imágenes":"image","Videos":"video","Audio":"audio","Otros":"other"}
-            ftype = mapping.get(file_type) if file_type != 'Todos' else None
             try:
-                results = api.search_files(query, ftype)
-                files = results.get('files', []) if results else []
-                nodes_available = {n['node_id']: n for n in results.get('nodes_available', [])}
-                if files:
-                    st.markdown('<div class="panel">', unsafe_allow_html=True)
-                    st.markdown(f"**Resultados:** {len(files)} archivos")
-                    # Build table HTML
-                    rows = []
-                    for f in files:
-                        node = nodes_available.get(f['node_id'], {'name':'Desconocido','status':'unknown'})
-                        badge_class = 'online' if node.get('status')=='online' else 'offline'
-                        size_str = _format_size(f.get('size',0))
-                        rows.append(f"<tr><td>{f['name']}</td><td>{f['type'].capitalize()}</td><td>{size_str}</td><td><span class='badge {badge_class}'>{node.get('status','?')}</span></td><td>{node.get('name','?')}</td><td><button class='download-btn' onClick=\"window.location.href='?tab=Buscar&dl={f['file_id']}'\">Descargar</button></td></tr>")
-                    table_html = """<table class='result-table'><thead><tr><th>Nombre</th><th>Tipo</th><th>Tamaño</th><th>Estado</th><th>Nodo</th><th></th></tr></thead><tbody>{}</tbody></table>""".format(''.join(rows))
-                    st.markdown(table_html, unsafe_allow_html=True)
-                    st.markdown('</div>', unsafe_allow_html=True)
-                else:
-                    st.info("Sin resultados.")
+                result = api.search_files(query, tipo_api)
             except Exception as e:
-                st.error(f"Error en la búsqueda: {e}")
+                st.error(f"Error al buscar: {e}")
+                result = None
+        if result and result.get('files'):
+            files = result['files']
+            nodes_map = {n['node_id']: n for n in result.get('nodes_available', [])}
+            st.success(f"{len(files)} resultados")
+            # Build dataframe for display
+            rows = []
+            for f in files:
+                node = nodes_map.get(f['node_id'], {'name':'?','status':'unknown'})
+                rows.append({
+                    'Nombre': f['name'],
+                    'Tipo': f['type'],
+                    'Tamaño': _format_size(f.get('size',0)),
+                    'Nodo': node.get('name'),
+                    'Estado': node.get('status'),
+                    'ID': f['file_id']
+                })
+            df = pd.DataFrame(rows)
+            st.dataframe(df[['Nombre','Tipo','Tamaño','Nodo','Estado']], hide_index=True, use_container_width=True)
 
-    # Descargar si param dl presente
-    if 'dl' in st.query_params:
-        file_id = st.query_params['dl'] if isinstance(st.query_params['dl'], str) else st.query_params['dl'][0]
-        with st.spinner("Generando enlace de descarga..."):
-            try:
-                url = api.get_download_url(file_id)
-                if url:
-                    st.success("Enlace listo:")
-                    st.markdown(f"<a class='download-btn' href='{url}' target='_blank'>Descargar ahora</a>", unsafe_allow_html=True)
-            except Exception as e:
-                st.error(f"No se pudo obtener enlace: {e}")
+            sel = st.selectbox("Selecciona archivo", options=df['Nombre'])
+            if st.button("Obtener enlace de descarga"):
+                fid = df[df['Nombre']==sel]['ID'].iloc[0]
+                with st.spinner("Generando enlace..."):
+                    try:
+                        url = api.get_download_url(fid)
+                        if url:
+                            st.markdown(f"<a class='download-btn' href='{url}' target='_blank'>Descargar {sel}</a>", unsafe_allow_html=True)
+                    except Exception as e:
+                        st.error(f"Error obteniendo enlace: {e}")
+        else:
+            if buscar:
+                st.info("Sin resultados")
 
-elif ss.active_tab == 'Nodos':
-    nodes = fetch_nodes()
-    st.markdown('<div class="panel">', unsafe_allow_html=True)
-    st.markdown("### 🖧 Nodos Conectados")
+# ---------------------------- TAB: Nodos ------------------------------------
+with tabs[1]:
+    try:
+        nodes = api.get_nodes()
+    except Exception:
+        nodes = []
+    st.markdown("### Nodos")
     if nodes:
         online = sum(1 for n in nodes if n.get('status')=='online')
-        total_files = sum(n.get('shared_files_count',0) for n in nodes)
-        mc1, mc2, _ = st.columns([1,1,6])
-        mc1.metric("Nodos activos", f"{online}/{len(nodes)}")
-        mc2.metric("Archivos compartidos", total_files)
-        # Table of nodes
-        rows = []
-        for n in nodes:
-            badge = 'online' if n.get('status')=='online' else 'offline'
-            rows.append(f"<tr><td>{n['name']}</td><td><span class='badge {badge}'>{n['status']}</span></td><td>{n.get('shared_files_count',0)}</td></tr>")
-        st.markdown("<table class='result-table'><thead><tr><th>Nombre</th><th>Estado</th><th>Archivos</th></tr></thead><tbody>{}</tbody></table>".format(''.join(rows)), unsafe_allow_html=True)
+        total = len(nodes)
+        files_total = sum(n.get('shared_files_count',0) for n in nodes)
+        m1,m2,m3 = st.columns(3)
+        m1.metric("Activos", f"{online}/{total}")
+        m2.metric("Archivos", files_total)
+        m3.metric("Modo actual", ss.ui_mode)
+        ndf = pd.DataFrame([{
+            'Nombre': n['name'],
+            'Estado': n['status'],
+            'Archivos': n.get('shared_files_count',0),
+            'IP': n['ip_address'],
+            'Puerto': n['port']
+        } for n in nodes])
+        st.dataframe(ndf, hide_index=True, use_container_width=True)
     else:
-        st.info("No hay nodos registrados.")
-    st.markdown('</div>', unsafe_allow_html=True)
+        st.info("No hay nodos registrados")
 
-elif ss.active_tab == 'Central':
-    st.markdown('<div class="panel">', unsafe_allow_html=True)
-    st.markdown("### 🗂️ Modo Centralizado")
+# ---------------------------- TAB: Central ----------------------------------
+with tabs[2]:
+    st.markdown("### Modo Centralizado")
+    st.caption("Escanea e indexa la carpeta central. Cambia el modo arriba para trabajar en central o distribuido.")
     folder = st.text_input("Carpeta central (vacío = por defecto)", value=ss.get('central_folder',''))
-    auto = st.checkbox("Escanear al abrir pestaña", value=ss.get('auto_scan', True))
-    trigger = st.button("Escanear ahora") or (auto and ss.get('last_central_scan_done') is None)
-    if trigger:
-        with st.spinner("Escaneando e indexando..."):
+    auto = st.checkbox("Escanear automáticamente si no hay registro previo", value=True, key='auto_scan_central')
+    run = st.button("Escanear ahora") or (auto and ss.last_central_scan is None)
+    if run:
+        with st.spinner("Escaneando..."):
             try:
                 r = api.central_scan(folder or None)
+                ss.last_central_scan = r.get('indexed_files')
+                ss.central_folder = folder
                 st.success(f"Indexados: {r.get('indexed_files')} | Carpeta: {r.get('folder')}")
-                ss.last_central_scan_done = True
             except Exception as e:
                 st.error(f"Error: {e}")
-    st.markdown('</div>', unsafe_allow_html=True)
 
-elif ss.active_tab == 'Estadísticas':
-    stats = fetch_stats()
-    st.markdown('<div class="panel">', unsafe_allow_html=True)
-    st.markdown("### 📊 Estadísticas del Índice")
+# ---------------------------- TAB: Estadísticas ------------------------------
+with tabs[3]:
+    st.markdown("### Estadísticas")
+    try:
+        stats = api.get_stats()
+    except Exception as e:
+        st.error(f"No se pudieron obtener estadísticas: {e}")
+        stats = {}
     if stats:
-        colm = st.columns(4)
-        colm[0].metric("Total archivos", stats.get('total_files',0))
-        colm[1].metric("Nodos", stats.get('total_nodes',0))
-        colm[2].metric("Activos", stats.get('active_nodes',0))
-        colm[3].metric("Duplicados", stats.get('duplicates_count',0))
-        # Distribution
+        c1,c2,c3,c4 = st.columns(4)
+        c1.metric("Archivos", stats.get('total_files',0))
+        c2.metric("Nodos", stats.get('total_nodes',0))
+        c3.metric("Activos", stats.get('active_nodes',0))
+        c4.metric("Duplicados", stats.get('duplicates_count',0))
         if stats.get('files_by_type'):
             dist_df = pd.DataFrame({
                 'Tipo': list(stats['files_by_type'].keys()),
                 'Cantidad': list(stats['files_by_type'].values())
-            }).sort_values('Cantidad', ascending=False)
+            })
             st.bar_chart(dist_df.set_index('Tipo'))
     else:
-        st.info("Sin datos de estadísticas.")
-    st.markdown('</div>', unsafe_allow_html=True)
+        st.info("Sin datos de estadísticas")
 
-st.markdown("<br><center style='opacity:.35;font-size:.6rem;'>DistriSearch © 2025 • Build UI Modern</center>", unsafe_allow_html=True)
+st.markdown("<br><center style='opacity:.35;font-size:.6rem;'>DistriSearch © 2025</center>", unsafe_allow_html=True)
 
