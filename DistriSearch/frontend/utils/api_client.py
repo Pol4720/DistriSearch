@@ -39,9 +39,7 @@ class ApiClient:
         """
         Obtiene la lista de nodos conectados
         """
-        # Esta endpoint no está implementada explícitamente en las rutas,
-        # pero sería necesaria para la interfaz de usuario
-        response = requests.get(f"{self.base_url}/nodes/")
+        response = requests.get(f"{self.base_url}/search/nodes")
         response.raise_for_status()
         return response.json()
     
@@ -50,5 +48,19 @@ class ApiClient:
         Obtiene estadísticas del sistema
         """
         response = requests.get(f"{self.base_url}/search/stats")
+        response.raise_for_status()
+        return response.json()
+
+    # --- Centralized mode helpers ---
+    def central_scan(self, folder: Optional[str] = None) -> Dict:
+        """Escanea la carpeta central y reindexa archivos."""
+        payload = {"folder": folder} if folder else {}
+        response = requests.post(f"{self.base_url}/central/scan", json=payload)
+        response.raise_for_status()
+        return response.json()
+
+    def get_mode(self) -> Dict:
+        """Obtiene estado de modos centralizado/distribuido."""
+        response = requests.get(f"{self.base_url}/central/mode")
         response.raise_for_status()
         return response.json()

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query
 from typing import List, Optional
 from models import SearchQuery, SearchResult, FileType
-from services import index_service
+from services import index_service, node_service
 
 router = APIRouter(
     prefix="/search",
@@ -31,3 +31,10 @@ async def search_stats():
     Retorna estadísticas del índice de búsqueda
     """
     return index_service.get_index_stats()
+
+@router.get("/nodes")
+async def get_nodes():
+    """
+    Retorna la lista de todos los nodos registrados
+    """
+    return node_service.get_all_nodes()

@@ -3,7 +3,25 @@ import hashlib
 import mimetypes
 import logging
 from datetime import datetime
-from typing import List, Dict
+from typing import List, Dict, Optional
+
+# Librerías para extracción de texto (se instalarán en backend/agent requirements)
+try:
+    import PyPDF2  # PDF
+except Exception:  # pragma: no cover
+    PyPDF2 = None
+try:
+    import docx  # python-docx para .docx
+except Exception:  # pragma: no cover
+    docx = None
+try:
+    import csv
+except Exception:
+    csv = None
+try:
+    import pandas as pd
+except Exception:  # pragma: no cover
+    pd = None
 
 logger = logging.getLogger('scanner')
 
@@ -56,6 +74,8 @@ class FileScanner:
         # Ruta relativa a la carpeta compartida
         rel_path = os.path.relpath(filepath, self.shared_folder)
         
+        content_text: Optional[str] = self._extract_text(filepath, mime_type)
+
         return {
             'file_id': file_hash,
             'name': os.path.basename(filepath),
@@ -63,7 +83,8 @@ class FileScanner:
             'size': file_size,
             'mime_type': mime_type,
             'type': file_type,
-            'last_updated': datetime.fromtimestamp(os.path.getmtime(filepath)).isoformat()
+            'last_updated': datetime.fromtimestamp(os.path.getmtime(filepath)).isoformat(),
+            'content': content_text
         }
     
     def _calculate_hash(self, filepath: str) -> str:
@@ -92,3 +113,75 @@ class FileScanner:
             return 'document'
         else:
             return 'other'
+
+    # ---- Extracción de contenido ----
+    def _extract_text(self, filepath: str, mime_type: str) -> Optional[str]:
+        """Devuelve texto extraído o None. Limita tamaño para no saturar red/DB."""
+        max_chars = 200000  # ~200KB de texto
+        try:
+            if mime_type.startswith('text/'):
+                return self._read_text_file(filepath, max_chars)
+            if mime_type == 'application/pdf' and PyPDF2:
+                return self._read_pdf(filepath, max_chars)
+            if mime_type in ('application/vnd.openxmlformats-officedocument.wordprocessingml.document',) and docx:
+                return self._read_docx(filepath, max_chars)
+            if mime_type in ('text/csv', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'):
+                return self._read_tabular(filepath, max_chars)
+        except Exception as e:
+            logger.debug(f"No se pudo extraer texto de {filepath}: {e}")
+        return None
+
+    def _read_text_file(self, path: str, max_chars: int) -> str:
+        with open(path, 'r', errors='ignore', encoding='utf-8', newline='') as f:
+            data = f.read(max_chars)
+        return data
+
+    def _read_pdf(self, path: str, max_chars: int) -> Optional[str]:
+        if not PyPDF2:
+            return None
+        text_parts: List[str] = []
+        with open(path, 'rb') as f:
+            try:
+                reader = PyPDF2.PdfReader(f)
+                for page in reader.pages[:50]:  # límite de páginas
+                    if len(''.join(text_parts)) > max_chars:
+                        break
+                    extracted = page.extract_text() or ''
+                    text_parts.append(extracted)
+            except Exception:
+                return None
+        return ('\n'.join(text_parts))[:max_chars]
+
+    def _read_docx(self, path: str, max_chars: int) -> Optional[str]:
+        if not docx:
+            return None
+        document = docx.Document(path)
+        text = '\n'.join(p.text for p in document.paragraphs)
+        return text[:max_chars]
+
+    def _read_tabular(self, path: str, max_chars: int) -> Optional[str]:
+        # Intentar pandas primero para csv/xlsx si disponible
+        if pd:
+            try:
+                if path.lower().endswith('.csv'):
+                    df = pd.read_csv(path, nrows=500)  # leer parcialmente
+                else:
+                    df = pd.read_excel(path, nrows=200)
+                text = df.to_csv(index=False)
+                return text[:max_chars]
+            except Exception:
+                return None
+        # Fallback CSV simple
+        if csv and path.lower().endswith('.csv'):
+            try:
+                with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+                    rows = []
+                    reader = csv.reader(f)
+                    for i, row in enumerate(reader):
+                        if i > 500:
+                            break
+                        rows.append(','.join(row))
+                return '\n'.join(rows)[:max_chars]
+            except Exception:
+                return None
+        return None

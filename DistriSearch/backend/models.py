@@ -24,6 +24,8 @@ class FileMeta(BaseModel):
     type: FileType
     node_id: str
     last_updated: datetime = Field(default_factory=datetime.now)
+    # Contenido textual (opcional, truncado para indexación full-text). No se persiste en la tabla principal.
+    content: Optional[str] = None
 
 class NodeInfo(BaseModel):
     node_id: str
