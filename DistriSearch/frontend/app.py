@@ -48,50 +48,78 @@ Busca archivos compartidos en una red distribuida de nodos.
 # Barra lateral con estado del sistema
 with st.sidebar:
     st.header("Estado del Sistema")
+
+    # Selector de modo
+    st.subheader("Modo de Operación")
+    # Obtener modo actual del backend (si falla se asume distribuido)
+    backend_mode = {}
+    try:
+        backend_mode = api_client.get_mode()
+    except Exception:
+        backend_mode = {"centralized": False, "distributed": True}
+
+    default_index = 0 if backend_mode.get("centralized") and not backend_mode.get("distributed") else 1
+    mode = st.radio("Seleccione modo", ["Centralizado", "Distribuido"], index=default_index)
+
+    if mode == "Centralizado":
+        st.info("Modo centralizado: se indexa una sola carpeta local.")
+        central_folder = st.text_input(
+            "Carpeta central (vacío usa valor por defecto)",
+            value=""
+        )
+        if st.button("Escanear carpeta central"):
+            with st.spinner("Escaneando e indexando..."):
+                try:
+                    result = api_client.central_scan(central_folder or None)
+                    st.success(f"Archivos indexados: {result.get('indexed_files')}\nCarpeta: {result.get('folder')}")
+                except Exception as e:
+                    st.error(f"Error al escanear carpeta central: {e}")
     
     # Sección de nodos
-    st.subheader("Nodos Conectados")
+    if mode == "Distribuido":
+        st.subheader("Nodos Conectados")
     
     # Botón para refrescar estado
     if st.button("Refrescar Estado"):
         st.cache_resource.clear()
     
     # Mostrar nodos
-    try:
-        nodes = api_client.get_nodes()
+    if mode == "Distribuido":
+        try:
+            nodes = api_client.get_nodes()
+            
+            # Convertir a DataFrame para mejor visualización
+            nodes_df = pd.DataFrame(nodes)
+            
+            if not nodes_df.empty:
+                # Contar nodos online/offline
+                online_count = nodes_df[nodes_df['status'] == 'online'].shape[0]
+                total_count = nodes_df.shape[0]
+                
+                # Mostrar métricas
+                col1, col2 = st.columns(2)
+                col1.metric("Nodos Activos", f"{online_count}/{total_count}")
+                
+                # Calcular archivos totales
+                total_files = nodes_df['shared_files_count'].sum()
+                col2.metric("Archivos Compartidos", total_files)
+                
+                # Tabla de nodos
+                st.dataframe(
+                    nodes_df[['name', 'status', 'shared_files_count']].rename(
+                        columns={
+                            'name': 'Nombre',
+                            'status': 'Estado',
+                            'shared_files_count': 'Archivos'
+                        }
+                    ),
+                    hide_index=True
+                )
+            else:
+                st.info("No hay nodos conectados")
         
-        # Convertir a DataFrame para mejor visualización
-        nodes_df = pd.DataFrame(nodes)
-        
-        if not nodes_df.empty:
-            # Contar nodos online/offline
-            online_count = nodes_df[nodes_df['status'] == 'online'].shape[0]
-            total_count = nodes_df.shape[0]
-            
-            # Mostrar métricas
-            col1, col2 = st.columns(2)
-            col1.metric("Nodos Activos", f"{online_count}/{total_count}")
-            
-            # Calcular archivos totales
-            total_files = nodes_df['shared_files_count'].sum()
-            col2.metric("Archivos Compartidos", total_files)
-            
-            # Tabla de nodos
-            st.dataframe(
-                nodes_df[['name', 'status', 'shared_files_count']].rename(
-                    columns={
-                        'name': 'Nombre',
-                        'status': 'Estado',
-                        'shared_files_count': 'Archivos'
-                    }
-                ),
-                hide_index=True
-            )
-        else:
-            st.info("No hay nodos conectados")
-    
-    except Exception as e:
-        st.error(f"Error al obtener estado de nodos: {str(e)}")
+        except Exception as e:
+            st.error(f"Error al obtener estado de nodos: {str(e)}")
     
     # Estadísticas del sistema
     st.subheader("Estadísticas")

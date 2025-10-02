@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from routes import search, register, download
+from routes import central  # nuevo router para modo centralizado
 
 app = FastAPI(
     title="DistriSearch API",
@@ -22,6 +23,7 @@ app.add_middleware(
 app.include_router(search.router)
 app.include_router(register.router)
 app.include_router(download.router)
+app.include_router(central.router)
 
 @app.get("/")
 async def root():
