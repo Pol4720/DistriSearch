@@ -41,7 +41,7 @@ with top_left:
         st.image(logo_path, width=72)
 with top_mid:
     st.markdown("## DistriSearch")
-    st.caption("Búsqueda distribuida y modo centralizado en una sola interfaz moderna.")
+    st.caption("Búsqueda distribuida y modo centralizado")
 with top_right:
     if st.button('🌗 Tema'):
         ss.theme = 'light' if ss.theme == 'dark' else 'dark'
