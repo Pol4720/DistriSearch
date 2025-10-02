@@ -58,22 +58,33 @@ with st.sidebar:
     except Exception:
         backend_mode = {"centralized": False, "distributed": True}
 
-    default_index = 0 if backend_mode.get("centralized") and not backend_mode.get("distributed") else 1
-    mode = st.radio("Seleccione modo", ["Centralizado", "Distribuido"], index=default_index)
+    if 'ui_mode' not in st.session_state:
+        default_index = 0 if backend_mode.get("centralized") and not backend_mode.get("distributed") else 1
+        st.session_state.ui_mode = ["Centralizado", "Distribuido"][default_index]
+    mode = st.radio("Seleccione modo", ["Centralizado", "Distribuido"], index=["Centralizado", "Distribuido"].index(st.session_state.ui_mode))
+    if mode != st.session_state.ui_mode:
+        st.session_state.ui_mode = mode
 
     if mode == "Centralizado":
         st.info("Modo centralizado: se indexa una sola carpeta local.")
         central_folder = st.text_input(
             "Carpeta central (vacío usa valor por defecto)",
-            value=""
+            value=st.session_state.get('central_folder', "")
         )
-        if st.button("Escanear carpeta central"):
+        st.session_state.central_folder = central_folder
+        auto_scan = st.checkbox("Escanear automáticamente al cambiar a este modo", value=st.session_state.get('auto_scan', True))
+        st.session_state.auto_scan = auto_scan
+        trigger_scan = st.button("Escanear carpeta central") or (auto_scan and st.session_state.get('central_last_mode') != 'Centralizado')
+        if trigger_scan:
             with st.spinner("Escaneando e indexando..."):
                 try:
                     result = api_client.central_scan(central_folder or None)
                     st.success(f"Archivos indexados: {result.get('indexed_files')}\nCarpeta: {result.get('folder')}")
                 except Exception as e:
                     st.error(f"Error al escanear carpeta central: {e}")
+        st.session_state.central_last_mode = 'Centralizado'
+    else:
+        st.session_state.central_last_mode = 'Distribuido'
     
     # Sección de nodos
     if mode == "Distribuido":

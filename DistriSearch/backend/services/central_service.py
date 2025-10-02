@@ -9,6 +9,7 @@ distributed mode without changing existing endpoints. Frontend can call
 from __future__ import annotations
 
 import os
+import logging
 import hashlib
 import mimetypes
 from datetime import datetime
@@ -19,6 +20,7 @@ import database
 from services import index_service, node_service
 
 CENTRAL_NODE_ID = "central"
+logger = logging.getLogger("central_service")
 
 def _ensure_central_node(name: str = "Repositorio Central", port: int = 8000):
     """Register the synthetic central node if not present."""
@@ -82,8 +84,8 @@ def scan_folder(folder_path: str) -> List[Dict]:
                     "type": _categorize(mime_type),
                     "last_updated": datetime.fromtimestamp(os.path.getmtime(full_path)),
                 })
-            except Exception:
-                # Skip problematic files; could log here
+            except Exception as e:
+                logger.warning(f"No se pudo procesar archivo '{full_path}': {e}")
                 continue
     return results
 
@@ -129,6 +131,7 @@ def index_central_folder(folder_path: Optional[str] = None) -> Dict:
         )
         database.register_node(node_info)
 
+    logger.info(f"Indexación centralizada completada: {count} archivos en {folder}")
     return {
         "mode": "centralized",
         "indexed_files": count,
@@ -150,3 +153,24 @@ def get_mode() -> Dict:
         "distributed": len(node_ids - {CENTRAL_NODE_ID}) > 0,
         "central_node_id": CENTRAL_NODE_ID if centralized_active else None,
     }
+
+def resolve_central_file_path(file_id: str, base_folder: Optional[str] = None) -> Optional[str]:
+    """Given a file_id returns the absolute path if it belongs to central node.
+
+    This queries DB for matching file row with node_id=central. Returns None if not found.
+    """
+    folder = base_folder or os.getenv("CENTRAL_SHARED_FOLDER", "./central_shared")
+    with database.get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT path FROM files WHERE file_id = ? AND node_id = ?",
+            (file_id, CENTRAL_NODE_ID),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+        abs_path = os.path.abspath(os.path.join(folder, row["path"]))
+        if not os.path.isfile(abs_path):
+            logger.warning(f"Archivo central no encontrado físicamente: {abs_path}")
+            return None
+        return abs_path

@@ -14,6 +14,20 @@ El sistema consta de tres componentes principales:
 2. **Agentes**: Clientes que se ejecutan en cada nodo, escanean carpetas compartidas y exponen un servidor para compartir archivos.
 3. **Frontend** (Streamlit): Interfaz de usuario para realizar búsquedas y descargas.
 
+### Modo Centralizado (Nuevo)
+Para la primera entrega o demostraciones rápidas, el sistema puede funcionar sin agentes distribuidos:
+1. El backend escanea una única carpeta local (`CENTRAL_SHARED_FOLDER` o `./central_shared`).
+2. Crea un nodo sintético `central` y registra todos los archivos.
+3. Las búsquedas funcionan igual y las descargas usan `GET /central/file/{file_id}`.
+4. El frontend permite alternar entre modos en la barra lateral.
+
+Endpoints clave:
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| POST | `/central/scan` | Escanea e indexa carpeta central |
+| GET | `/central/mode` | Estado de modos centralizado/distribuido |
+| GET | `/central/file/{file_id}` | Descarga directa archivo central |
+
 ## Instalación y uso
 
 ### Desarrollo local
@@ -56,3 +70,5 @@ El sistema consta de tres componentes principales:
 - Replicación de metadatos para mayor disponibilidad
 - Autenticación y autorización
 - Encriptación de comunicaciones
+ - Eliminación de archivos y reindexación incremental
+ - Integración de búsqueda semántica
