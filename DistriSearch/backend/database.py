@@ -118,14 +118,28 @@ def search_files(query: str, file_type: Optional[str] = None, limit: int = 50) -
     with get_connection() as conn:
         cursor = conn.cursor()
 
-        # Usar bm25 para ranking. Consultar ambas columnas.
-        fts_where = "file_contents MATCH ?"
-        fts_param = query
+        # Normalizar tokens para FTS (eliminando caracteres peligrosos). Prefijos para coincidencias parciales simples.
+        raw_tokens = [t for t in query.strip().split() if t]
+        # Si el usuario escribe una frase larga, no añadimos comodines para evitar explosión de resultados.
+        processed_tokens: List[str] = []
+        for tok in raw_tokens[:10]:  # limitar a 10 términos
+            safe = ''.join(ch for ch in tok if ch.isalnum())
+            if not safe:
+                continue
+            processed_tokens.append(safe)
+        # Unir tokens con espacio (equivale a AND implícito en FTS5)
+        fts_query = ' '.join(processed_tokens) if processed_tokens else query.strip()
 
+        # Usar nombre de la tabla FTS directamente para evitar problemas con algunos builds de SQLite al usar alias.
+        fts_where = "file_contents MATCH ?"
+        fts_param = fts_query
+
+        # bm25: la tabla tiene 3 columnas (file_id UNINDEXED, name, content). Proveemos 3 pesos.
+        # Peso 0 para file_id (no indexado), mayor peso a coincidencias en nombre.
         sql = f"""
-        SELECT f.*, bm25(fc, 1.0, 0.5) AS score
-        FROM file_contents fc
-        JOIN files f ON f.file_id = fc.file_id
+        SELECT f.*, bm25(file_contents, 0.0, 1.0, 0.5) AS score
+        FROM file_contents
+        JOIN files f ON f.file_id = file_contents.file_id
         WHERE {fts_where}
         { 'AND f.type = ?' if file_type else '' }
         ORDER BY score ASC
@@ -138,8 +152,9 @@ def search_files(query: str, file_type: Optional[str] = None, limit: int = 50) -
         try:
             cursor.execute(sql, params)
             return [dict(row) for row in cursor.fetchall()]
-        except sqlite3.OperationalError:
-            # Fallback a LIKE simple si hay error con FTS
+        except sqlite3.OperationalError as e:
+            # Fallback a LIKE simple si hay error con FTS (por ejemplo sintaxis inválida)
+            # Nota: este fallback solo busca en el nombre, no en el contenido.
             like_sql = "SELECT * FROM files WHERE name LIKE ?"
             params = [f"%{query}%"]
             if file_type:
