@@ -6,3 +6,7 @@ aiohttp
 python-dotenv
 pytest
 httpx
+PyPDF2
+python-docx
+pandas
+openpyxl

@@ -55,7 +55,9 @@ def search_files(query: SearchQuery) -> SearchResult:
             mime_type=file_data["mime_type"],
             type=file_data["type"],
             node_id=file_data["node_id"],
-            last_updated=file_data["last_updated"]
+            last_updated=file_data["last_updated"],
+            # No devolvemos el contenido completo por seguridad/eficiencia.
+            content=None
         ))
     
     # Obtener información de los nodos que tienen estos archivos

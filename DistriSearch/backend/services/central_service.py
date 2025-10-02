@@ -62,6 +62,17 @@ def _categorize(mime_type: str) -> str:
         return "document"
     return "other"
 
+def _extract_text_for_central(path: str, mime_type: str) -> Optional[str]:
+    """Extracción simplificada para modo central (mismos límites que agentes)."""
+    max_chars = 200000
+    try:
+        if mime_type.startswith('text/'):
+            with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+                return f.read(max_chars)
+    except Exception:  # pragma: no cover
+        return None
+    return None
+
 def scan_folder(folder_path: str) -> List[Dict]:
     """Return metadata dicts for all files in folder (recursive)."""
     folder_path = os.path.abspath(folder_path)
@@ -75,6 +86,7 @@ def scan_folder(folder_path: str) -> List[Dict]:
                 if not mime_type:
                     mime_type = "application/octet-stream"
                 rel_path = os.path.relpath(full_path, folder_path)
+                text_content = _extract_text_for_central(full_path, mime_type)
                 results.append({
                     "file_id": _hash_file(full_path),
                     "name": fname,
@@ -83,6 +95,7 @@ def scan_folder(folder_path: str) -> List[Dict]:
                     "mime_type": mime_type,
                     "type": _categorize(mime_type),
                     "last_updated": datetime.fromtimestamp(os.path.getmtime(full_path)),
+                    "content": text_content,
                 })
             except Exception as e:
                 logger.warning(f"No se pudo procesar archivo '{full_path}': {e}")
@@ -114,6 +127,7 @@ def index_central_folder(folder_path: Optional[str] = None) -> Dict:
             type=meta["type"],
             node_id=CENTRAL_NODE_ID,
             last_updated=meta["last_updated"],
+            content=meta.get("content")
         )
         database.register_file(fm)
         count += 1
