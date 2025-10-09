@@ -6,7 +6,13 @@ from models import FileMeta, NodeInfo
 
 # Por simplicidad inicial, usamos SQLite
 # En la segunda fase migraremos a Elasticsearch
-DATABASE_PATH = "distrisearch.db"
+# Permitimos configurar la ruta vía variable de entorno para persistencia en contenedor
+DATABASE_PATH = os.getenv("DATABASE_PATH", "distrisearch.db")
+
+# Asegurar que la carpeta de la base de datos exista (si incluye directorio)
+_db_dir = os.path.dirname(DATABASE_PATH)
+if _db_dir and not os.path.exists(_db_dir):
+    os.makedirs(_db_dir, exist_ok=True)
 
 def init_db():
     """Inicializa la base de datos si no existe."""
@@ -52,6 +58,15 @@ def init_db():
             name,
             content,
             tokenize = 'porter'
+        )
+        ''')
+
+        # Tabla para nodos locales simulados (mapeo node_id -> carpeta base)
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS node_mounts (
+            node_id TEXT PRIMARY KEY,
+            folder TEXT NOT NULL,
+            FOREIGN KEY (node_id) REFERENCES nodes(node_id)
         )
         ''')
 
@@ -204,6 +219,41 @@ def update_node_status(node_id: str, status: str):
         UPDATE nodes SET status = ?, last_seen = CURRENT_TIMESTAMP
         WHERE node_id = ?
         ''', (status, node_id))
+        conn.commit()
+
+def get_node_file_count(node_id: str) -> int:
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute('SELECT COUNT(*) FROM files WHERE node_id = ?', (node_id,))
+        row = cur.fetchone()
+        return int(row[0]) if row else 0
+
+def update_node_shared_files_count(node_id: str, count: int):
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute('UPDATE nodes SET shared_files_count = ? WHERE node_id = ?', (count, node_id))
+        conn.commit()
+
+# ---- Node mounts (local-simulated nodes) ----
+def set_node_mount(node_id: str, folder: str):
+    folder = os.path.abspath(folder)
+    os.makedirs(folder, exist_ok=True)
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute('INSERT OR REPLACE INTO node_mounts (node_id, folder) VALUES (?, ?)', (node_id, folder))
+        conn.commit()
+
+def get_node_mount(node_id: str) -> Optional[str]:
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute('SELECT folder FROM node_mounts WHERE node_id = ?', (node_id,))
+        row = cur.fetchone()
+        return row[0] if row else None
+
+def delete_node_mount(node_id: str):
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute('DELETE FROM node_mounts WHERE node_id = ?', (node_id,))
         conn.commit()
 
 # Inicializar la base de datos al importar este módulo

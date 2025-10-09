@@ -3,6 +3,9 @@ import os
 from fastapi.responses import FileResponse
 from typing import Optional
 from services import central_service
+from services import replication_service
+from fastapi import Depends, Request
+from security import require_api_key
 
 router = APIRouter(
     prefix="/central",
@@ -34,3 +37,8 @@ async def get_central_file(file_id: str):
     if not path:
         raise HTTPException(status_code=404, detail="Archivo no encontrado en modo centralizado")
     return FileResponse(path, filename=path.split(os.sep)[-1])
+
+@router.post("/replication/run")
+async def run_replication(batch: int = 25, _: None = Depends(require_api_key)):
+    """Ejecuta una pasada de replicación para archivos de nodos OFFLINE hacia el central."""
+    return replication_service.replicate_missing_files(batch=batch)

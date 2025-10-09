@@ -1,8 +1,13 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
+import os
 from routes import search, register, download
 from routes import central  # nuevo router para modo centralizado
+from services import central_service
+from services import replication_service
+from services import node_service
+import asyncio
 
 app = FastAPI(
     title="DistriSearch API",
@@ -24,6 +29,39 @@ app.include_router(search.router)
 app.include_router(register.router)
 app.include_router(download.router)
 app.include_router(central.router)
+
+@app.on_event("startup")
+async def on_startup():
+    # Auto-scan opcional del modo central si está habilitado por entorno
+    if os.getenv("CENTRAL_AUTO_SCAN", "false").lower() in {"1", "true", "yes"}:
+        try:
+            central_service.index_central_folder(os.getenv("CENTRAL_SHARED_FOLDER"))
+        except Exception:
+            # Evitar que falle el arranque por problemas al escanear
+            pass
+
+    # Lanzar tareas de mantenimiento en segundo plano (replicación y timeouts)
+    async def _maintenance_loop():
+        interval = int(os.getenv("MAINTENANCE_INTERVAL_SECONDS", "300"))  # 5 min por defecto
+        while True:
+            try:
+                # Marcar nodos con timeout como offline
+                try:
+                    node_service.check_node_timeouts()
+                except Exception:
+                    pass
+                # Ejecutar una pasada de replicación básica
+                try:
+                    replication_service.replicate_missing_files(batch=50)
+                except Exception:
+                    pass
+            finally:
+                await asyncio.sleep(interval)
+
+    try:
+        asyncio.create_task(_maintenance_loop())
+    except Exception:
+        pass
 
 @app.get("/")
 async def root():

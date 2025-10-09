@@ -1,19 +1,25 @@
 version: '3.8'
 
 services:
-  # API Backend
+  # API Backend (centralizado)
   backend:
     image: distrisearch/backend:latest
     ports:
       - "8000:8000"
-    volumes:
-      - backend_data:/app/data
     environment:
       - ENVIRONMENT=production
+      - CENTRAL_SHARED_FOLDER=/app/central_shared
+      - CENTRAL_AUTO_SCAN=true
+      - DATABASE_PATH=/app/data/distrisearch.db
     networks:
       - distrisearch_network
+    volumes:
+      # Persistencia de BD y datos
+      - backend_data:/app/data
+      # Carpeta compartida central (ajustar ruta del host en despliegue real)
+      - central_shared:/app/central_shared
     deploy:
-      replicas: 2
+      replicas: 1
       update_config:
         parallelism: 1
         delay: 10s
@@ -27,7 +33,7 @@ services:
     ports:
       - "8501:8501"
     environment:
-      - BACKEND_URL=http://backend:8000
+      - DISTRISEARCH_BACKEND_URL=http://backend:8000
     networks:
       - distrisearch_network
     deploy:
@@ -38,32 +44,13 @@ services:
       restart_policy:
         condition: on-failure
 
-  # Servicios de agentes (se desplegarán en los nodos trabajadores)
-  agent:
-    image: distrisearch/agent:latest
-    networks:
-      - distrisearch_network
-    environment:
-      - BACKEND_URL=http://backend:8000
-    volumes:
-      - /var/distrisearch/shared:/app/shared
-    deploy:
-      mode: global
-      restart_policy:
-        condition: on-failure
-    configs:
-      - source: agent_config
-        target: /app/config.yaml
-
 volumes:
   backend_data:
+    driver: local
+  central_shared:
     driver: local
 
 networks:
   distrisearch_network:
     driver: overlay
     attachable: true
-
-configs:
-  agent_config:
-    file: ./agent_configs/default.yaml
