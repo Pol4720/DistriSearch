@@ -1,0 +1,15 @@
+# Configuración del nodo
+node_id: "node1"  # Identificador único del nodo
+node_name: "Cliente 1"  # Nombre amigable
+node_ip: "localhost"  # IP o hostname del nodo (visible para otros)
+server_port: 8081  # Puerto para servir archivos
+
+# Carpeta a compartir
+shared_folder: "./shared"  # Ruta a la carpeta compartida
+
+# Conexión al backend
+backend_url: "http://localhost:8000"  # URL de la API central
+
+# Intervalos
+scan_interval_seconds: 300  # Cada 5 minutos
+heartbeat_interval_seconds: 60  # Cada minuto

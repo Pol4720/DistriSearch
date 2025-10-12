@@ -1,0 +1,75 @@
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+import uvicorn
+import os
+from routes import search, register, download
+from routes import central  # nuevo router para modo centralizado
+from services import central_service
+from services import replication_service
+from services import node_service
+import asyncio
+
+app = FastAPI(
+    title="DistriSearch API",
+    description="API centralizada para búsqueda distribuida de archivos",
+    version="0.1.0"
+)
+
+# Configurar CORS para permitir peticiones desde el frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # En producción, limitar a dominios específicos
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Registrar routers
+app.include_router(search.router)
+app.include_router(register.router)
+app.include_router(download.router)
+app.include_router(central.router)
+
+@app.on_event("startup")
+async def on_startup():
+    # Auto-scan opcional del modo central si está habilitado por entorno
+    if os.getenv("CENTRAL_AUTO_SCAN", "false").lower() in {"1", "true", "yes"}:
+        try:
+            central_service.index_central_folder(os.getenv("CENTRAL_SHARED_FOLDER"))
+        except Exception:
+            # Evitar que falle el arranque por problemas al escanear
+            pass
+
+    # Lanzar tareas de mantenimiento en segundo plano (replicación y timeouts)
+    async def _maintenance_loop():
+        interval = int(os.getenv("MAINTENANCE_INTERVAL_SECONDS", "300"))  # 5 min por defecto
+        while True:
+            try:
+                # Marcar nodos con timeout como offline
+                try:
+                    node_service.check_node_timeouts()
+                except Exception:
+                    pass
+                # Ejecutar una pasada de replicación básica
+                try:
+                    replication_service.replicate_missing_files(batch=50)
+                except Exception:
+                    pass
+            finally:
+                await asyncio.sleep(interval)
+
+    try:
+        asyncio.create_task(_maintenance_loop())
+    except Exception:
+        pass
+
+@app.get("/")
+async def root():
+    return {"message": "Bienvenido a DistriSearch API"}
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy"}
+
+if __name__ == "__main__":
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
