@@ -50,7 +50,8 @@ def search_files(query: SearchQuery) -> SearchResult:
             node_id=file_data["node_id"],
             last_updated=file_data["last_updated"],
             # No devolvemos el contenido completo por seguridad/eficiencia.
-            content=None
+            content=None,
+            content_hash=file_data.get("content_hash") if isinstance(file_data, dict) else None
         ))
     
     # Obtener información de los nodos que tienen estos archivos

@@ -8,7 +8,7 @@ from unittest.mock import patch
 import database
 from main import app
 from models import FileMeta, NodeInfo, NodeStatus
-from services.central_service import CENTRAL_NODE_ID
+from services.central_service import CENTRAL_NODE_ID, _instance_id
 
 client = TestClient(app)
 
@@ -17,12 +17,9 @@ def _register_central_file(tmpdir: str) -> FileMeta:
 	path = os.path.join(tmpdir, 'test.txt')
 	with open(path, 'w', encoding='utf-8') as f:
 		f.write('contenido de prueba')
-	# Calcular hash igual que central_service
-	import hashlib
-	sha = hashlib.sha256()
-	with open(path, 'rb') as f:
-		sha.update(f.read())
-	file_id = sha.hexdigest()
+	# ID de instancia basado en nodo+path relativo
+	rel_path = os.path.basename(path)
+	file_id = _instance_id(CENTRAL_NODE_ID, rel_path)
 	# Registrar nodo central y archivo
 	node = NodeInfo(
 		node_id=CENTRAL_NODE_ID,
@@ -41,6 +38,7 @@ def _register_central_file(tmpdir: str) -> FileMeta:
 		mime_type='text/plain',
 		type='document',
 		node_id=CENTRAL_NODE_ID,
+		content_hash=None,
 	)
 	database.register_file(fm)
 	return fm
@@ -62,7 +60,7 @@ def test_download_proxy_distributed(monkeypatch, tmp_path):
 	# Crear archivo en carpeta externa simulada del nodo
 	file_content = b'archivo remoto'
 	import hashlib
-	sha = hashlib.sha256(file_content).hexdigest()
+	content_sha = hashlib.sha256(file_content).hexdigest()
 
 	# Registrar nodo distribuido y archivo
 	node = NodeInfo(
@@ -75,13 +73,14 @@ def test_download_proxy_distributed(monkeypatch, tmp_path):
 	)
 	database.register_node(node)
 	fm = FileMeta(
-		file_id=sha,
+		file_id=_instance_id('n1', 'remoto.bin'),
 		name='remoto.bin',
 		path='remoto.bin',
 		size=len(file_content),
 		mime_type='application/octet-stream',
 		type='other',
-		node_id='n1'
+		node_id='n1',
+		content_hash=content_sha
 	)
 	database.register_file(fm)
 
@@ -96,7 +95,7 @@ def test_download_proxy_distributed(monkeypatch, tmp_path):
 		return DummyResp()
 
 	with patch('httpx.AsyncClient.get', new=fake_get):
-		r = client.post('/download/', json={'file_id': sha})
+		r = client.post('/download/', json={'file_id': fm.file_id})
 		assert r.status_code == 200
 		url = r.json()['download_url']
 		r2 = client.get(url)
