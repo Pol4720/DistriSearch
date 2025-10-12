@@ -21,16 +21,22 @@ def _format_size(size_bytes: int) -> str:
 @st.cache_resource
 def api_client():
     url = os.getenv("DISTRISEARCH_BACKEND_URL") or "http://localhost:8000"
-    try:
-        url = st.secrets.get("backend_url", url)  # type: ignore
-    except Exception:
-        pass
     # Optional admin API key for protected management endpoints
     api_key = os.getenv("DISTRISEARCH_ADMIN_API_KEY") or os.getenv("ADMIN_API_KEY")
-    try:
-        api_key = st.secrets.get("admin_api_key", api_key)  # type: ignore
-    except Exception:
-        pass
+
+    # Solo intentar leer secrets si el archivo existe
+    secret_candidates = [
+        os.path.join("/app", ".streamlit", "secrets.toml"),
+        os.path.expanduser("~/.streamlit/secrets.toml"),
+    ]
+    for sp in secret_candidates:
+        if os.path.exists(sp):
+            try:
+                api_key = st.secrets.get("admin_api_key", api_key)
+            except Exception:
+                pass
+            break
+
     return ApiClient(url, api_key=api_key)
 
 api = api_client()
