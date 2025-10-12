@@ -28,6 +28,23 @@ class ApiClient:
         )
         response.raise_for_status()
         return response.json()
+
+    def search_files_with_score(self, query: str, file_type: Optional[str] = None, max_results: int = 50) -> Dict:
+        """Búsqueda incluyendo el score por resultado (bm25)."""
+        params = {
+            'q': query,
+            'max_results': max_results,
+            'include_score': 'true'
+        }
+        if file_type:
+            params['file_type'] = file_type
+        response = requests.get(
+            f"{self.base_url}/search/",
+            params=params,
+            headers=self.headers or None,
+        )
+        response.raise_for_status()
+        return response.json()
     
     def get_download_url(self, file_id: str) -> Dict:
         """Obtiene información de descarga del backend.

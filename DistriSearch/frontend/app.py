@@ -19,7 +19,7 @@ def _format_size(size_bytes: int) -> str:
     return f"{size_bytes:.2f} PB"
 
 @st.cache_resource
-def api_client():
+def api_client(cache_buster: str = "with_score_v1"):
     url = os.getenv("DISTRISEARCH_BACKEND_URL") or "http://localhost:8000"
     # Optional admin API key for protected management endpoints
     api_key = os.getenv("DISTRISEARCH_ADMIN_API_KEY") or os.getenv("ADMIN_API_KEY")
@@ -39,7 +39,7 @@ def api_client():
 
     return ApiClient(url, api_key=api_key)
 
-api = api_client()
+api = api_client("with_score_v1")
 
 ss = st.session_state
 ss.setdefault('theme', 'dark')
@@ -84,10 +84,11 @@ ti = {name: i for i, name in enumerate(tab_names)}
 
 # ---------------------------- TAB: Buscar -----------------------------------
 with tabs[ti["Buscar"]]:
-    query_col, type_col, btn_col = st.columns([5,2,1])
+    query_col, type_col, btn_col, opt_col = st.columns([5,2,1,2])
     query = query_col.text_input("Consulta", placeholder="Nombre, término o contenido...")
     tipo = type_col.selectbox("Tipo", ["Todos","Documentos","Imágenes","Videos","Audio","Otros"], index=0)
     buscar = btn_col.button("Buscar")
+    show_score = opt_col.toggle("Ver score", value=False, help="Muestra la puntuación de ranking (BM25)")
 
     # Execute search on click and persist in session
     if buscar and query:
@@ -95,7 +96,20 @@ with tabs[ti["Buscar"]]:
         tipo_api = mapping.get(tipo) if tipo != 'Todos' else None
         with st.spinner("Buscando..."):
             try:
-                result = api.search_files(query, tipo_api)
+                if show_score:
+                    try:
+                        result = api.search_files_with_score(query, tipo_api)
+                    except AttributeError:
+                        # Instancia cacheada anterior a la adición del método; usar HTTP directo
+                        import requests as _rq
+                        params = {"q": query, "max_results": 50, "include_score": "true"}
+                        if tipo_api:
+                            params["file_type"] = tipo_api
+                        r = _rq.get(f"{api.base_url}/search/", params=params, headers=api.headers or None)
+                        r.raise_for_status()
+                        result = r.json()
+                else:
+                    result = api.search_files(query, tipo_api)
                 ss.search_results = result
                 files = result.get('files', [])
                 nodes_map = {n['node_id']: n for n in result.get('nodes_available', [])}
@@ -103,14 +117,20 @@ with tabs[ti["Buscar"]]:
                 rows = []
                 for f in files:
                     node = nodes_map.get(f['node_id'], {'name':'?','status':'unknown'})
-                    rows.append({
+                    row = {
                         'Nombre': f['name'],
                         'Tipo': f['type'],
                         'Tamaño': _format_size(f.get('size',0)),
                         'Nodo': node.get('name'),
                         'Estado': node.get('status'),
                         'ID': f['file_id']
-                    })
+                    }
+                    if show_score and f.get('score') is not None:
+                        try:
+                            row['Score'] = round(float(f['score']), 4)
+                        except Exception:
+                            row['Score'] = f['score']
+                    rows.append(row)
                 ss.search_df = pd.DataFrame(rows) if rows else pd.DataFrame()
                 ss.selected_file_id = None
                 ss.last_download_url = None
@@ -137,7 +157,10 @@ with tabs[ti["Buscar"]]:
                 public_base = "http://localhost:8000"
         public_base = public_base.rstrip('/')
 
-        render_df = ss.search_df[['Nombre','Tipo','Tamaño','Nodo','Estado']].copy()
+        base_cols = ['Nombre','Tipo','Tamaño','Nodo','Estado']
+        if show_score and 'Score' in ss.search_df.columns:
+            base_cols.append('Score')
+        render_df = ss.search_df[base_cols].copy()
         render_df['Descargar'] = [f"{public_base}/download/file/{fid}" for fid in ss.search_df['ID']]
 
         try:
