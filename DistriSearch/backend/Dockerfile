@@ -7,6 +7,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Crear carpetas comunes de datos en la imagen (pueden ser montadas en runtime)
+RUN mkdir -p /app/data /app/central_shared
+
 # Exponer el puerto para la API
 EXPOSE 8000
 

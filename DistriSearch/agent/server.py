@@ -1,8 +1,26 @@
 from aiohttp import web
 import os
 import logging
+import hashlib
 
 logger = logging.getLogger('file_server')
+
+_CACHE = {}
+
+def _build_cache(shared_folder: str):
+    global _CACHE
+    _CACHE = {}
+    for root, _, files in os.walk(shared_folder):
+        for filename in files:
+            path = os.path.join(root, filename)
+            try:
+                hasher = hashlib.sha256()
+                with open(path, 'rb') as f:
+                    for chunk in iter(lambda: f.read(8192), b""):
+                        hasher.update(chunk)
+                _CACHE[hasher.hexdigest()] = path
+            except Exception:
+                continue
 
 async def handle_file_download(request):
     """
@@ -11,22 +29,11 @@ async def handle_file_download(request):
     file_id = request.match_info.get('file_id')
     shared_folder = request.app['shared_folder']
     
-    # Buscar el archivo por su hash (file_id)
-    found_file = None
-    for root, _, files in os.walk(shared_folder):
-        for filename in files:
-            file_path = os.path.join(root, filename)
-            # Calcular hash del archivo (simplificado para este ejemplo)
-            # En producción, usaríamos una tabla de caché con los hashes ya calculados
-            import hashlib
-            with open(file_path, "rb") as f:
-                file_hash = hashlib.sha256(f.read()).hexdigest()
-            
-            if file_hash == file_id:
-                found_file = file_path
-                break
-        if found_file:
-            break
+    # Buscar el archivo por su hash (file_id) usando cache y, si no, refrescar
+    found_file = _CACHE.get(file_id)
+    if not found_file:
+        _build_cache(shared_folder)
+        found_file = _CACHE.get(file_id)
     
     if not found_file:
         return web.Response(status=404, text="Archivo no encontrado")
@@ -54,6 +61,8 @@ def start_file_server(shared_folder, port):
     """
     app = web.Application()
     app['shared_folder'] = shared_folder
+    # Build initial cache
+    _build_cache(shared_folder)
     
     # Rutas
     app.router.add_get('/status', handle_status)

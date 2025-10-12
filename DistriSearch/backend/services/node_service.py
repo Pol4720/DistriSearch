@@ -61,14 +61,21 @@ def check_node_timeouts():
     
     with database.get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("""
-            UPDATE nodes 
-            SET status = ? 
-            WHERE status = ? AND last_seen < ?
-        """, (
-            NodeStatus.OFFLINE.value,
-            NodeStatus.ONLINE.value,
-            timeout
-        ))
+        # No marcar como offline a los nodos simulados (tienen carpeta montada y no envían heartbeats)
+        cursor.execute(
+            """
+            UPDATE nodes
+            SET status = ?
+            WHERE status = ?
+              AND last_seen < ?
+              AND node_id NOT IN (SELECT node_id FROM node_mounts)
+                            AND node_id != 'central'
+            """,
+            (
+                NodeStatus.OFFLINE.value,
+                NodeStatus.ONLINE.value,
+                timeout,
+            ),
+        )
         conn.commit()
         return cursor.rowcount  # Número de nodos marcados como offline

@@ -13,20 +13,13 @@ def register_files(files: List[FileMeta]) -> int:
         count += 1
     
     # Actualizar contador de archivos compartidos del nodo
-    if files and len(files) > 0:
+    if files:
         node_id = files[0].node_id
         node = database.get_node(node_id)
         if node:
-            # Contar archivos para este nodo
-            node_info = NodeInfo(
-                node_id=node["node_id"],
-                name=node["name"],
-                ip_address=node["ip_address"],
-                port=node["port"],
-                status=node["status"],
-                shared_files_count=len(files)
-            )
-            database.register_node(node_info)
+            # Recalcular desde la tabla de files para consistencia
+            total = database.get_node_file_count(node_id)
+            database.update_node_shared_files_count(node_id, total)
     
     return count
 
@@ -57,7 +50,8 @@ def search_files(query: SearchQuery) -> SearchResult:
             node_id=file_data["node_id"],
             last_updated=file_data["last_updated"],
             # No devolvemos el contenido completo por seguridad/eficiencia.
-            content=None
+            content=None,
+            content_hash=file_data.get("content_hash") if isinstance(file_data, dict) else None
         ))
     
     # Obtener información de los nodos que tienen estos archivos
