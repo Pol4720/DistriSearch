@@ -5,6 +5,7 @@ from typing import Optional
 import httpx
 
 from services.central_service import CENTRAL_NODE_ID, resolve_central_file_path
+import database
 from models import DownloadRequest
 from services import node_service, index_service
 
@@ -21,7 +22,14 @@ def _select_node_for_file(file_id: str, preferred_node_id: Optional[str] = None)
     """
     file_meta = index_service.get_file_by_id(file_id)
     if not file_meta:
-        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+        # Fallback: intentar interpretar file_id como content_hash (compatibilidad)
+        with database.get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM files WHERE content_hash = ? LIMIT 1", (file_id,))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Archivo no encontrado")
+            file_meta = dict(row)
 
     candidate_node_id = preferred_node_id or file_meta["node_id"]
     node = node_service.get_node(candidate_node_id)

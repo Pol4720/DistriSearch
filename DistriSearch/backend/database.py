@@ -19,10 +19,45 @@ def init_db():
     with get_connection() as conn:
         cursor = conn.cursor()
 
+        # Migración: si la tabla 'files' existe con PK en file_id únicamente, migrar a (file_id,node_id) y añadir content_hash
+        try:
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='files'")
+            if cursor.fetchone():
+                cursor.execute("PRAGMA table_info(files)")
+                info = cursor.fetchall()  # (cid, name, type, notnull, dflt_value, pk)
+                cols = [r[1] for r in info]
+                pk_cols = [r[1] for r in info if r[5] != 0]
+                needs_migration = (('content_hash' not in cols) or (pk_cols == ['file_id']))
+                if needs_migration:
+                    cursor.execute('ALTER TABLE files RENAME TO files_old')
+                    cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS files (
+                        file_id TEXT NOT NULL,
+                        name TEXT NOT NULL,
+                        path TEXT NOT NULL,
+                        size INTEGER NOT NULL,
+                        mime_type TEXT NOT NULL,
+                        type TEXT NOT NULL,
+                        node_id TEXT NOT NULL,
+                        last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        content_hash TEXT,
+                        PRIMARY KEY (file_id, node_id),
+                        FOREIGN KEY (node_id) REFERENCES nodes(node_id)
+                    )
+                    ''')
+                    cursor.execute('''
+                        INSERT OR IGNORE INTO files (file_id, name, path, size, mime_type, type, node_id, last_updated)
+                        SELECT file_id, name, path, size, mime_type, type, node_id, last_updated FROM files_old
+                    ''')
+                    cursor.execute('DROP TABLE files_old')
+        except Exception:
+            # Si hay algún problema, continuamos con creación idempotente más abajo
+            pass
+
         # Tabla principal de archivos
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS files (
-            file_id TEXT PRIMARY KEY,
+            file_id TEXT NOT NULL,
             name TEXT NOT NULL,
             path TEXT NOT NULL,
             size INTEGER NOT NULL,
@@ -30,9 +65,15 @@ def init_db():
             type TEXT NOT NULL,
             node_id TEXT NOT NULL,
             last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            content_hash TEXT,
+            PRIMARY KEY (file_id, node_id),
             FOREIGN KEY (node_id) REFERENCES nodes(node_id)
         )
         ''')
+
+        # Asegurar índices/constraints útiles en esquemas actualizados
+        # Unicidad por nodo+path (un mismo archivo físico por ruta en un nodo)
+        cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_files_node_path ON files(node_id, path)')
 
         # Tabla de nodos
         cursor.execute('''
@@ -47,8 +88,10 @@ def init_db():
         )
         ''')
 
-        # Índice por nombre
+        # Índices útiles
+        cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_files_node_path ON files(node_id, path)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_files_name ON files(name)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_files_content_hash ON files(content_hash)')
 
         # Tabla virtual FTS5 para contenido textual y nombre (para boosting básico)
         # Usamos content="" para modo external content table; manualmente mantenemos sincronización.
@@ -87,9 +130,17 @@ def register_file(file_meta: FileMeta):
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
-        INSERT OR REPLACE INTO files 
-        (file_id, name, path, size, mime_type, type, node_id, last_updated)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO files 
+        (file_id, name, path, size, mime_type, type, node_id, last_updated, content_hash)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(file_id, node_id) DO UPDATE SET
+            name=excluded.name,
+            path=excluded.path,
+            size=excluded.size,
+            mime_type=excluded.mime_type,
+            type=excluded.type,
+            last_updated=excluded.last_updated,
+            content_hash=COALESCE(excluded.content_hash, files.content_hash)
         ''', (
             file_meta.file_id, 
             file_meta.name, 
@@ -98,7 +149,8 @@ def register_file(file_meta: FileMeta):
             file_meta.mime_type, 
             file_meta.type, 
             file_meta.node_id, 
-            file_meta.last_updated
+            file_meta.last_updated,
+            getattr(file_meta, 'content_hash', None)
         ))
 
         # Indexar contenido si viene incluido

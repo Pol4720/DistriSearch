@@ -54,7 +54,8 @@ def test_central_and_distributed_coexist():
         mime_type="text/plain",
         type=FileType.DOCUMENT,
         node_id="node1",
-        last_updated=datetime.now()
+        last_updated=datetime.now(),
+        content_hash=None
     )
     database.register_file(file_meta)
     # Hacer un scan central para asegurar coexistencia
