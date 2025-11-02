@@ -1,6 +1,8 @@
 import requests
 import logging
+import os
 from typing import List, Dict
+import urllib3
 
 logger = logging.getLogger('uploader')
 
@@ -9,6 +11,16 @@ class MetadataUploader:
         self.backend_url = backend_url
         self.node_id = node_id
         self.node_name = node_name
+        
+        # Configurar verificación SSL
+        self.verify_ssl = os.getenv("VERIFY_SSL", "false").lower() not in {"false", "0", "no"}
+        
+        # Deshabilitar advertencias de SSL si no se verifica
+        if not self.verify_ssl:
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+            logger.info("Verificación SSL deshabilitada (certificados autofirmados)")
+        else:
+            logger.info("Verificación SSL habilitada")
     
     def upload_metadata(self, files_metadata: List[Dict]) -> bool:
         """
@@ -26,7 +38,8 @@ class MetadataUploader:
             logger.info(f"Enviando metadatos de {len(files_metadata)} archivos al backend")
             response = requests.post(
                 f"{self.backend_url}/register/files",
-                json=files_metadata
+                json=files_metadata,
+                verify=self.verify_ssl  # Respetar configuración SSL
             )
             
             if response.status_code == 200:
