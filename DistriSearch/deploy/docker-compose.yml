@@ -7,14 +7,29 @@ services:
       context: ../backend
     ports:
       - "8000:8000"
+      # Para HTTPS, usa 8443 (descomenta la siguiente línea y ajusta en .env)
+      - "8443:8443"
     volumes:
       - backend_data:/app/data
       - ../../central_shared:/app/central_shared
+      # Montar certificados SSL (crea la carpeta ../certs primero)
+      - ../../certs:/app/certs:ro
     environment:
       - ENVIRONMENT=development
       - CENTRAL_SHARED_FOLDER=/app/central_shared
       - CENTRAL_AUTO_SCAN=true
       - DATABASE_PATH=/app/data/distrisearch.db
+      # Configuración SSL/TLS
+      - ENABLE_SSL=${ENABLE_SSL:-false}
+      - SSL_CERT_FILE=/app/certs/distrisearch.crt
+      - SSL_KEY_FILE=/app/certs/distrisearch.key
+      # Configuración de red externa
+      - PUBLIC_URL=${PUBLIC_URL:-http://localhost:8000}
+      - EXTERNAL_IP=${EXTERNAL_IP:-}
+      - BACKEND_HOST=0.0.0.0
+      - BACKEND_PORT=${BACKEND_PORT:-8000}
+      # Seguridad
+      - ADMIN_API_KEY=${ADMIN_API_KEY:-}
     networks:
       - distrisearch_network
     restart: unless-stopped
@@ -26,7 +41,9 @@ services:
     ports:
       - "8501:8501"
     environment:
-      - DISTRISEARCH_BACKEND_URL=http://backend:8000
+      - DISTRISEARCH_BACKEND_URL=${DISTRISEARCH_BACKEND_URL:-http://backend:8000}
+      - DISTRISEARCH_BACKEND_PUBLIC_URL=${DISTRISEARCH_BACKEND_PUBLIC_URL:-http://localhost:8000}
+      - DISTRISEARCH_ADMIN_API_KEY=${DISTRISEARCH_ADMIN_API_KEY:-}
     depends_on:
       - backend
     networks:
@@ -40,10 +57,18 @@ services:
     volumes:
       - ./shared_folders/agent1:/app/shared
       - ./agent_configs/agent1.yaml:/app/config.yaml
+      # Montar certificados SSL para el agente
+      - ../../certs:/app/certs:ro
     environment:
       - NODE_ID=node1
       - NODE_NAME=Agente 1
-      - BACKEND_URL=http://backend:8000
+      - BACKEND_URL=${BACKEND_URL:-http://backend:8000}
+      - FILE_SERVER_PORT=8081
+      # SSL para agente
+      - AGENT_SSL_ENABLED=${AGENT_SSL_ENABLED:-false}
+      - AGENT_SSL_CERT_FILE=/app/certs/distrisearch.crt
+      - AGENT_SSL_KEY_FILE=/app/certs/distrisearch.key
+      - VERIFY_SSL=${VERIFY_SSL:-false}
     ports:
       - "8081:8081"
     depends_on:
@@ -59,12 +84,20 @@ services:
     volumes:
       - ./shared_folders/agent2:/app/shared
       - ./agent_configs/agent2.yaml:/app/config.yaml
+      # Montar certificados SSL para el agente
+      - ../../certs:/app/certs:ro
     environment:
       - NODE_ID=node2
       - NODE_NAME=Agente 2
-      - BACKEND_URL=http://backend:8000
+      - BACKEND_URL=${BACKEND_URL:-http://backend:8000}
+      - FILE_SERVER_PORT=8082
+      # SSL para agente
+      - AGENT_SSL_ENABLED=${AGENT_SSL_ENABLED:-false}
+      - AGENT_SSL_CERT_FILE=/app/certs/distrisearch.crt
+      - AGENT_SSL_KEY_FILE=/app/certs/distrisearch.key
+      - VERIFY_SSL=${VERIFY_SSL:-false}
     ports:
-      - "8082:8081"
+      - "8082:8082"
     depends_on:
       - backend
     networks:
