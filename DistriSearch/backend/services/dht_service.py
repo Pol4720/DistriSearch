@@ -1,4 +1,5 @@
 import os
+import sys
 import socket
 import threading
 import requests
@@ -27,6 +28,12 @@ class DHTService:
         if self.mode == "inproc":
             # Iniciar Peer en proceso actual
             try:
+                # Añadir la carpeta raíz del proyecto al PYTHONPATH para poder importar DHT
+                project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+                if project_root not in sys.path:
+                    sys.path.insert(0, project_root)
+                    logger.info("📦 Añadido al PYTHONPATH: %s", project_root)
+                
                 from DHT.peer import Peer
 
                 # Determinar IP local
@@ -36,12 +43,13 @@ class DHTService:
                 s.close()
 
                 self.peer = Peer(ip, self.port, self.buffer, self.max_bits)
-                threading.Thread(target=self.peer.start, daemon=True).start()
-                logger.info("DHT inproc: Peer iniciado en %s:%s", ip, self.port)
+                self.peer.start()
+                logger.info("✅ DHT inproc: Peer iniciado en %s:%s (ID: %s)", ip, self.port, self.peer.id)
             except Exception as exc:
-                logger.exception("Error iniciando DHT inproc: %s", exc)
+                logger.exception("❌ Error iniciando DHT inproc: %s", exc)
+                raise
         else:
-            logger.info("DHT mode external: usando %s", self.external_url)
+            logger.info("🌐 DHT mode external: usando %s", self.external_url)
 
     # --- Common operations ---
     def join(self, seed_ip: str, seed_port: int = None):

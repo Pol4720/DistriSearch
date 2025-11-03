@@ -9,6 +9,7 @@ from routes import dht
 from services import central_service
 from services import replication_service
 from services import node_service
+from services import dht_service
 import asyncio
 import logging
 
@@ -39,6 +40,26 @@ app.include_router(dht.router)
 
 @app.on_event("startup")
 async def on_startup():
+    # Auto-iniciar DHT si está habilitado por entorno
+    if os.getenv("DHT_AUTO_START", "false").lower() in {"1", "true", "yes"}:
+        try:
+            logger.info("🧩 Iniciando DHT automáticamente (DHT_AUTO_START=true)...")
+            dht_service.service.start()
+            logger.info("✅ DHT iniciada en modo: %s", dht_service.service.mode)
+            
+            # Auto-join a seed si está configurado
+            seed_ip = os.getenv("DHT_SEED_IP")
+            if seed_ip:
+                seed_port = int(os.getenv("DHT_SEED_PORT", "2000"))
+                logger.info("🔗 Uniéndose a seed DHT: %s:%s", seed_ip, seed_port)
+                try:
+                    result = dht_service.service.join(seed_ip, seed_port)
+                    logger.info("✅ Unión a red DHT completada: %s", result)
+                except Exception as join_err:
+                    logger.warning("⚠️ No se pudo unir a la red DHT: %s", join_err)
+        except Exception as e:
+            logger.warning("⚠️ Error al iniciar DHT automáticamente: %s", e)
+    
     # Auto-scan opcional del modo central si está habilitado por entorno
     if os.getenv("CENTRAL_AUTO_SCAN", "false").lower() in {"1", "true", "yes"}:
         try:
