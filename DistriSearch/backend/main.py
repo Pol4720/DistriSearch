@@ -5,6 +5,7 @@ import os
 import socket
 from routes import search, register, download
 from routes import central  # nuevo router para modo centralizado
+from routes import dht
 from services import central_service
 from services import replication_service
 from services import node_service
@@ -34,6 +35,7 @@ app.include_router(search.router)
 app.include_router(register.router)
 app.include_router(download.router)
 app.include_router(central.router)
+app.include_router(dht.router)
 
 @app.on_event("startup")
 async def on_startup():
