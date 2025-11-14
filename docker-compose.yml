@@ -1,0 +1,362 @@
+version: '3.8'
+services:
+  ipfs-node-0:
+    image: ipfs/go-ipfs:latest
+    container_name: ipfs-node-0
+    environment:
+      IPFS_PROFILE: server
+    volumes:
+    - ./data/ipfs0:/data/ipfs
+    networks:
+    - hypfs-network
+    healthcheck:
+      test:
+      - CMD
+      - ipfs
+      - id
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  ipfs-node-1:
+    image: ipfs/go-ipfs:latest
+    container_name: ipfs-node-1
+    environment:
+      IPFS_PROFILE: server
+    volumes:
+    - ./data/ipfs1:/data/ipfs
+    networks:
+    - hypfs-network
+    healthcheck:
+      test:
+      - CMD
+      - ipfs
+      - id
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  ipfs-node-2:
+    image: ipfs/go-ipfs:latest
+    container_name: ipfs-node-2
+    environment:
+      IPFS_PROFILE: server
+    volumes:
+    - ./data/ipfs2:/data/ipfs
+    networks:
+    - hypfs-network
+    healthcheck:
+      test:
+      - CMD
+      - ipfs
+      - id
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  ipfs-node-3:
+    image: ipfs/go-ipfs:latest
+    container_name: ipfs-node-3
+    environment:
+      IPFS_PROFILE: server
+    volumes:
+    - ./data/ipfs3:/data/ipfs
+    networks:
+    - hypfs-network
+    healthcheck:
+      test:
+      - CMD
+      - ipfs
+      - id
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  ipfs-node-4:
+    image: ipfs/go-ipfs:latest
+    container_name: ipfs-node-4
+    environment:
+      IPFS_PROFILE: server
+    volumes:
+    - ./data/ipfs4:/data/ipfs
+    networks:
+    - hypfs-network
+    healthcheck:
+      test:
+      - CMD
+      - ipfs
+      - id
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  ipfs-node-5:
+    image: ipfs/go-ipfs:latest
+    container_name: ipfs-node-5
+    environment:
+      IPFS_PROFILE: server
+    volumes:
+    - ./data/ipfs5:/data/ipfs
+    networks:
+    - hypfs-network
+    healthcheck:
+      test:
+      - CMD
+      - ipfs
+      - id
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  ipfs-node-6:
+    image: ipfs/go-ipfs:latest
+    container_name: ipfs-node-6
+    environment:
+      IPFS_PROFILE: server
+    volumes:
+    - ./data/ipfs6:/data/ipfs
+    networks:
+    - hypfs-network
+    healthcheck:
+      test:
+      - CMD
+      - ipfs
+      - id
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  ipfs-node-7:
+    image: ipfs/go-ipfs:latest
+    container_name: ipfs-node-7
+    environment:
+      IPFS_PROFILE: server
+    volumes:
+    - ./data/ipfs7:/data/ipfs
+    networks:
+    - hypfs-network
+    healthcheck:
+      test:
+      - CMD
+      - ipfs
+      - id
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  hypfs-node-0:
+    build: .
+    container_name: hypfs-node-0
+    depends_on:
+      ipfs-node-0:
+        condition: service_healthy
+    environment:
+      IPFS_API_URL: http://ipfs-node-0:5001
+      NODE_ID: '0'
+      NODE_PORT: '50000'
+      HYPERCUBE_ID: '000'
+    volumes:
+    - ./objects:/app/objects
+    - ./results:/app/results
+    - ./test_files:/app/test_files
+    networks:
+    - hypfs-network
+    command:
+    - python
+    - server.py
+    - '50000'
+    ports:
+    - 50000:50000
+  hypfs-node-1:
+    build: .
+    container_name: hypfs-node-1
+    depends_on:
+      ipfs-node-1:
+        condition: service_healthy
+    environment:
+      IPFS_API_URL: http://ipfs-node-1:5001
+      NODE_ID: '1'
+      NODE_PORT: '50001'
+      HYPERCUBE_ID: '001'
+    volumes:
+    - ./objects:/app/objects
+    - ./results:/app/results
+    - ./test_files:/app/test_files
+    networks:
+    - hypfs-network
+    command:
+    - python
+    - server.py
+    - '50001'
+    ports:
+    - 50001:50001
+  hypfs-node-2:
+    build: .
+    container_name: hypfs-node-2
+    depends_on:
+      ipfs-node-2:
+        condition: service_healthy
+    environment:
+      IPFS_API_URL: http://ipfs-node-2:5001
+      NODE_ID: '2'
+      NODE_PORT: '50002'
+      HYPERCUBE_ID: '010'
+    volumes:
+    - ./objects:/app/objects
+    - ./results:/app/results
+    - ./test_files:/app/test_files
+    networks:
+    - hypfs-network
+    command:
+    - python
+    - server.py
+    - '50002'
+    ports:
+    - 50002:50002
+  hypfs-node-3:
+    build: .
+    container_name: hypfs-node-3
+    depends_on:
+      ipfs-node-3:
+        condition: service_healthy
+    environment:
+      IPFS_API_URL: http://ipfs-node-3:5001
+      NODE_ID: '3'
+      NODE_PORT: '50003'
+      HYPERCUBE_ID: '011'
+    volumes:
+    - ./objects:/app/objects
+    - ./results:/app/results
+    - ./test_files:/app/test_files
+    networks:
+    - hypfs-network
+    command:
+    - python
+    - server.py
+    - '50003'
+    ports:
+    - 50003:50003
+  hypfs-node-4:
+    build: .
+    container_name: hypfs-node-4
+    depends_on:
+      ipfs-node-4:
+        condition: service_healthy
+    environment:
+      IPFS_API_URL: http://ipfs-node-4:5001
+      NODE_ID: '4'
+      NODE_PORT: '50004'
+      HYPERCUBE_ID: '100'
+    volumes:
+    - ./objects:/app/objects
+    - ./results:/app/results
+    - ./test_files:/app/test_files
+    networks:
+    - hypfs-network
+    command:
+    - python
+    - server.py
+    - '50004'
+    ports:
+    - 50004:50004
+  hypfs-node-5:
+    build: .
+    container_name: hypfs-node-5
+    depends_on:
+      ipfs-node-5:
+        condition: service_healthy
+    environment:
+      IPFS_API_URL: http://ipfs-node-5:5001
+      NODE_ID: '5'
+      NODE_PORT: '50005'
+      HYPERCUBE_ID: '101'
+    volumes:
+    - ./objects:/app/objects
+    - ./results:/app/results
+    - ./test_files:/app/test_files
+    networks:
+    - hypfs-network
+    command:
+    - python
+    - server.py
+    - '50005'
+    ports:
+    - 50005:50005
+  hypfs-node-6:
+    build: .
+    container_name: hypfs-node-6
+    depends_on:
+      ipfs-node-6:
+        condition: service_healthy
+    environment:
+      IPFS_API_URL: http://ipfs-node-6:5001
+      NODE_ID: '6'
+      NODE_PORT: '50006'
+      HYPERCUBE_ID: '110'
+    volumes:
+    - ./objects:/app/objects
+    - ./results:/app/results
+    - ./test_files:/app/test_files
+    networks:
+    - hypfs-network
+    command:
+    - python
+    - server.py
+    - '50006'
+    ports:
+    - 50006:50006
+  hypfs-node-7:
+    build: .
+    container_name: hypfs-node-7
+    depends_on:
+      ipfs-node-7:
+        condition: service_healthy
+    environment:
+      IPFS_API_URL: http://ipfs-node-7:5001
+      NODE_ID: '7'
+      NODE_PORT: '50007'
+      HYPERCUBE_ID: '111'
+    volumes:
+    - ./objects:/app/objects
+    - ./results:/app/results
+    - ./test_files:/app/test_files
+    networks:
+    - hypfs-network
+    command:
+    - python
+    - server.py
+    - '50007'
+    ports:
+    - 50007:50007
+  hops-counter:
+    build: .
+    container_name: hops-counter
+    command:
+    - python
+    - hops_counter.py
+    networks:
+    - hypfs-network
+    ports:
+    - 5000:5000
+  controller:
+    build: .
+    container_name: hypfs-controller
+    depends_on:
+    - hypfs-node-0
+    - hypfs-node-1
+    - hypfs-node-2
+    - hypfs-node-3
+    - hypfs-node-4
+    - hypfs-node-5
+    - hypfs-node-6
+    - hypfs-node-7
+    - hops-counter
+    environment:
+      IPFS_API_URL: http://ipfs-node-0:5001
+    volumes:
+    - ./objects:/app/objects
+    - ./results:/app/results
+    - ./test_files:/app/test_files
+    networks:
+    - hypfs-network
+    stdin_open: true
+    tty: true
+    command:
+    - python
+    - menu.py
+networks:
+  hypfs-network:
+    driver: bridge
+volumes: {}
