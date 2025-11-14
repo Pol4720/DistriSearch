@@ -1,4 +1,5 @@
 import ipfshttpclient
+import os
 
 from src.config import SUPERSET_THRESHOLD
 from src.utils import *
@@ -8,10 +9,19 @@ DOWNLOAD_FOLDER = './objects'
 
 class Client:
     def __init__(self, addr, server):
-        self.ipfs = ipfshttpclient.connect(addr)
+        # Soportar tanto multiaddr como URL http
+        ipfs_api = os.getenv('IPFS_API_URL', addr)
+        
+        # Si es una URL http simple, usar directamente
+        if ipfs_api.startswith('http://'):
+            self.ipfs = ipfshttpclient.connect(ipfs_api)
+        else:
+            # Usar multiaddr tradicional
+            self.ipfs = ipfshttpclient.connect(ipfs_api)
+            
         self.id = self.ipfs.id()['ID']
         self.server = server
-        log(self.id, 'CONNECTION', '{}'.format(addr))
+        log(self.id, 'CONNECTION', '{}'.format(ipfs_api))
 
     def add_obj(self, path, keyword):
         obj_hash = self.ipfs.add(path)['Hash']

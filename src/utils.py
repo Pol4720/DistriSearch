@@ -1,5 +1,6 @@
 from datetime import datetime
 import requests
+import os
 
 from src.config import LOCAL_HOST, HYPERCUBE_SIZE, INIT_PORT, HOP_SERVER_PORT
 
@@ -15,20 +16,44 @@ GET_HOPS = '/get_hops'
 
 def request(neighbor, operation, params={}):
     increase_hops()
-    url = "http://{}:{}{}".format(LOCAL_HOST, str(get_decimal(neighbor) + INIT_PORT), operation)
+    
+    # Soporte para networking Docker: usar hostname del contenedor si está disponible
+    node_id = get_decimal(neighbor)
+    if os.getenv('DOCKER_MODE', 'false').lower() == 'true':
+        host = f'hypfs-node-{node_id}'
+    else:
+        host = LOCAL_HOST
+    
+    url = "http://{}:{}{}".format(host, str(node_id + INIT_PORT), operation)
     return requests.get(url=url, params=params)
 
 
 def increase_hops():
-    requests.get(url="http://{}:{}{}".format(LOCAL_HOST, HOP_SERVER_PORT, INCREASE_HOPS))
+    # Soporte para hops counter en Docker
+    if os.getenv('DOCKER_MODE', 'false').lower() == 'true':
+        host = 'hops-counter'
+    else:
+        host = LOCAL_HOST
+        
+    requests.get(url="http://{}:{}{}".format(host, HOP_SERVER_PORT, INCREASE_HOPS))
 
 
 def reset_hops():
-    requests.get(url="http://{}:{}{}".format(LOCAL_HOST, HOP_SERVER_PORT, RESET_HOPS))
+    if os.getenv('DOCKER_MODE', 'false').lower() == 'true':
+        host = 'hops-counter'
+    else:
+        host = LOCAL_HOST
+        
+    requests.get(url="http://{}:{}{}".format(host, HOP_SERVER_PORT, RESET_HOPS))
 
 
 def get_hops():
-    return int(requests.get(url="http://{}:{}{}".format(LOCAL_HOST, HOP_SERVER_PORT, GET_HOPS)).text) - 1
+    if os.getenv('DOCKER_MODE', 'false').lower() == 'true':
+        host = 'hops-counter'
+    else:
+        host = LOCAL_HOST
+        
+    return int(requests.get(url="http://{}:{}{}".format(host, HOP_SERVER_PORT, GET_HOPS)).text) - 1
 
 
 def create_binary_id(n):
