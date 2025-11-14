@@ -1,8 +1,0 @@
-node_id: "node2"
-node_name: "Agente 2"
-node_ip: "agent2"
-server_port: 8081
-shared_folder: "/app/shared"
-backend_url: "http://backend:8000"
-scan_interval_seconds: 60
-heartbeat_interval_seconds: 30
