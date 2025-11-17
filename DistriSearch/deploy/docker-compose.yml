@@ -1,6 +1,28 @@
 version: '3.8'
 
 services:
+  # DHT Service (Distributed Hash Table)
+  dht:
+    build:
+      context: ../../DHT
+      dockerfile: Dockerfile
+    container_name: distrisearch-dht
+    ports:
+      - "8080:8080"  # HTTP API (Flask)
+      - "2000:2000"  # Peer P2P Socket
+    environment:
+      - PORT=2000
+      - MAX_BITS=10
+    networks:
+      - distrisearch_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8080/server/rest/DHT/imprimirSucPred', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
   # API Backend
   backend:
     build: 
@@ -30,6 +52,15 @@ services:
       - BACKEND_PORT=${BACKEND_PORT:-8000}
       # Seguridad
       - ADMIN_API_KEY=${ADMIN_API_KEY:-}
+      # DHT Configuration
+      - DHT_AUTO_START=${DHT_AUTO_START:-true}
+      - DHT_MODE=${DHT_MODE:-external}
+      - DHT_HTTP_URL=${DHT_HTTP_URL:-http://dht:8080}
+      - DHT_PORT=2000
+      - DHT_SEED_IP=${DHT_SEED_IP:-}
+      - DHT_SEED_PORT=${DHT_SEED_PORT:-2000}
+    depends_on:
+      - dht
     networks:
       - distrisearch_network
     restart: unless-stopped
