@@ -151,3 +151,53 @@ class ApiClient:
         )
         response.raise_for_status()
         return response.json()
+
+    # --- DHT helpers ---
+    def dht_start(self) -> Dict:
+        """Inicia el servicio DHT en modo inproc si está habilitado."""
+        response = requests.post(
+            f"{self.base_url}/dht/start",
+            headers=self.headers or None,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def dht_join(self, seed_ip: str, seed_port: Optional[int] = None) -> Dict:
+        params = {"seed_ip": seed_ip}
+        if seed_port:
+            params["seed_port"] = seed_port
+        response = requests.post(
+            f"{self.base_url}/dht/join",
+            params=params,
+            headers=self.headers or None,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def dht_upload(self, filename: str, data: str) -> Dict:
+        response = requests.post(
+            f"{self.base_url}/dht/upload",
+            params={"filename": filename, "data": data},
+            headers=self.headers or None,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def dht_download(self, filename: str) -> Dict:
+        response = requests.post(
+            f"{self.base_url}/dht/download",
+            params={"filename": filename},
+            headers=self.headers or None,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def dht_finger(self) -> Dict:
+        response = requests.get(f"{self.base_url}/dht/finger", headers=self.headers or None)
+        response.raise_for_status()
+        return response.json()
+
+    def dht_sucpred(self) -> Dict:
+        response = requests.get(f"{self.base_url}/dht/sucpred", headers=self.headers or None)
+        response.raise_for_status()
+        return response.json()

@@ -2,6 +2,7 @@ from aiohttp import web
 import os
 import logging
 import hashlib
+import ssl
 
 logger = logging.getLogger('file_server')
 
@@ -57,7 +58,7 @@ async def handle_status(request):
 
 def start_file_server(shared_folder, port):
     """
-    Inicia el servidor HTTP para servir archivos
+    Inicia el servidor HTTP/HTTPS para servir archivos
     """
     app = web.Application()
     app['shared_folder'] = shared_folder
@@ -68,6 +69,25 @@ def start_file_server(shared_folder, port):
     app.router.add_get('/status', handle_status)
     app.router.add_get('/files/{file_id}', handle_file_download)
     
+    # Configuración SSL/TLS
+    ssl_enabled = os.getenv("AGENT_SSL_ENABLED", "false").lower() in {"true", "1", "yes"}
+    ssl_context = None
+    
+    if ssl_enabled:
+        ssl_certfile = os.getenv("AGENT_SSL_CERT_FILE", "../certs/distrisearch.crt")
+        ssl_keyfile = os.getenv("AGENT_SSL_KEY_FILE", "../certs/distrisearch.key")
+        
+        if os.path.exists(ssl_certfile) and os.path.exists(ssl_keyfile):
+            ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+            ssl_context.load_cert_chain(ssl_certfile, ssl_keyfile)
+            logger.info(f"SSL habilitado con certificado: {ssl_certfile}")
+        else:
+            logger.warning(f"SSL habilitado pero certificados no encontrados. Usando HTTP.")
+            logger.warning(f"Certificado esperado: {ssl_certfile}")
+            logger.warning(f"Clave esperada: {ssl_keyfile}")
+    
     # Iniciar servidor
-    logger.info(f"Iniciando servidor de archivos en puerto {port}")
-    web.run_app(app, host='0.0.0.0', port=port)
+    protocol = "HTTPS" if ssl_context else "HTTP"
+    logger.info(f"Iniciando servidor de archivos {protocol} en puerto {port}")
+    
+    web.run_app(app, host='0.0.0.0', port=port, ssl_context=ssl_context)
