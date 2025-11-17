@@ -7,6 +7,7 @@ import database
 import os
 import mimetypes
 from services.central_service import _hash_file, _categorize, _extract_text_for_central
+from services.central_service import _instance_id
 from datetime import datetime
 from security import require_api_key
 
@@ -96,7 +97,7 @@ async def import_from_node_folder(node_id: str, _: None = Depends(require_api_ke
                     mime = 'application/octet-stream'
                 rel = os.path.relpath(full, abspath)
                 fm = FileMeta(
-                    file_id=_hash_file(full),
+                    file_id=_instance_id(node_id, rel),
                     name=fname,
                     path=rel,
                     size=os.path.getsize(full),
@@ -104,7 +105,8 @@ async def import_from_node_folder(node_id: str, _: None = Depends(require_api_ke
                     type=_categorize(mime),
                     node_id=node_id,
                     last_updated=datetime.fromtimestamp(os.path.getmtime(full)),
-                    content=_extract_text_for_central(full, mime)
+                    content=_extract_text_for_central(full, mime),
+                    content_hash=_hash_file(full)
                 )
                 database.register_file(fm)
                 count += 1
@@ -141,7 +143,7 @@ async def sync_node_folder(node_id: str, _: None = Depends(require_api_key)):
                 if not mime:
                     mime = 'application/octet-stream'
                 rel = os.path.relpath(full, abspath)
-                fid = _hash_file(full)
+                fid = _instance_id(node_id, rel)
                 current_ids.add(fid)
                 fm = FileMeta(
                     file_id=fid,
@@ -152,7 +154,8 @@ async def sync_node_folder(node_id: str, _: None = Depends(require_api_key)):
                     type=_categorize(mime),
                     node_id=node_id,
                     last_updated=datetime.fromtimestamp(os.path.getmtime(full)),
-                    content=_extract_text_for_central(full, mime)
+                    content=_extract_text_for_central(full, mime),
+                    content_hash=_hash_file(full)
                 )
                 database.register_file(fm)
                 imported += 1

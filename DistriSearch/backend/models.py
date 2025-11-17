@@ -16,7 +16,8 @@ class NodeStatus(str, enum.Enum):
     UNKNOWN = "unknown"
 
 class FileMeta(BaseModel):
-    file_id: str  # SHA256 hash del archivo
+    # Identificador único de instancia del fichero (estable por nodo+path)
+    file_id: str
     name: str
     path: str
     size: int  # En bytes
@@ -26,6 +27,8 @@ class FileMeta(BaseModel):
     last_updated: datetime = Field(default_factory=datetime.now)
     # Contenido textual (opcional, truncado para indexación full-text). No se persiste en la tabla principal.
     content: Optional[str] = None
+    # Hash del contenido (opcional). Puede omitirse en ficheros muy grandes para evitar coste.
+    content_hash: Optional[str] = None
 
 class NodeInfo(BaseModel):
     node_id: str
