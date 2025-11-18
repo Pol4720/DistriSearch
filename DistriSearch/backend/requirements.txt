@@ -10,3 +10,5 @@ PyPDF2
 python-docx
 pandas
 openpyxl
+passlib[pbkdf2]
+python-jose[cryptography]

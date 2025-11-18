@@ -5,6 +5,7 @@ import html as _html
 from urllib.parse import urlparse
 from utils.api_client import ApiClient
 from components.styles import inject_css
+from pages import AuthManager, TaskManager
 
 st.set_page_config(page_title="DistriSearch", page_icon="🔎", layout="wide")
 
@@ -31,7 +32,10 @@ def api_client():
         api_key = st.secrets.get("admin_api_key", api_key)  # type: ignore
     except Exception:
         pass
-    return ApiClient(url, api_key=api_key)
+
+    # Auth token from session state
+    auth_token = st.session_state.get('auth_token')
+    return ApiClient(url, api_key=api_key, auth_token=auth_token)
 
 api = api_client()
 
@@ -44,12 +48,16 @@ ss.setdefault('search_df', None)        # DataFrame for display
 ss.setdefault('nodes_map', {})
 ss.setdefault('selected_file_id', None)
 ss.setdefault('last_download_url', None)
+ss.setdefault('auth_token', None)
+ss.setdefault('current_user', None)
+ss.setdefault('show_register', False)
+ss.setdefault('current_page', 'search')  # 'search' or 'tasks'
 
 # Inject CSS based on current theme
 inject_css(theme=ss['theme'])
 
-# Theme toggle
-top_left, top_mid, top_right = st.columns([1,6,1])
+# Theme toggle and navigation
+top_left, top_mid, top_right = st.columns([1,4,2])
 with top_left:
     logo_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'assets', 'logo.png'))
     if os.path.isfile(logo_path):
@@ -58,100 +66,145 @@ with top_mid:
     st.markdown("## DistriSearch")
     st.caption("Búsqueda distribuida y modo centralizado")
 with top_right:
-    if st.button('🌗 Tema'):
-        ss.theme = 'light' if ss.theme == 'dark' else 'dark'
-        st.rerun()
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button('🌗 Tema'):
+            ss.theme = 'light' if ss.theme == 'dark' else 'dark'
+            st.rerun()
+    with col2:
+        if ss.get('auth_token'):
+            if st.button('🚪 Cerrar Sesión'):
+                ss.auth_token = None
+                ss.current_user = None
+                ss.current_page = 'search'
+                st.rerun()
+        else:
+            if st.button('🔐 Iniciar Sesión'):
+                ss.current_page = 'auth'
+                st.rerun()
 
-mode_col1, mode_col2 = st.columns([2,8])
-with mode_col1:
-    ss.ui_mode = st.radio("Modo", ["Distribuido","Centralizado"], horizontal=True, index=["Distribuido","Centralizado"].index(ss.ui_mode))
-with mode_col2:
-    st.write("")
+# Navigation tabs
+if ss.get('auth_token'):
+    nav_options = ["Buscar", "📋 Mis Tareas"]
+    if ss.current_page not in ['search', 'tasks']:
+        ss.current_page = 'search'
+else:
+    nav_options = ["Buscar"]
+    if ss.current_page == 'tasks':
+        ss.current_page = 'search'
 
-# Build tabs dynamically depending on mode
-tab_names = ["Buscar"]
-if ss.ui_mode == "Distribuido":
-    tab_names.append("Nodos")
-tab_names.extend(["Central","Estadísticas"])
-tabs = st.tabs(tab_names)
-ti = {name: i for i, name in enumerate(tab_names)}
+nav_tabs = st.tabs(nav_options)
+nav_idx = 0 if ss.current_page == 'search' else 1
 
-# ---------------------------- TAB: Buscar -----------------------------------
-with tabs[ti["Buscar"]]:
-    query_col, type_col, btn_col = st.columns([5,2,1])
-    query = query_col.text_input("Consulta", placeholder="Nombre, término o contenido...")
-    tipo = type_col.selectbox("Tipo", ["Todos","Documentos","Imágenes","Videos","Audio","Otros"], index=0)
-    buscar = btn_col.button("Buscar")
+# Main navigation logic
+if ss.get('auth_token'):
+    # User is authenticated
+    with nav_tabs[0]:  # Search
+        ss.current_page = 'search'
+        show_search_interface()
 
-    # Execute search on click and persist in session
-    if buscar and query:
-        mapping = {"Documentos":"document","Imágenes":"image","Videos":"video","Audio":"audio","Otros":"other"}
-        tipo_api = mapping.get(tipo) if tipo != 'Todos' else None
-        with st.spinner("Buscando..."):
+    with nav_tabs[1]:  # Tasks
+        ss.current_page = 'tasks'
+        task_manager = TaskManager(api)
+        task_manager.dashboard()
+else:
+    # User not authenticated - show auth or search
+    if ss.current_page == 'auth':
+        auth_manager = AuthManager(api)
+        if ss.get('show_register', False):
+            result = auth_manager.register_page()
+        else:
+            result = auth_manager.login_page()
+
+        if result and 'access_token' in result:
+            ss.auth_token = result['access_token']
             try:
-                result = api.search_files(query, tipo_api)
-                ss.search_results = result
-                files = result.get('files', [])
-                nodes_map = {n['node_id']: n for n in result.get('nodes_available', [])}
-                ss.nodes_map = nodes_map
-                rows = []
-                for f in files:
-                    node = nodes_map.get(f['node_id'], {'name':'?','status':'unknown'})
-                    rows.append({
-                        'Nombre': f['name'],
-                        'Tipo': f['type'],
-                        'Tamaño': _format_size(f.get('size',0)),
-                        'Nodo': node.get('name'),
-                        'Estado': node.get('status'),
-                        'ID': f['file_id']
-                    })
-                ss.search_df = pd.DataFrame(rows) if rows else pd.DataFrame()
-                ss.selected_file_id = None
-                ss.last_download_url = None
+                ss.current_user = api.get_current_user()
+                ss.current_page = 'search'
+                st.rerun()
             except Exception as e:
-                st.error(f"Error al buscar: {e}")
-                ss.search_results = None
-                ss.search_df = None
-
-    # Render from persisted state
-    if ss.search_df is not None and not ss.search_df.empty:
-        st.success(f"{len(ss.search_df)} resultados")
-
-        # Compute a public backend base for browser links
-        public_base = os.getenv("DISTRISEARCH_BACKEND_PUBLIC_URL")
-        if not public_base:
-            try:
-                u = urlparse(api.base_url)
-                host = u.hostname or "localhost"
-                port = u.port or 8000
-                if host in {"backend", "backend.local", "backend.docker"}:
-                    host = "localhost"
-                public_base = f"{u.scheme}://{host}:{port}"
-            except Exception:
-                public_base = "http://localhost:8000"
-        public_base = public_base.rstrip('/')
-
-        render_df = ss.search_df[['Nombre','Tipo','Tamaño','Nodo','Estado']].copy()
-        render_df['Descargar'] = [f"{public_base}/download/file/{fid}" for fid in ss.search_df['ID']]
-
-        try:
-            st.dataframe(
-                render_df,
-                hide_index=True,
-                use_container_width=True,
-                column_config={
-                    "Descargar": st.column_config.LinkColumn("Descargar", display_text="⬇️")
-                }
-            )
-        except Exception:
-            # Fallback if LinkColumn isn't available
-            st.dataframe(render_df, hide_index=True, use_container_width=True)
+                st.error(f"Error al obtener información del usuario: {str(e)}")
+                ss.auth_token = None
     else:
-        st.info("Ingresa una consulta y pulsa Buscar")
+        # Show search interface for guests
+        with nav_tabs[0]:
+            show_search_interface()
 
-# ---------------------------- TAB: Nodos ------------------------------------
-if "Nodos" in ti:
-    with tabs[ti["Nodos"]]:
+def show_search_interface():
+    """Muestra la interfaz de búsqueda."""
+    mode_col1, mode_col2 = st.columns([2,8])
+    with mode_col1:
+        ss.ui_mode = st.radio("Modo", ["Distribuido","Centralizado"], horizontal=True, index=["Distribuido","Centralizado"].index(ss.ui_mode))
+    with mode_col2:
+        st.write("")
+
+    # Build tabs dynamically depending on mode
+    tab_names = ["Buscar"]
+    if ss.ui_mode == "Distribuido":
+        tab_names.append("Nodos")
+    tab_names.extend(["Central","Estadísticas"])
+    tabs = st.tabs(tab_names)
+    ti = {name: i for i, name in enumerate(tab_names)}
+
+    # ---------------------------- TAB: Buscar -----------------------------------
+    with tabs[ti["Buscar"]]:
+        query_col, type_col, btn_col = st.columns([5,2,1])
+        query = query_col.text_input("Consulta", placeholder="Nombre, término o contenido...")
+        tipo = type_col.selectbox("Tipo", ["Todos","Documentos","Imágenes","Videos","Audio","Otros"], index=0)
+        buscar = btn_col.button("Buscar")
+
+        # Execute search on click and persist in session
+        if buscar and query:
+            mapping = {"Documentos":"document","Imágenes":"image","Videos":"video","Audio":"audio","Otros":"other"}
+            tipo_api = mapping.get(tipo) if tipo != 'Todos' else None
+            with st.spinner("Buscando..."):
+                try:
+                    result = api.search_files(query, tipo_api)
+                    ss.search_results = result
+                    files = result.get('files', [])
+                    nodes_map = {n['node_id']: n for n in result.get('nodes_available', [])}
+                    ss.nodes_map = nodes_map
+                    rows = []
+                    for f in files:
+                        node = nodes_map.get(f['node_id'], {'name':'?','status':'unknown'})
+                        rows.append({
+                            'Nombre': f['name'],
+                            'Tamaño': _format_size(f['size']),
+                            'Tipo': f['type'],
+                            'Nodo': node['name'],
+                            'Estado': node['status'],
+                            'ID': f['file_id']
+                        })
+                    ss.search_df = pd.DataFrame(rows)
+                except Exception as e:
+                    st.error(f"Error en búsqueda: {str(e)}")
+
+        # Display results
+        if ss.search_df is not None and not ss.search_df.empty:
+            st.markdown(f"### Resultados ({len(ss.search_df)})")
+            st.dataframe(
+                ss.search_df.drop(columns=['ID']),
+                use_container_width=True,
+                hide_index=True
+            )
+
+            # Download section
+            if ss.selected_file_id:
+                st.markdown("### Descarga")
+                try:
+                    download_info = api.get_download_url(ss.selected_file_id)
+                    if download_info.get('download_url'):
+                        st.markdown(f"[📥 Descargar archivo]({download_info['download_url']})")
+                    if download_info.get('direct_node_url'):
+                        st.markdown(f"[🔗 URL directa del nodo]({download_info['direct_node_url']})")
+                except Exception as e:
+                    st.error(f"Error al obtener URL de descarga: {str(e)}")
+        elif buscar:
+            st.info("No se encontraron resultados.")
+
+    # Continue with other tabs...
+    if ss.ui_mode == "Distribuido":
+        with tabs[ti["Nodos"]]:
         st.markdown("### Gestión de nodos")
         with st.expander("Añadir nodo", expanded=True):
             c1,c2,c3,c4 = st.columns(4)

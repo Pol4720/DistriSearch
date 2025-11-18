@@ -4,11 +4,13 @@ from typing import Dict, List, Optional
 class ApiClient:
     """Cliente para interactuar con la API del backend"""
 
-    def __init__(self, base_url: str, api_key: Optional[str] = None):
+    def __init__(self, base_url: str, api_key: Optional[str] = None, auth_token: Optional[str] = None):
         self.base_url = base_url.rstrip('/')
         self.headers = {}
         if api_key:
             self.headers["X-API-KEY"] = api_key
+        if auth_token:
+            self.headers["Authorization"] = f"Bearer {auth_token}"
     
     def search_files(self, query: str, file_type: Optional[str] = None, max_results: int = 50) -> Dict:
         """
@@ -130,6 +132,75 @@ class ApiClient:
         """Obtiene estado de modos centralizado/distribuido."""
         response = requests.get(
             f"{self.base_url}/central/mode",
+            headers=self.headers or None,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    # --- Authentication methods ---
+    def register_user(self, username: str, email: str, password: str) -> Dict:
+        """Registra un nuevo usuario."""
+        response = requests.post(
+            f"{self.base_url}/auth/register",
+            json={"username": username, "email": email, "password": password},
+            headers=self.headers or None,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def login_user(self, username: str, password: str) -> Dict:
+        """Inicia sesión y obtiene token."""
+        response = requests.post(
+            f"{self.base_url}/auth/login",
+            data={"username": username, "password": password},
+            headers=self.headers or None,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def get_current_user(self) -> Dict:
+        """Obtiene información del usuario actual."""
+        response = requests.get(
+            f"{self.base_url}/auth/me",
+            headers=self.headers or None,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    # --- Task management methods ---
+    def create_task(self, title: str, description: Optional[str] = None) -> Dict:
+        """Crea una nueva tarea."""
+        response = requests.post(
+            f"{self.base_url}/tasks/",
+            json={"title": title, "description": description},
+            headers=self.headers or None,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def get_user_tasks(self) -> List[Dict]:
+        """Obtiene todas las tareas del usuario."""
+        response = requests.get(
+            f"{self.base_url}/tasks/",
+            headers=self.headers or None,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def update_task(self, task_id: int, status: str) -> Dict:
+        """Actualiza el estado de una tarea."""
+        response = requests.put(
+            f"{self.base_url}/tasks/{task_id}",
+            json={"status": status},
+            headers=self.headers or None,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def delete_task(self, task_id: int) -> Dict:
+        """Elimina una tarea."""
+        response = requests.delete(
+            f"{self.base_url}/tasks/{task_id}",
             headers=self.headers or None,
         )
         response.raise_for_status()

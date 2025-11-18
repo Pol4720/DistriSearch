@@ -4,9 +4,11 @@ import uvicorn
 import os
 from routes import search, register, download
 from routes import central  # nuevo router para modo centralizado
+from routes import auth, tasks  # nuevos routers para autenticación y tareas
 from services import central_service
 from services import replication_service
 from services import node_service
+from user_database import init_user_db  # inicialización de la base de datos de usuarios
 import asyncio
 
 app = FastAPI(
@@ -29,9 +31,14 @@ app.include_router(search.router)
 app.include_router(register.router)
 app.include_router(download.router)
 app.include_router(central.router)
+app.include_router(auth.router)
+app.include_router(tasks.router)
 
 @app.on_event("startup")
 async def on_startup():
+    # Inicializar base de datos de usuarios
+    init_user_db()
+
     # Auto-scan opcional del modo central si está habilitado por entorno
     if os.getenv("CENTRAL_AUTO_SCAN", "false").lower() in {"1", "true", "yes"}:
         try:
@@ -72,4 +79,24 @@ async def health_check():
     return {"status": "healthy"}
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    # Configuración SSL para HTTPS
+    ssl_keyfile = os.getenv("SSL_KEYFILE")
+    ssl_certfile = os.getenv("SSL_CERTFILE")
+
+    uvicorn_kwargs = {
+        "app": "main:app",
+        "host": "0.0.0.0",
+        "port": 8000,
+        "reload": True
+    }
+
+    if ssl_keyfile and ssl_certfile:
+        uvicorn_kwargs.update({
+            "ssl_keyfile": ssl_keyfile,
+            "ssl_certfile": ssl_certfile
+        })
+        print("Running with HTTPS enabled")
+    else:
+        print("Running with HTTP (set SSL_KEYFILE and SSL_CERTFILE env vars for HTTPS)")
+
+    uvicorn.run(**uvicorn_kwargs)
