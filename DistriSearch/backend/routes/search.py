@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 from typing import List, Optional
 from models import SearchQuery, SearchResult, FileType
 from services import index_service, node_service
-import DistriSearch.backend.database_viejo as database_viejo
+import database as database_viejo
 
 router = APIRouter(
     prefix="/search",

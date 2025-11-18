@@ -6,7 +6,7 @@ from typing import Optional
 import httpx
 
 from services.central_service import CENTRAL_NODE_ID, resolve_central_file_path
-import DistriSearch.backend.database_viejo as database_viejo
+import DistriSearch.backend.database as database_viejo
 from models import DownloadRequest
 from services import node_service, index_service
 

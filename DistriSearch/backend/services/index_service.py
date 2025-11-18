@@ -1,6 +1,6 @@
 from typing import List, Dict, Optional
 from models import FileMeta, SearchQuery, SearchResult, NodeInfo
-import DistriSearch.backend.database_viejo as database_viejo
+import database as database_viejo
 from services import node_service
 
 def register_files(files: List[FileMeta]) -> int:
