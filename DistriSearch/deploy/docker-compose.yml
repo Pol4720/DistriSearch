@@ -1,32 +1,11 @@
 version: '3.8'
 
 services:
-  # DHT Service (Distributed Hash Table)
-  dht:
-    build:
-      context: ../../DHT
-      dockerfile: Dockerfile
-    container_name: distrisearch-dht
-    ports:
-      - "8080:8080"  # HTTP API (Flask)
-      - "2000:2000"  # Peer P2P Socket
-    environment:
-      - PORT=2000
-      - MAX_BITS=10
-    networks:
-      - distrisearch_network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8080/server/rest/DHT/imprimirSucPred', timeout=5)"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-
   # API Backend
   backend:
     build:
       context: ../backend
+    platform: linux/amd64
     ports:
       - "8000:8000"
       - "8443:8443"
@@ -47,17 +26,10 @@ services:
       - BACKEND_HOST=0.0.0.0
       - BACKEND_PORT=${BACKEND_PORT:-8000}
       - ADMIN_API_KEY=${ADMIN_API_KEY:-}
-      - DHT_AUTO_START=${DHT_AUTO_START:-true}
-      - DHT_MODE=${DHT_MODE:-external}
-      - DHT_HTTP_URL=${DHT_HTTP_URL:-http://dht:8080}
-      - DHT_PORT=2000
-      - DHT_SEED_IP=${DHT_SEED_IP:-}
-      - DHT_SEED_PORT=${DHT_SEED_PORT:-2000}
       # MONGO URI para replicaset (notar ?replicaSet=rs0)
       - MONGO_URI=mongodb://mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0
       - MONGO_DBNAME=${MONGO_DBNAME:-distrisearch}
     depends_on:
-      - dht
       - mongo1
       - mongo2
       - mongo3
@@ -187,7 +159,7 @@ services:
 
   # Inicia el replica set (solo ejecuta el script y sale)
   mongo-init:
-    image: mongo:6.0
+    image: mongo:6.0.8
     container_name: distrisearch-mongo-init
     depends_on:
       - mongo1
