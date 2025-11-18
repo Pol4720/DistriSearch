@@ -16,7 +16,7 @@ from datetime import datetime
 from typing import Dict, List, Optional
 
 from models import FileMeta, NodeInfo, NodeStatus
-import DistriSearch.backend.database as database_viejo
+import database as database_viejo
 from services import index_service, node_service
 
 CENTRAL_NODE_ID = "central"
