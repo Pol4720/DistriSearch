@@ -4,7 +4,9 @@ services:
   # API Backend
   backend:
     build:
-      context: ../backend
+      context: ..
+      dockerfile: ./backend/Dockerfile
+    image: deploy-backend:latest
     platform: linux/amd64
     ports:
       - "8000:8000"
@@ -29,6 +31,7 @@ services:
       # MONGO URI para replicaset (notar ?replicaSet=rs0)
       - MONGO_URI=mongodb://mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0
       - MONGO_DBNAME=${MONGO_DBNAME:-distrisearch}
+      - PYTHONPATH=/app
     depends_on:
       - mongo1
       - mongo2

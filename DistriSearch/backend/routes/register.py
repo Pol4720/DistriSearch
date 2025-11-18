@@ -3,7 +3,7 @@ from fastapi import Depends, Request
 from typing import List
 from models import FileMeta, NodeInfo
 from services import index_service, node_service
-import DistriSearch.backend.database as database_viejo
+import database as database_viejo
 import os
 import mimetypes
 from services.central_service import _hash_file, _categorize, _extract_text_for_central

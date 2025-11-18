@@ -1,6 +1,6 @@
 from typing import Dict, List, Optional
 from models import NodeInfo, NodeStatus
-import DistriSearch.backend.database_viejo as database_viejo
+import database as database_viejo
 from datetime import datetime, timedelta
 
 def register_node(node: NodeInfo) -> Dict:

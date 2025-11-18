@@ -19,7 +19,7 @@ import logging
 import httpx
 from typing import List, Dict
 
-import DistriSearch.backend.database_viejo as database_viejo
+import DistriSearch.backend.database as database_viejo
 from services.central_service import CENTRAL_NODE_ID, index_central_folder
 
 logger = logging.getLogger("replication")
