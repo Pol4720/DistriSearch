@@ -69,6 +69,7 @@ def check_node_timeouts():
             WHERE status = ?
               AND last_seen < ?
               AND node_id NOT IN (SELECT node_id FROM node_mounts)
+                            AND node_id != 'central'
             """,
             (
                 NodeStatus.OFFLINE.value,

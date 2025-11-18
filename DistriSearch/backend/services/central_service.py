@@ -38,12 +38,30 @@ def _ensure_central_node(name: str = "Repositorio Central", port: int = 8000):
     database.register_node(node)
     return database.get_node(CENTRAL_NODE_ID)
 
-def _hash_file(path: str) -> str:
+def _hash_file(path: str, max_bytes: int = 64 * 1024 * 1024) -> str:
+    """Calcula SHA-256 del archivo hasta max_bytes (64MB por defecto) para acotar coste.
+
+    Nota: para ficheros enormes, calcular el hash completo puede ser costoso; este helper permite
+    limitar el coste. El resultado se usa como content_hash (indicador de posibles duplicados), no
+    como identificador de instancia.
+    """
     sha256 = hashlib.sha256()
+    total = 0
     with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(8192), b""):
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
             sha256.update(chunk)
+            total += len(chunk)
+            if max_bytes and total >= max_bytes:
+                break
     return sha256.hexdigest()
+
+def _instance_id(node_id: str, rel_path: str) -> str:
+    """Genera un ID estable por instancia basado en node_id + ruta relativa.
+
+    Esto garantiza un identificador único por fichero en un nodo sin requerir hash de contenido.
+    """
+    base = f"{node_id}:{rel_path}"
+    return hashlib.sha256(base.encode("utf-8")).hexdigest()
 
 def _categorize(mime_type: str) -> str:
     if mime_type.startswith("image/"):
@@ -87,8 +105,13 @@ def scan_folder(folder_path: str) -> List[Dict]:
                     mime_type = "application/octet-stream"
                 rel_path = os.path.relpath(full_path, folder_path)
                 text_content = _extract_text_for_central(full_path, mime_type)
+                # content_hash opcional (truncado por coste). No es el ID primario.
+                try:
+                    chash = _hash_file(full_path)
+                except Exception:
+                    chash = None
                 results.append({
-                    "file_id": _hash_file(full_path),
+                    "file_id": _instance_id(CENTRAL_NODE_ID, rel_path),
                     "name": fname,
                     "path": rel_path,
                     "size": os.path.getsize(full_path),
@@ -96,6 +119,7 @@ def scan_folder(folder_path: str) -> List[Dict]:
                     "type": _categorize(mime_type),
                     "last_updated": datetime.fromtimestamp(os.path.getmtime(full_path)),
                     "content": text_content,
+                    "content_hash": chash,
                 })
             except Exception as e:
                 logger.warning(f"No se pudo procesar archivo '{full_path}': {e}")
@@ -127,7 +151,8 @@ def index_central_folder(folder_path: Optional[str] = None) -> Dict:
             type=meta["type"],
             node_id=CENTRAL_NODE_ID,
             last_updated=meta["last_updated"],
-            content=meta.get("content")
+            content=meta.get("content"),
+            content_hash=meta.get("content_hash")
         )
         database.register_file(fm)
         count += 1
@@ -169,9 +194,10 @@ def get_mode() -> Dict:
     }
 
 def resolve_central_file_path(file_id: str, base_folder: Optional[str] = None) -> Optional[str]:
-    """Given a file_id returns the absolute path if it belongs to central node.
+    """Dado un ID de instancia (central), devuelve la ruta absoluta si pertenece al nodo central.
 
-    This queries DB for matching file row with node_id=central. Returns None if not found.
+    Consulta la DB por fila con (file_id, node_id=central). Retorna None si no lo encuentra o si
+    el archivo físico ya no existe.
     """
     folder = base_folder or os.getenv("CENTRAL_SHARED_FOLDER", "./central_shared")
     with database.get_connection() as conn:
