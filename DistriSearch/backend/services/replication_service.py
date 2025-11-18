@@ -19,7 +19,7 @@ import logging
 import httpx
 from typing import List, Dict
 
-import database
+import DistriSearch.backend.database_viejo as database_viejo
 from services.central_service import CENTRAL_NODE_ID, index_central_folder
 
 logger = logging.getLogger("replication")
@@ -49,7 +49,7 @@ def _target_folders() -> list[str]:
 
 def find_offline_files(limit: int = 100) -> List[Dict]:
     """Devuelve archivos pertenecientes a nodos OFFLINE (máx 'limit')."""
-    with database.get_connection() as conn:
+    with database_viejo.get_connection() as conn:
         cur = conn.cursor()
         cur.execute(
             """
@@ -63,7 +63,7 @@ def find_offline_files(limit: int = 100) -> List[Dict]:
         return [dict(r) for r in cur.fetchall()]
 
 def get_online_nodes_with_file(file_id: str) -> List[Dict]:
-    with database.get_connection() as conn:
+    with database_viejo.get_connection() as conn:
         cur = conn.cursor()
         cur.execute(
             """

@@ -1,6 +1,6 @@
 from typing import Dict, List, Optional
 from models import NodeInfo, NodeStatus
-import database
+import DistriSearch.backend.database_viejo as database_viejo
 from datetime import datetime, timedelta
 
 def register_node(node: NodeInfo) -> Dict:
@@ -8,7 +8,7 @@ def register_node(node: NodeInfo) -> Dict:
     Registra un nuevo nodo o actualiza uno existente
     """
     # Verificar si el nodo ya existe
-    existing_node = database.get_node(node.node_id)
+    existing_node = database_viejo.get_node(node.node_id)
     
     if existing_node:
         # Actualizar datos conservando el último status
@@ -21,7 +21,7 @@ def register_node(node: NodeInfo) -> Dict:
     node.last_seen = datetime.now()
     
     # Guardar en la base de datos
-    database.register_node(node)
+    database_viejo.register_node(node)
     
     return {
         "node_id": node.node_id,
@@ -33,24 +33,24 @@ def update_node_heartbeat(node_id: str) -> bool:
     """
     Actualiza el estado y timestamp de última conexión del nodo
     """
-    node = database.get_node(node_id)
+    node = database_viejo.get_node(node_id)
     if not node:
         return False
     
-    database.update_node_status(node_id, NodeStatus.ONLINE.value)
+    database_viejo.update_node_status(node_id, NodeStatus.ONLINE.value)
     return True
 
 def get_node(node_id: str) -> Optional[Dict]:
     """
     Obtiene información de un nodo
     """
-    return database.get_node(node_id)
+    return database_viejo.get_node(node_id)
 
 def get_all_nodes() -> List[Dict]:
     """
     Obtiene todos los nodos registrados
     """
-    return database.get_all_nodes()
+    return database_viejo.get_all_nodes()
 
 def check_node_timeouts():
     """
@@ -59,7 +59,7 @@ def check_node_timeouts():
     """
     timeout = datetime.now() - timedelta(minutes=5)  # 5 minutos sin heartbeat
     
-    with database.get_connection() as conn:
+    with database_viejo.get_connection() as conn:
         cursor = conn.cursor()
         # No marcar como offline a los nodos simulados (tienen carpeta montada y no envían heartbeats)
         cursor.execute(

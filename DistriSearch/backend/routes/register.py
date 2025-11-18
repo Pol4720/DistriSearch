@@ -3,7 +3,7 @@ from fastapi import Depends, Request
 from typing import List
 from models import FileMeta, NodeInfo
 from services import index_service, node_service
-import database
+import DistriSearch.backend.database_viejo as database_viejo
 import os
 import mimetypes
 from services.central_service import _hash_file, _categorize, _extract_text_for_central
@@ -53,11 +53,11 @@ async def delete_node(node_id: str, delete_files: bool = True, _: None = Depends
     - delete_files=true: elimina también los archivos asociados a ese nodo del índice.
     - Si delete_files=false: conserva los metadatos de archivos (seguirán apuntando a un nodo inexistente).
     """
-    existing = database.get_node(node_id)
+    existing = database_viejo.get_node(node_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Node not found")
 
-    with database.get_connection() as conn:
+    with database_viejo.get_connection() as conn:
         cur = conn.cursor()
         if delete_files:
             cur.execute("DELETE FROM files WHERE node_id = ?", (node_id,))
@@ -69,11 +69,11 @@ async def delete_node(node_id: str, delete_files: bool = True, _: None = Depends
 @router.post("/node/{node_id}/mount")
 async def set_node_folder(node_id: str, folder: str = Body(..., embed=True), _: None = Depends(require_api_key)):
     """Configura una carpeta local asociada a un nodo (simulación local de servidor independiente)."""
-    if not database.get_node(node_id):
+    if not database_viejo.get_node(node_id):
         raise HTTPException(status_code=404, detail="Node not found")
-    database.set_node_mount(node_id, folder)
+    database_viejo.set_node_mount(node_id, folder)
     # Marcar nodo simulado como ONLINE (no depende de heartbeat)
-    database.update_node_status(node_id, "online")
+    database_viejo.update_node_status(node_id, "online")
     return {"status": "ok", "node_id": node_id, "folder": os.path.abspath(folder)}
 
 @router.post("/node/{node_id}/scan-import")
@@ -82,7 +82,7 @@ async def import_from_node_folder(node_id: str, _: None = Depends(require_api_ke
 
     Útil para simulación local: el backend toma el rol del agente para ese nodo.
     """
-    mount = database.get_node_mount(node_id)
+    mount = database_viejo.get_node_mount(node_id)
     if not mount:
         raise HTTPException(status_code=400, detail="Node folder not configured. Use /node/{node_id}/mount")
     abspath = os.path.abspath(mount)
@@ -108,15 +108,15 @@ async def import_from_node_folder(node_id: str, _: None = Depends(require_api_ke
                     content=_extract_text_for_central(full, mime),
                     content_hash=_hash_file(full)
                 )
-                database.register_file(fm)
+                database_viejo.register_file(fm)
                 count += 1
             except Exception:
                 continue
     # Nodo simulado activo
-    database.update_node_status(node_id, "online")
+    database_viejo.update_node_status(node_id, "online")
     # Recalcular contador de archivos del nodo
-    total = database.get_node_file_count(node_id)
-    database.update_node_shared_files_count(node_id, total)
+    total = database_viejo.get_node_file_count(node_id)
+    database_viejo.update_node_shared_files_count(node_id, total)
     return {"status": "ok", "imported": count, "folder": abspath, "node_files": total}
 
 @router.post("/node/{node_id}/sync")
@@ -126,7 +126,7 @@ async def sync_node_folder(node_id: str, _: None = Depends(require_api_key)):
     - Registra/actualiza archivos presentes (como scan-import).
     - Elimina del índice archivos que ya no existen en la carpeta del nodo.
     """
-    mount = database.get_node_mount(node_id)
+    mount = database_viejo.get_node_mount(node_id)
     if not mount:
         raise HTTPException(status_code=400, detail="Node folder not configured. Use /node/{node_id}/mount")
     abspath = os.path.abspath(mount)
@@ -157,13 +157,13 @@ async def sync_node_folder(node_id: str, _: None = Depends(require_api_key)):
                     content=_extract_text_for_central(full, mime),
                     content_hash=_hash_file(full)
                 )
-                database.register_file(fm)
+                database_viejo.register_file(fm)
                 imported += 1
             except Exception:
                 continue
 
     # Obtener file_ids en DB para el nodo
-    with database.get_connection() as conn:
+    with database_viejo.get_connection() as conn:
         cur = conn.cursor()
         cur.execute("SELECT file_id FROM files WHERE node_id = ?", (node_id,))
         existing_ids = {row[0] for row in cur.fetchall()}
@@ -177,8 +177,8 @@ async def sync_node_folder(node_id: str, _: None = Depends(require_api_key)):
             cur.execute("DELETE FROM file_contents WHERE file_id NOT IN (SELECT file_id FROM files)")
             conn.commit()
     # Nodo simulado activo
-    database.update_node_status(node_id, "online")
+    database_viejo.update_node_status(node_id, "online")
     # Recalcular contador de archivos del nodo
-    total = database.get_node_file_count(node_id)
-    database.update_node_shared_files_count(node_id, total)
+    total = database_viejo.get_node_file_count(node_id)
+    database_viejo.update_node_shared_files_count(node_id, total)
     return {"status": "ok", "imported": imported, "removed": len(stale), "folder": abspath, "node_files": total}

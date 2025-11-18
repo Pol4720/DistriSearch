@@ -5,7 +5,7 @@ import types
 from fastapi.testclient import TestClient
 from unittest.mock import patch
 
-import database
+import DistriSearch.backend.database_viejo as database_viejo
 from main import app
 from models import FileMeta, NodeInfo, NodeStatus
 from services.central_service import CENTRAL_NODE_ID, _instance_id
@@ -29,7 +29,7 @@ def _register_central_file(tmpdir: str) -> FileMeta:
 		status=NodeStatus.ONLINE,
 		shared_files_count=1
 	)
-	database.register_node(node)
+	database_viejo.register_node(node)
 	fm = FileMeta(
 		file_id=file_id,
 		name='test.txt',
@@ -40,7 +40,7 @@ def _register_central_file(tmpdir: str) -> FileMeta:
 		node_id=CENTRAL_NODE_ID,
 		content_hash=None,
 	)
-	database.register_file(fm)
+	database_viejo.register_file(fm)
 	return fm
 
 def test_get_download_url_central(tmp_path, monkeypatch):
@@ -71,7 +71,7 @@ def test_download_proxy_distributed(monkeypatch, tmp_path):
 		status=NodeStatus.ONLINE,
 		shared_files_count=1
 	)
-	database.register_node(node)
+	database_viejo.register_node(node)
 	fm = FileMeta(
 		file_id=_instance_id('n1', 'remoto.bin'),
 		name='remoto.bin',
@@ -82,7 +82,7 @@ def test_download_proxy_distributed(monkeypatch, tmp_path):
 		node_id='n1',
 		content_hash=content_sha
 	)
-	database.register_file(fm)
+	database_viejo.register_file(fm)
 
 	# Mockear httpx.AsyncClient.get para devolver contenido simulado
 	class DummyResp:

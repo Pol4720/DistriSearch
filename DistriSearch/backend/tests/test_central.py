@@ -8,7 +8,7 @@ from main import app
 import tempfile
 import pathlib
 from models import FileMeta, NodeInfo, FileType, NodeStatus
-import database
+import DistriSearch.backend.database_viejo as database_viejo
 from datetime import datetime
 
 client = TestClient(app)
@@ -45,7 +45,7 @@ def test_central_and_distributed_coexist():
         status=NodeStatus.ONLINE,
         shared_files_count=1,
     )
-    database.register_node(node)
+    database_viejo.register_node(node)
     file_meta = FileMeta(
         file_id="dummyhash123",
         name="recurso_distribuido.txt",
@@ -57,7 +57,7 @@ def test_central_and_distributed_coexist():
         last_updated=datetime.now(),
         content_hash=None
     )
-    database.register_file(file_meta)
+    database_viejo.register_file(file_meta)
     # Hacer un scan central para asegurar coexistencia
     with tempfile.TemporaryDirectory() as tmp:
         (pathlib.Path(tmp) / "central.txt").write_text("central")

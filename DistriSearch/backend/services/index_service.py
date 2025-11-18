@@ -1,6 +1,6 @@
 from typing import List, Dict, Optional
 from models import FileMeta, SearchQuery, SearchResult, NodeInfo
-import database
+import DistriSearch.backend.database_viejo as database_viejo
 from services import node_service
 
 def register_files(files: List[FileMeta]) -> int:
@@ -9,17 +9,17 @@ def register_files(files: List[FileMeta]) -> int:
     """
     count = 0
     for file in files:
-        database.register_file(file)
+        database_viejo.register_file(file)
         count += 1
     
     # Actualizar contador de archivos compartidos del nodo
     if files:
         node_id = files[0].node_id
-        node = database.get_node(node_id)
+        node = database_viejo.get_node(node_id)
         if node:
             # Recalcular desde la tabla de files para consistencia
-            total = database.get_node_file_count(node_id)
-            database.update_node_shared_files_count(node_id, total)
+            total = database_viejo.get_node_file_count(node_id)
+            database_viejo.update_node_shared_files_count(node_id, total)
     
     return count
 
@@ -29,7 +29,7 @@ def search_files(query: SearchQuery) -> SearchResult:
     """
     # Buscar archivos en la base de datos
     file_type_str = query.file_type.value if query.file_type else None
-    files_data = database.search_files(
+    files_data = database_viejo.search_files(
         query=query.query, 
         file_type=file_type_str, 
         limit=query.max_results
@@ -57,7 +57,7 @@ def search_files(query: SearchQuery) -> SearchResult:
     # Obtener información de los nodos que tienen estos archivos
     nodes_available = []
     for node_id in node_ids:
-        node_data = database.get_node(node_id)
+        node_data = database_viejo.get_node(node_id)
         if node_data:
             nodes_available.append(NodeInfo(
                 node_id=node_data["node_id"],
@@ -79,7 +79,7 @@ def get_file_by_id(file_id: str) -> Optional[Dict]:
     """
     Obtiene un archivo por su ID
     """
-    with database.get_connection() as conn:
+    with database_viejo.get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM files WHERE file_id = ?", (file_id,))
         file = cursor.fetchone()
@@ -89,7 +89,7 @@ def get_nodes_with_file(file_id: str) -> List[Dict]:
     """
     Obtiene todos los nodos que tienen un archivo específico
     """
-    with database.get_connection() as conn:
+    with database_viejo.get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
             SELECT n.* FROM nodes n
@@ -102,7 +102,7 @@ def get_index_stats() -> Dict:
     """
     Obtiene estadísticas del índice
     """
-    with database.get_connection() as conn:
+    with database_viejo.get_connection() as conn:
         cursor = conn.cursor()
         
         # Total de archivos

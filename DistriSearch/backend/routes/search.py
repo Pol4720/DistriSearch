@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 from typing import List, Optional
 from models import SearchQuery, SearchResult, FileType
 from services import index_service, node_service
-import database
+import DistriSearch.backend.database_viejo as database_viejo
 
 router = APIRouter(
     prefix="/search",
@@ -24,11 +24,11 @@ async def search_files(
     if include_score:
         # Devolver JSON crudo con 'score' por entrada; evitamos response_model para no filtrar el campo.
         file_type_str = file_type.value if file_type else None
-        rows = database.search_files(query=q, file_type=file_type_str, limit=max_results)
+        rows = database_viejo.search_files(query=q, file_type=file_type_str, limit=max_results)
         node_ids = {r["node_id"] for r in rows}
         nodes = []
         for nid in node_ids:
-            nd = database.get_node(nid)
+            nd = database_viejo.get_node(nid)
             if nd:
                 nodes.append(nd)
         # Normalizar score a float

@@ -16,7 +16,7 @@ from datetime import datetime
 from typing import Dict, List, Optional
 
 from models import FileMeta, NodeInfo, NodeStatus
-import database
+import DistriSearch.backend.database_viejo as database_viejo
 from services import index_service, node_service
 
 CENTRAL_NODE_ID = "central"
@@ -24,7 +24,7 @@ logger = logging.getLogger("central_service")
 
 def _ensure_central_node(name: str = "Repositorio Central", port: int = 8000):
     """Register the synthetic central node if not present."""
-    existing = database.get_node(CENTRAL_NODE_ID)
+    existing = database_viejo.get_node(CENTRAL_NODE_ID)
     if existing:
         return existing
     node = NodeInfo(
@@ -35,8 +35,8 @@ def _ensure_central_node(name: str = "Repositorio Central", port: int = 8000):
         status=NodeStatus.ONLINE,
         shared_files_count=0,
     )
-    database.register_node(node)
-    return database.get_node(CENTRAL_NODE_ID)
+    database_viejo.register_node(node)
+    return database_viejo.get_node(CENTRAL_NODE_ID)
 
 def _hash_file(path: str, max_bytes: int = 64 * 1024 * 1024) -> str:
     """Calcula SHA-256 del archivo hasta max_bytes (64MB por defecto) para acotar coste.
@@ -154,11 +154,11 @@ def index_central_folder(folder_path: Optional[str] = None) -> Dict:
             content=meta.get("content"),
             content_hash=meta.get("content_hash")
         )
-        database.register_file(fm)
+        database_viejo.register_file(fm)
         count += 1
 
     # Update node shared_files_count
-    node_data = database.get_node(CENTRAL_NODE_ID)
+    node_data = database_viejo.get_node(CENTRAL_NODE_ID)
     if node_data:
         node_info = NodeInfo(
             node_id=node_data["node_id"],
@@ -168,7 +168,7 @@ def index_central_folder(folder_path: Optional[str] = None) -> Dict:
             status=NodeStatus.ONLINE,
             shared_files_count=count
         )
-        database.register_node(node_info)
+        database_viejo.register_node(node_info)
 
     logger.info(f"Indexación centralizada completada: {count} archivos en {folder}")
     return {
@@ -184,7 +184,7 @@ def get_mode() -> Dict:
     In future could inspect config to disable.
     """
     # If there is only the central node registered, treat as centralized-only for UI convenience.
-    nodes = database.get_all_nodes()
+    nodes = database_viejo.get_all_nodes()
     node_ids = {n["node_id"] for n in nodes}
     centralized_active = CENTRAL_NODE_ID in node_ids
     return {
@@ -200,7 +200,7 @@ def resolve_central_file_path(file_id: str, base_folder: Optional[str] = None) -
     el archivo físico ya no existe.
     """
     folder = base_folder or os.getenv("CENTRAL_SHARED_FOLDER", "./central_shared")
-    with database.get_connection() as conn:
+    with database_viejo.get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
             "SELECT path FROM files WHERE file_id = ? AND node_id = ?",
