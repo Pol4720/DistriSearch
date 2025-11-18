@@ -208,5 +208,9 @@ __marimo__/
 
 *.db
 central_shared
+<<<<<<< HEAD
+to-do.txt
+=======
 Guias
 to-do.txt
+>>>>>>> e1cb07f02367011a93739309237b7d4c004d65b0
