@@ -2,6 +2,31 @@ from pydantic import BaseModel, Field
 from typing import List, Optional
 from datetime import datetime
 import enum
+from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, Boolean
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import relationship
+
+Base = declarative_base()
+
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, unique=True, index=True)
+    username = Column(String, unique=True, index=True)
+    hashed_password = Column(String)
+    is_active = Column(Boolean, default=True)
+    is_superuser = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    activities = relationship("Activity", back_populates="user")
+
+class Activity(Base):
+    __tablename__ = "activities"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    action = Column(String)  # e.g., "upload", "search", "download"
+    details = Column(Text)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+    user = relationship("User", back_populates="activities")
 
 class FileType(str, enum.Enum):
     DOCUMENT = "document"
@@ -48,6 +73,22 @@ class SearchResult(BaseModel):
     files: List[FileMeta]
     total_count: int
     nodes_available: List[NodeInfo]
+
+class UserCreate(BaseModel):
+    email: str
+    username: str
+    password: str
+
+class UserLogin(BaseModel):
+    username: str
+    password: str
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+class TokenData(BaseModel):
+    username: Optional[str] = None
 
 class DownloadRequest(BaseModel):
     file_id: str

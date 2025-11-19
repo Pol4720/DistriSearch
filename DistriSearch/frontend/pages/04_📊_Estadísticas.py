@@ -6,7 +6,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from utils.helpers import setup_page_config, init_session_state, get_api_client
+from utils.helpers import setup_page_config, init_session_state, get_api_client, require_auth
 from components.styles import apply_theme, get_animated_header
 from components.cards import stats_grid, empty_state
 
@@ -15,6 +15,7 @@ setup_page_config("Estadísticas", "📊", "wide")
 
 # Initialize
 init_session_state()
+require_auth()
 api = get_api_client()
 
 # Apply theme

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.responses import RedirectResponse, FileResponse, Response
 import os
 import socket
@@ -7,8 +7,11 @@ import httpx
 
 from services.central_service import CENTRAL_NODE_ID, resolve_central_file_path
 import database as database_viejo
-from models import DownloadRequest
+from models import DownloadRequest, User
 from services import node_service, index_service
+from auth import get_current_active_user
+from database_sql import get_db, log_activity
+from sqlalchemy.orm import Session
 
 router = APIRouter(
     prefix="/download",
@@ -107,7 +110,7 @@ def _select_node_for_file(file_id: str, preferred_node_id: Optional[str] = None)
     return node, file_meta
 
 @router.post("/")
-async def get_download_url(request: DownloadRequest, req: Request):
+async def get_download_url(request: DownloadRequest, req: Request, current_user: User = Depends(get_current_active_user), db: Session = Depends(get_db)):
     """Obtiene una URL de descarga fiable.
 
     Ahora siempre devuelve una URL del propio backend que actúa como proxy (/download/file/{id})
@@ -117,6 +120,9 @@ async def get_download_url(request: DownloadRequest, req: Request):
 
     Conservamos la semántica original retornando también `direct_node_url` cuando aplica.
     """
+    # Log activity
+    log_activity(db, current_user.id, "download_request", f"File ID: {request.file_id}")
+
     node, _ = _select_node_for_file(request.file_id, request.preferred_node_id)
 
     # Obtener URL base pública (con IP externa para acceso desde red)

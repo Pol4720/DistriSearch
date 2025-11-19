@@ -4,11 +4,16 @@ from typing import Dict, List, Optional
 class ApiClient:
     """Cliente para interactuar con la API del backend"""
 
-    def __init__(self, base_url: str, api_key: Optional[str] = None):
+    def __init__(self, base_url: str, api_key: Optional[str] = None, token: Optional[str] = None):
         self.base_url = base_url.rstrip('/')
         self.headers = {}
         if api_key:
             self.headers["X-API-KEY"] = api_key
+        if token:
+            self.headers["Authorization"] = f"Bearer {token}"
+    
+    def set_token(self, token: str):
+        self.headers["Authorization"] = f"Bearer {token}"
     
     def search_files(self, query: str, file_type: Optional[str] = None, max_results: int = 50) -> Dict:
         """

@@ -4,7 +4,7 @@ Con interfaz moderna y componentes personalizados
 """
 import streamlit as st
 import pandas as pd
-from utils.helpers import setup_page_config, init_session_state, get_api_client, format_size
+from utils.helpers import setup_page_config, init_session_state, get_api_client, format_size, require_auth
 from components.styles import apply_theme, get_animated_header
 
 # Page config with expanded sidebar
@@ -12,6 +12,7 @@ setup_page_config("Buscar Archivos", "🔍", "wide", "expanded")
 
 # Initialize
 init_session_state()
+require_auth()
 api = get_api_client()
 
 # Apply modern theme

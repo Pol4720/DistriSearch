@@ -87,9 +87,15 @@ def init_session_state():
         if key not in st.session_state:
             st.session_state[key] = value
 
+def require_auth():
+    """Check if user is authenticated, redirect to login if not"""
+    if "token" not in st.session_state or not st.session_state.token:
+        st.switch_page("app.py")
+        st.stop()
+
 def get_api_client() -> ApiClient:
     """Get or create API client instance"""
-    if st.session_state.api_client is None:
+    if not hasattr(st.session_state, 'api_client') or st.session_state.api_client is None:
         url = os.getenv("DISTRISEARCH_BACKEND_URL", "http://localhost:8000")
         api_key = os.getenv("DISTRISEARCH_ADMIN_API_KEY") or os.getenv("ADMIN_API_KEY")
         
@@ -106,7 +112,13 @@ def get_api_client() -> ApiClient:
                     pass
                 break
         
-        st.session_state.api_client = ApiClient(url, api_key=api_key)
+        token = st.session_state.get("token")
+        st.session_state.api_client = ApiClient(url, api_key=api_key, token=token)
+    else:
+        # Update token if changed
+        token = st.session_state.get("token")
+        if token:
+            st.session_state.api_client.set_token(token)
     
     return st.session_state.api_client
 

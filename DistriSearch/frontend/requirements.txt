@@ -8,3 +8,4 @@ streamlit-lottie>=0.0.5
 streamlit-card>=0.0.5
 extra-streamlit-components>=0.1.60
 annotated-types>=0.6.0
+streamlit-authenticator>=0.3.1

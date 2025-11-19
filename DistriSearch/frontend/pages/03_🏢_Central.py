@@ -3,7 +3,7 @@ Página del panel central
 Gestión del repositorio centralizado
 """
 import streamlit as st
-from utils.helpers import setup_page_config, init_session_state, get_api_client
+from utils.helpers import setup_page_config, init_session_state, get_api_client, require_auth
 from components.styles import inject_modern_css, get_animated_header
 from components.cards import info_card, empty_state
 
@@ -12,6 +12,7 @@ setup_page_config("Panel Central", "🏢", "wide")
 
 # Initialize
 init_session_state()
+require_auth()
 api = get_api_client()
 
 # Inject styles

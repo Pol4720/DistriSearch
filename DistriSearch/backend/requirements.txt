@@ -11,3 +11,9 @@ PyPDF2
 python-docx
 pandas
 openpyxl
+sqlalchemy
+alembic
+passlib[bcrypt]
+python-jose[cryptography]
+python-multipart
+fastapi-users[sqlalchemy]

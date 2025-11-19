@@ -3,11 +3,12 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import os
 import socket
-from routes import search, register, download
+from routes import search, register, download, auth
 from routes import central  # nuevo router para modo centralizado
 from services import central_service
 from services import replication_service
 from services import node_service
+from database_sql import create_tables
 import asyncio
 import logging
 
@@ -30,6 +31,7 @@ app.add_middleware(
 )
 
 # Registrar routers
+app.include_router(auth.router)
 app.include_router(search.router)
 app.include_router(register.router)
 app.include_router(download.router)
@@ -37,6 +39,7 @@ app.include_router(central.router)
 
 @app.on_event("startup")
 async def on_startup():
+    create_tables()  # Crear tablas SQLite si no existen
     # Auto-scan opcional del modo central si está habilitado por entorno
     if os.getenv("CENTRAL_AUTO_SCAN", "false").lower() in {"1", "true", "yes"}:
         try:

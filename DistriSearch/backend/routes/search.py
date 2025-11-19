@@ -3,6 +3,10 @@ from fastapi.responses import JSONResponse
 from typing import List, Optional
 from models import SearchQuery, SearchResult, FileType
 from services import index_service, node_service
+from auth import get_current_active_user
+from models import User
+from database_sql import get_db, log_activity
+from sqlalchemy.orm import Session
 import database as database_viejo
 
 router = APIRouter(
@@ -16,11 +20,16 @@ async def search_files(
     q: str = Query(..., description="Texto a buscar"),
     file_type: Optional[FileType] = Query(None, description="Tipo de archivo"),
     max_results: int = Query(50, description="Número máximo de resultados"),
-    include_score: bool = Query(False, description="Si es true, incluye el score por resultado")
+    include_score: bool = Query(False, description="Si es true, incluye el score por resultado"),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
 ):
     """
     Busca archivos en el sistema distribuido
     """
+    # Log activity
+    log_activity(db, current_user.id, "search", f"Query: {q}, Type: {file_type}, Max: {max_results}")
+
     if include_score:
         # Devolver JSON crudo con 'score' por entrada; evitamos response_model para no filtrar el campo.
         file_type_str = file_type.value if file_type else None

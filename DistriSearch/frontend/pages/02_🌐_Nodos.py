@@ -4,7 +4,7 @@ Registro, eliminación y monitoreo de nodos
 """
 import streamlit as st
 import pandas as pd
-from utils.helpers import setup_page_config, init_session_state, get_api_client, normalize_status
+from utils.helpers import setup_page_config, init_session_state, get_api_client, normalize_status, require_auth
 from components.styles import inject_modern_css, get_animated_header
 from components.cards import node_card, empty_state, metric_card
 
@@ -13,6 +13,7 @@ setup_page_config("Gestión de Nodos", "🌐", "wide")
 
 # Initialize
 init_session_state()
+require_auth()
 api = get_api_client()
 
 # Inject styles

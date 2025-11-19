@@ -4,6 +4,7 @@ Home page with navigation and feature overview
 """
 import streamlit as st
 import os
+import requests
 from utils.helpers import setup_page_config, init_session_state, get_api_client
 from components.styles import apply_theme, get_animated_header, create_feature_card, create_metric_card
 
@@ -13,6 +14,92 @@ setup_page_config("DistriSearch - Home", "🔍", "wide", "expanded")
 # Initialize
 init_session_state()
 api = get_api_client()
+
+# Check authentication
+if "token" not in st.session_state or not st.session_state.token:
+    # Show login/register forms without sidebar
+    tab1, tab2 = st.tabs(["🔐 Iniciar Sesión", "📝 Registrarse"])
+    
+    with tab1:
+        st.markdown("""
+        <div style="text-align: center; margin-bottom: 2rem;">
+            <h1>🔐 Iniciar Sesión</h1>
+            <p style="color: #666;">Accede a tu cuenta de DistriSearch</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        with st.form("login_form_main"):
+            username = st.text_input("Usuario", placeholder="Ingresa tu usuario")
+            password = st.text_input("Contraseña", type="password", placeholder="Ingresa tu contraseña")
+
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col2:
+                submit_button = st.form_submit_button("🚀 Iniciar Sesión", use_container_width=True, type="primary")
+
+            if submit_button:
+                if not username or not password:
+                    st.error("Por favor, completa todos los campos.")
+                    st.stop()
+
+                with st.spinner("Verificando credenciales..."):
+                    try:
+                        response = requests.post(f"{api.base_url}/token", json={"username": username, "password": password})
+                        if response.status_code == 200:
+                            token_data = response.json()
+                            st.session_state.token = token_data["access_token"]
+                            st.session_state.username = username
+                            st.success("¡Inicio de sesión exitoso!")
+                            st.rerun()
+                        else:
+                            st.error("Usuario o contraseña incorrectos.")
+                    except Exception as e:
+                        st.error(f"Error de conexión: {str(e)}")
+
+    with tab2:
+        st.markdown("""
+        <div style="text-align: center; margin-bottom: 2rem;">
+            <h1>📝 Registrarse</h1>
+            <p style="color: #666;">Crea tu cuenta para acceder al sistema</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        with st.form("register_form_main"):
+            username = st.text_input("Usuario", placeholder="Elige un usuario único")
+            email = st.text_input("Correo Electrónico", placeholder="tu@email.com")
+            password = st.text_input("Contraseña", type="password", placeholder="Crea una contraseña segura")
+            confirm_password = st.text_input("Confirmar Contraseña", type="password", placeholder="Repite la contraseña")
+
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col2:
+                submit_button = st.form_submit_button("📝 Registrarse", use_container_width=True, type="primary")
+
+            if submit_button:
+                if not username or not email or not password or not confirm_password:
+                    st.error("Por favor, completa todos los campos.")
+                    st.stop()
+                if password != confirm_password:
+                    st.error("Las contraseñas no coinciden.")
+                    st.stop()
+                if len(password) < 6:
+                    st.error("La contraseña debe tener al menos 6 caracteres.")
+                    st.stop()
+
+                with st.spinner("Creando cuenta..."):
+                    try:
+                        response = requests.post(f"{api.base_url}/register", json={"username": username, "email": email, "password": password})
+                        if response.status_code == 200:
+                            token_data = response.json()
+                            st.session_state.token = token_data["access_token"]
+                            st.session_state.username = username
+                            st.success("¡Cuenta creada exitosamente!")
+                            st.rerun()
+                        else:
+                            error_detail = response.json().get("detail", "Error desconocido")
+                            st.error(f"Error al registrar: {error_detail}")
+                    except Exception as e:
+                        st.error(f"Error de conexión: {str(e)}")
+
+    st.stop()  # Stop execution here if not logged in
 
 # Apply modern theme
 apply_theme(st.session_state.theme)
@@ -44,6 +131,16 @@ with st.sidebar:
                     disabled=st.session_state.theme == 'light',
                     use_container_width=True):
             st.session_state.theme = 'light'
+            st.rerun()
+    
+    st.markdown("---")
+    
+    # User info and logout
+    if "username" in st.session_state:
+        st.markdown(f"### 👤 {st.session_state.username}")
+        if st.button("🚪 Cerrar Sesión", use_container_width=True):
+            del st.session_state.token
+            del st.session_state.username
             st.rerun()
     
     st.markdown("---")
