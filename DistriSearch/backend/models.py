@@ -93,3 +93,23 @@ class TokenData(BaseModel):
 class DownloadRequest(BaseModel):
     file_id: str
     preferred_node_id: Optional[str] = None
+
+class NodeRegistration(BaseModel):
+    """Modelo simplificado para registro dinámico de nodos"""
+    node_id: str
+    name: Optional[str] = None
+    ip_address: Optional[str] = None  # Opcional: si no se proporciona, usamos la IP de la solicitud
+    port: int = 8080  # Puerto por defecto para agentes
+    shared_folder: Optional[str] = None  # Ruta de la carpeta compartida (si es local)
+    auto_scan: bool = False  # Si debe escanear automáticamente al registrarse
+    
+    class Config:
+        schema_extra = {
+            "example": {
+                "node_id": "agent_dynamic_01",
+                "name": "Agente Dynamico 1",
+                "port": 8081,
+                "shared_folder": "/app/shared",
+                "auto_scan": True
+            }
+        }

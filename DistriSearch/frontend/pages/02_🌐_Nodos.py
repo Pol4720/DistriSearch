@@ -22,6 +22,13 @@ inject_modern_css(st.session_state.theme)
 # Header
 st.markdown(get_animated_header("🌐 Gestión de Nodos", "Administra la red distribuida"), unsafe_allow_html=True)
 
+# Botón de refresco para nodos dinámicos
+col_refresh1, col_refresh2, col_refresh3 = st.columns([4,1,4])
+with col_refresh2:
+    if st.button("🔄 Refrescar Nodos", key="refresh_nodes_btn", use_container_width=True):
+        st.cache_data.clear()  # Limpiar caché de la API
+        st.rerun()
+
 st.markdown("<br>", unsafe_allow_html=True)
 
 # Get nodes
@@ -107,19 +114,21 @@ with tab2:
         )
     
     with col2:
-        node_ip = st.text_input(
-            "🌐 Dirección IP",
-            placeholder="192.168.1.100",
-            help="IP o hostname del nodo"
-        )
-        node_port = st.number_input(
-            "🔌 Puerto",
-            min_value=1,
-            max_value=65535,
-            value=8081,
-            step=1,
-            help="Puerto del servicio del agente"
-        )
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("✅ Registrar Rápido", key="quick_register", use_container_width=True, type="primary"):
+            if node_id:
+                try:
+                    # Intentar obtener el nodo directamente desde la API
+                    # Si ya existe, solo actualizar su estado
+                    existing = api.get_node(node_id)
+                    if existing:
+                        st.success(f"✅ Nodo **{node_id}** ya está registrado (estado: {existing.get('status')})")
+                        st.balloons()
+                        st.rerun()
+                    else:
+                        st.warning(f"⚠️ Nodo **{node_id}** no encontrado. Asegúrate de que el agente se haya ejecutado.")
+                except Exception as e:
+                    st.error(f"❌ Error: {e}")
     
     st.markdown("<br>", unsafe_allow_html=True)
     
@@ -218,70 +227,7 @@ with tab4:
             except Exception as e:
                 st.error(f"❌ Error ejecutando replicación: {e}")
     
-        # --- DHT Controls ---
-        with st.expander("🧩 DHT (Red Distribuida)", expanded=False):
-            st.markdown("""
-            <div class="glass-panel" style="padding: 1rem; margin-bottom: 1rem;">
-                <p style="margin: 0;">Controla una instancia DHT desde el backend. Puede funcionar en modo externo (servicio DHT separado) o inproc (arranca un Peer en el backend).</p>
-            </div>
-            """, unsafe_allow_html=True)
-
-            col_a, col_b = st.columns([2, 1])
-            with col_a:
-                if st.button("▶️ Iniciar DHT (backend)"):
-                    try:
-                        res = api.dht_start()
-                        st.success(f"✅ DHT iniciada (modo: {res.get('mode')})")
-                    except Exception as e:
-                        st.error(f"❌ Error iniciando DHT: {e}")
-
-            with st.expander("🔗 Unirse a red DHT (seed)"):
-                seed_ip = st.text_input("Seed IP", placeholder="192.168.1.10")
-                seed_port = st.number_input("Seed puerto", min_value=1, max_value=65535, value=2000)
-                if st.button("➕ Unirse al seed"):
-                    if seed_ip:
-                        try:
-                            res = api.dht_join(seed_ip, int(seed_port))
-                            st.success(f"✅ Resultado: {res.get('result')}")
-                        except Exception as e:
-                            st.error(f"❌ Error al unirse: {e}")
-                    else:
-                        st.warning("⚠️ Introduce la IP del seed")
-
-            with st.expander("📡 Estado DHT / Finger table"):
-                if st.button("🔄 Obtener Finger Table"):
-                    try:
-                        res = api.dht_finger()
-                        st.code(res.get('finger'))
-                    except Exception as e:
-                        st.error(f"❌ Error: {e}")
-
-                if st.button("🔍 Sucesor / Predecesor"):
-                    try:
-                        res = api.dht_sucpred()
-                        st.json(res.get('sucpred'))
-                    except Exception as e:
-                        st.error(f"❌ Error: {e}")
-
-            with st.expander("📁 Subir / Descargar archivo (prueba)"):
-                test_name = st.text_input("Nombre archivo (prueba)", value="prueba.txt")
-                test_data = st.text_area("Contenido del archivo", value="Contenido de prueba desde frontend")
-                c1, c2 = st.columns(2)
-                with c1:
-                    if st.button("⬆️ Subir a DHT"):
-                        try:
-                            res = api.dht_upload(test_name, test_data)
-                            st.success(f"✅ {res.get('result')}")
-                        except Exception as e:
-                            st.error(f"❌ Error al subir: {e}")
-                with c2:
-                    if st.button("⬇️ Descargar desde DHT"):
-                        try:
-                            res = api.dht_download(test_name)
-                            st.write(res.get('result'))
-                        except Exception as e:
-                            st.error(f"❌ Error al descargar: {e}")
-
+        
     # Simulated node (local folder)
     with st.expander("🖥️ Nodo Simulado (Carpeta Local)", expanded=False):
         st.markdown("""

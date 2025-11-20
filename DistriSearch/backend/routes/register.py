@@ -182,3 +182,60 @@ async def sync_node_folder(node_id: str, _: None = Depends(require_api_key)):
     total = database_viejo.get_node_file_count(node_id)
     database_viejo.update_node_shared_files_count(node_id, total)
     return {"status": "ok", "imported": imported, "removed": len(stale), "folder": abspath, "node_files": total}
+
+
+# register.py - Agregar nuevo endpoint
+
+@router.post("/node/dynamic")
+async def register_node_dynamic_endpoint(
+    registration: NodeRegistration,
+    request: Request
+):
+    """
+    Registro dinámico de nodos. Los nodos pueden autoregistrarse sin configuración previa.
+    
+    Body JSON:
+    {
+        "node_id": "agent_01",
+        "name": "Agente de Backup",
+        "port": 8081,
+        "auto_scan": true
+    }
+    
+    El backend autodetectará la IP desde la petición si no se envía.
+    """
+    try:
+        # Autodetectar IP desde la petición
+        client_host = request.client.host if request.client else None
+        
+        result = node_service.register_node_dynamic(
+            node_id=registration.node_id,
+            name=registration.name,
+            ip_address=registration.ip_address,
+            port=registration.port,
+            request_host=client_host,
+            shared_folder=registration.shared_folder
+        )
+        
+        return {
+            "status": "success",
+            "data": result,
+            "config_endpoint": f"{request.base_url}register/node/{registration.node_id}/config"
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error en registro dinámico: {str(e)}")
+
+@router.get("/node/{node_id}/config")
+async def get_node_configuration(node_id: str):
+    """
+    Endpoint para que los nodos obtengan su configuración completa después de registrarse.
+    """
+    config = node_service.get_node_config(node_id)
+    if not config:
+        raise HTTPException(status_code=404, detail="Nodo no encontrado")
+    
+    return {
+        "status": "success",
+        "config": config
+    }

@@ -9,6 +9,7 @@ from services import central_service
 from services import replication_service
 from services import node_service
 from database_sql import create_tables
+import database as database_viejo 
 import asyncio
 import logging
 
@@ -65,11 +66,57 @@ async def on_startup():
                     pass
             finally:
                 await asyncio.sleep(interval)
-
+    
     try:
         asyncio.create_task(_maintenance_loop())
     except Exception:
         pass
+    
+    async def _node_discovery_loop():
+        """
+        Descubre nodos dinámicamente y actualiza su estado.
+        Se ejecuta cada 30 segundos.
+        """
+        interval = int(os.getenv("NODE_DISCOVERY_INTERVAL", "30"))
+        while True:
+            try:
+                # 1. Verificar nodos que no han reportado heartbeat
+                node_service.check_node_timeouts()
+                
+                # 2. Intentar conectar con nodos marcados como "unknown" 
+                # (para nodos que se registraron pero no han confirmado)
+                await _probe_unknown_nodes()
+                
+            except Exception as e:
+                logger.error(f"Error en discovery loop: {e}")
+            finally:
+                await asyncio.sleep(interval)
+    
+    try:
+        asyncio.create_task(_node_discovery_loop())
+    except Exception:
+        pass
+
+    async def _probe_unknown_nodes():
+        """
+        Intenta contactar nodos con estado 'unknown' para verificar si están activos.
+        """
+        unknown_nodes = [n for n in database_viejo.get_all_nodes() 
+                        if n.get("status") == "unknown"]
+        
+        for node in unknown_nodes:
+            try:
+                # Intentar un simple GET al health endpoint del nodo
+                async with httpx.AsyncClient(timeout=5) as client:
+                    url = f"http://{node['ip_address']}:{node['port']}/health"
+                    response = await client.get(url)
+                    if response.status_code == 200:
+                        # Nodo responde, marcar como online
+                        node_service.update_node_heartbeat(node["node_id"])
+                        logger.info(f"Nodo {node['node_id']} descubierto como ONLINE")
+            except Exception:
+                # No responde, mantener unknown o marcar offline si ya pasó mucho tiempo
+                pass
 
 @app.get("/")
 async def root():

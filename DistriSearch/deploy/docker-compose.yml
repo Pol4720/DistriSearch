@@ -56,50 +56,20 @@ services:
       - distrisearch_network
     restart: unless-stopped
 
-  # Agente 1
-  agent1:
+  agent:
     build:
       context: ../agent
     volumes:
-      - ./shared_folders/agent1:/app/shared
-      - ./agent_configs/agent1.yaml:/app/config.yaml
+      - ./shared_folders/${NODE_ID:-agent_default}:/app/shared
       - ../../certs:/app/certs:ro
     environment:
-      - NODE_ID=node1
-      - NODE_NAME=Agente 1
+      - NODE_ID=${NODE_ID:-agent_default}
       - BACKEND_URL=${BACKEND_URL:-http://backend:8000}
-      - FILE_SERVER_PORT=8081
-      - AGENT_SSL_ENABLED=${AGENT_SSL_ENABLED:-false}
-      - AGENT_SSL_CERT_FILE=/app/certs/distrisearch.crt
-      - AGENT_SSL_KEY_FILE=/app/certs/distrisearch.key
-      - VERIFY_SSL=${VERIFY_SSL:-false}
+      - ADMIN_API_KEY=${ADMIN_API_KEY:-}
+      - FILE_SERVER_PORT=8080
+      - SCAN_INTERVAL=300
     ports:
-      - "8081:8081"
-    depends_on:
-      - backend
-    networks:
-      - distrisearch_network
-    restart: unless-stopped
-
-  # Agente 2
-  agent2:
-    build:
-      context: ../agent
-    volumes:
-      - ./shared_folders/agent2:/app/shared
-      - ./agent_configs/agent2.yaml:/app/config.yaml
-      - ../../certs:/app/certs:ro
-    environment:
-      - NODE_ID=node2
-      - NODE_NAME=Agente 2
-      - BACKEND_URL=${BACKEND_URL:-http://backend:8000}
-      - FILE_SERVER_PORT=8082
-      - AGENT_SSL_ENABLED=${AGENT_SSL_ENABLED:-false}
-      - AGENT_SSL_CERT_FILE=/app/certs/distrisearch.crt
-      - AGENT_SSL_KEY_FILE=/app/certs/distrisearch.key
-      - VERIFY_SSL=${VERIFY_SSL:-false}
-    ports:
-      - "8082:8082"
+      - "8080-8099:8080"  # Rango de puertos para múltiples instancias
     depends_on:
       - backend
     networks:

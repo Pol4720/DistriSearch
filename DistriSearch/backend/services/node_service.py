@@ -79,3 +79,97 @@ def check_node_timeouts():
         )
         conn.commit()
         return cursor.rowcount  # Número de nodos marcados como offline
+
+
+def register_node_dynamic(
+    node_id: str, 
+    name: Optional[str] = None,
+    ip_address: Optional[str] = None,
+    port: int = 8080,
+    request_host: Optional[str] = None,  # IP del request (FastAPI puede pasarla)
+    shared_folder: Optional[str] = None
+) -> Dict:
+    """
+    Registra un nodo dinámicamente sin requerir configuración previa.
+    
+    Args:
+        node_id: Identificador único del nodo
+        name: Nombre descriptivo (opcional, usa node_id si no se proporciona)
+        ip_address: IP del nodo (opcional, se autodetecta si es None)
+        port: Puerto del agente
+        request_host: IP del requestor (para autodetectar)
+        shared_folder: Ruta de carpeta compartida (si es nodo local simulado)
+    """
+    
+    # Si no hay IP, intentar autodetectar desde la petición
+    if not ip_address and request_host:
+        ip_address = request_host.split(":")[0]
+    
+    # Validar que no exista ya
+    existing = database_viejo.get_node(node_id)
+    if existing:
+        # Actualizar timestamp y marcar como online
+        update_node_heartbeat(node_id)
+        
+        # Si se proporciona carpeta, configurar mount
+        if shared_folder:
+            database_viejo.set_node_mount(node_id, shared_folder)
+        
+        return {
+            "node_id": node_id,
+            "status": "updated",
+            "message": "Nodo ya existente, actualizado",
+            "ip_address": ip_address,
+            "port": port
+        }
+    
+    # Crear nuevo nodo
+    node = NodeInfo(
+        node_id=node_id,
+        name=name or f"Nodo {node_id}",
+        ip_address=ip_address or "unknown",
+        port=port,
+        status=NodeStatus.ONLINE,
+        last_seen=datetime.now(),
+        shared_files_count=0
+    )
+    
+    # Registrar en MongoDB
+    database_viejo.register_node(node)
+    
+    # Si es nodo simulado con carpeta, configurar mount
+    if shared_folder:
+        database_viejo.set_node_mount(node_id, shared_folder)
+        
+        # Si auto_scan está activado, escanear inmediatamente
+        if os.getenv("AUTO_SCAN_ON_REGISTER", "false").lower() in {"true", "1", "yes"}:
+            from services import index_service
+            try:
+                # Esto simula el comportamiento del agente
+                count = index_service.scan_and_register_local_files(node_id, shared_folder)
+                node.shared_files_count = count
+                database_viejo.update_node_shared_files_count(node_id, count)
+            except Exception as e:
+                logger.warning(f"No se pudo auto-escanear nodo {node_id}: {e}")
+    
+    return {
+        "node_id": node_id,
+        "status": "registered",
+        "message": "Nodo registrado exitosamente",
+        "ip_address": ip_address,
+        "port": port
+    }
+
+def get_node_config(node_id: str) -> Optional[Dict]:
+    """
+    Obtiene configuración completa de un nodo (incluye mount folder si existe)
+    """
+    node = database_viejo.get_node(node_id)
+    if not node:
+        return None
+    
+    mount = database_viejo.get_node_mount(node_id)
+    node["mount_folder"] = mount
+    node["api_key"] = os.getenv("ADMIN_API_KEY", "")  # Para que el nodo se autentique
+    
+    return node
