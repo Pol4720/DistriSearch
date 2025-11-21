@@ -8,7 +8,7 @@ from typing import Dict, List
 from collections import defaultdict
 from pymongo import MongoClient
 from .Lamport_Clock import LamportClock
-from PoW import logger
+from coordinator import logger
 
 class DistributedMutex:
     """

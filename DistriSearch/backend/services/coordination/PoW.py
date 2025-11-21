@@ -9,8 +9,8 @@ import logging
 from typing import Optional
 from datetime import datetime
 import os
+from coordinator import logger
 
-logger = logging.getLogger(__name__)
 class ProofOfWorkElection:
     """
     Elección de líder mediante Prueba de Trabajo
