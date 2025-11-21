@@ -12,14 +12,9 @@ services:
       - "8000:8000"
       - "8443:8443"
     volumes:
-      - backend_data:/app/data
-      - ../../central_shared:/app/central_shared
       - ../../certs:/app/certs:ro
     environment:
       - ENVIRONMENT=development
-      - CENTRAL_SHARED_FOLDER=/app/central_shared
-      - CENTRAL_AUTO_SCAN=true
-      - DATABASE_PATH=/app/data/distrisearch.db
       - ENABLE_SSL=${ENABLE_SSL:-false}
       - SSL_CERT_FILE=/app/certs/distrisearch.crt
       - SSL_KEY_FILE=/app/certs/distrisearch.key
@@ -28,14 +23,18 @@ services:
       - BACKEND_HOST=0.0.0.0
       - BACKEND_PORT=${BACKEND_PORT:-8000}
       - ADMIN_API_KEY=${ADMIN_API_KEY:-}
-      # MONGO URI para replicaset (notar ?replicaSet=rs0)
       - MONGO_URI=mongodb://mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0
       - MONGO_DBNAME=${MONGO_DBNAME:-distrisearch}
       - PYTHONPATH=/app
+      - MAINTENANCE_INTERVAL_SECONDS=300
+      - NODE_DISCOVERY_INTERVAL=30
     depends_on:
-      - mongo1
-      - mongo2
-      - mongo3
+      mongo1:
+        condition: service_healthy
+      mongo2:
+        condition: service_healthy
+      mongo3:
+        condition: service_healthy
     networks:
       - distrisearch_network
     restart: unless-stopped
@@ -146,7 +145,6 @@ services:
     restart: "no"
 
 volumes:
-  backend_data:
   mongo1_data:
   mongo2_data:
   mongo3_data:

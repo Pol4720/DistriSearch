@@ -113,3 +113,4 @@ class NodeRegistration(BaseModel):
                 "auto_scan": True
             }
         }
+    

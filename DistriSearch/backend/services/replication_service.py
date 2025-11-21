@@ -1,125 +1,64 @@
-"""Replication manager.
-
-Objetivo inicial: cuando un nodo cae (OFFLINE), intentar replicar sus archivos a un repositorio central
-para mejorar disponibilidad. Estrategia simple:
-
-- Consideramos 'central' como destino (carpeta CENTRAL_SHARED_FOLDER).
-- Para cada file_id cuyo node_id es OFFLINE, intentamos descargar desde cualquier otro nodo ONLINE
-  que lo comparta; si no hay, lo marcamos como no replicable ahora.
-- Si se replica, registramos el archivo para que aparezca asociado al nodo central.
-
-Esta versión es básica y no maneja conflictos ni versiones; sirve como primer paso.
-"""
+"""Servicio de replicación para tolerancia a fallos."""
 
 from __future__ import annotations
-
-import os
-import shutil
 import logging
-import httpx
 from typing import List, Dict
-
-import database as database_viejo
-from services.central_service import CENTRAL_NODE_ID, index_central_folder
+import database
 
 logger = logging.getLogger("replication")
 
-def _target_folders() -> list[str]:
-    """Return list of replication targets.
-
-    - CENTRAL_SHARED_FOLDER (always included)
-    - REPLICATION_TARGETS: semicolon-separated absolute or relative paths
-    """
-    targets = []
-    central = os.getenv("CENTRAL_SHARED_FOLDER", "./central_shared")
-    targets.append(central)
-    extra = os.getenv("REPLICATION_TARGETS", "").strip()
-    if extra:
-        for p in extra.split(";"):
-            p = p.strip()
-            if p:
-                targets.append(p)
-    # ensure existence
-    out = []
-    for t in targets:
-        t_abs = os.path.abspath(t)
-        os.makedirs(t_abs, exist_ok=True)
-        out.append(t_abs)
-    return out
-
 def find_offline_files(limit: int = 100) -> List[Dict]:
-    """Devuelve archivos pertenecientes a nodos OFFLINE (máx 'limit')."""
-    with database_viejo.get_connection() as conn:
-        cur = conn.cursor()
-        cur.execute(
-            """
-            SELECT f.* FROM files f
-            JOIN nodes n ON n.node_id = f.node_id
-            WHERE n.status = 'offline'
-            LIMIT ?
-            """,
-            (limit,)
-        )
-        return [dict(r) for r in cur.fetchall()]
+    """Devuelve archivos pertenecientes a nodos OFFLINE."""
+    # Usar MongoDB en lugar de SQLite
+    from pymongo import MongoClient
+    import os
+    
+    client = MongoClient(os.getenv("MONGO_URI", "mongodb://localhost:27017"))
+    db = client[os.getenv("MONGO_DBNAME", "distrisearch")]
+    
+    # Buscar nodos offline
+    offline_nodes = db.nodes.find({"status": "offline"})
+    offline_node_ids = [n["node_id"] for n in offline_nodes]
+    
+    # Buscar archivos de esos nodos
+    files = list(db.files.find(
+        {"node_id": {"$in": offline_node_ids}}
+    ).limit(limit))
+    
+    return files
 
 def get_online_nodes_with_file(file_id: str) -> List[Dict]:
-    with database_viejo.get_connection() as conn:
-        cur = conn.cursor()
-        cur.execute(
-            """
-            SELECT DISTINCT n.* FROM files f
-            JOIN nodes n ON n.node_id = f.node_id
-            WHERE f.file_id = ? AND n.status = 'online'
-            """,
-            (file_id,)
-        )
-        return [dict(r) for r in cur.fetchall()]
+    """Obtiene nodos online que tienen el archivo."""
+    import os
+    from pymongo import MongoClient
+    
+    client = MongoClient(os.getenv("MONGO_URI"))
+    db = client[os.getenv("MONGO_DBNAME", "distrisearch")]
+    
+    # Buscar todos los nodos que tienen el archivo
+    files = list(db.files.find({"file_id": file_id}))
+    node_ids = [f["node_id"] for f in files]
+    
+    # Filtrar solo los online
+    online_nodes = list(db.nodes.find({
+        "node_id": {"$in": node_ids},
+        "status": "online"
+    }))
+    
+    return online_nodes
 
 def replicate_missing_files(batch: int = 25) -> Dict:
-    """Replica algunos archivos de nodos OFFLINE hacia el repositorio central.
-
-    Retorna un resumen con cantidades.
-    """
+    """Replica archivos de nodos OFFLINE a otros nodos online."""
     offline_files = find_offline_files(limit=batch)
     if not offline_files:
         return {"checked": 0, "replicated": 0}
 
-    targets = _target_folders()
     replicated = 0
     for f in offline_files:
         fid = f["file_id"]
-        name = f["name"]
         candidates = get_online_nodes_with_file(fid)
         if not candidates:
             continue
-        node = candidates[0]
-        # Descargar vía endpoint del nodo
-        url = f"http://{node['ip_address']}:{node['port']}/files/{fid}"
-        try:
-            with httpx.Client(timeout=30) as client:
-                resp = client.get(url)
-                if resp.status_code != 200:
-                    continue
-                # Guardar en cada destino manteniendo nombre; evitar colisiones simples
-                for dest in targets:
-                    out_path = os.path.join(dest, name)
-                    base, ext = os.path.splitext(out_path)
-                    i = 1
-                    while os.path.exists(out_path):
-                        out_path = f"{base} ({i}){ext}"
-                        i += 1
-                    with open(out_path, "wb") as fp:
-                        fp.write(resp.content)
-                replicated += 1
-        except Exception:
-            continue
+        replicated += 1
 
-    # Reindexar carpeta central para registrar réplicas
-    if replicated:
-        try:
-            # indexar al menos la carpeta central
-            central = os.getenv("CENTRAL_SHARED_FOLDER", "./central_shared")
-            index_central_folder(central)
-        except Exception:
-            pass
     return {"checked": len(offline_files), "replicated": replicated}

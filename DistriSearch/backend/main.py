@@ -4,21 +4,20 @@ import uvicorn
 import os
 import socket
 from routes import search, register, download, auth
-from routes import central  # nuevo router para modo centralizado
-from services import central_service
 from services import replication_service
 from services import node_service
 from database_sql import create_tables
 import database as database_viejo 
 import asyncio
 import logging
+import httpx
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="DistriSearch API",
-    description="API centralizada para búsqueda distribuida de archivos",
+    description="API para búsqueda distribuida de archivos",
     version="0.1.0"
 )
 
@@ -36,18 +35,10 @@ app.include_router(auth.router)
 app.include_router(search.router)
 app.include_router(register.router)
 app.include_router(download.router)
-app.include_router(central.router)
 
 @app.on_event("startup")
 async def on_startup():
     create_tables()  # Crear tablas SQLite si no existen
-    # Auto-scan opcional del modo central si está habilitado por entorno
-    if os.getenv("CENTRAL_AUTO_SCAN", "false").lower() in {"1", "true", "yes"}:
-        try:
-            central_service.index_central_folder(os.getenv("CENTRAL_SHARED_FOLDER"))
-        except Exception:
-            # Evitar que falle el arranque por problemas al escanear
-            pass
 
     # Lanzar tareas de mantenimiento en segundo plano (replicación y timeouts)
     async def _maintenance_loop():
@@ -120,11 +111,11 @@ async def on_startup():
 
 @app.get("/")
 async def root():
-    return {"message": "Bienvenido a DistriSearch API"}
+    return {"message": "Bienvenido a DistriSearch API - Modo Distribuido"}
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy"}
+    return {"status": "healthy", "mode": "distributed"}
 
 def get_local_ip():
     """Obtiene la IP local de la máquina para acceso desde red externa."""
@@ -153,7 +144,7 @@ if __name__ == "__main__":
     protocol = "https" if ssl_enabled else "http"
     
     logger.info("=" * 60)
-    logger.info("DistriSearch Backend Iniciando")
+    logger.info("DistriSearch Backend - MODO DISTRIBUIDO")
     logger.info("=" * 60)
     logger.info(f"Protocolo: {protocol.upper()}")
     logger.info(f"Host: {host}")

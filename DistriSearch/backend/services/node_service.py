@@ -146,7 +146,7 @@ def register_node_dynamic(
             from services import index_service
             try:
                 # Esto simula el comportamiento del agente
-                count = index_service.scan_and_register_local_files(node_id, shared_folder)
+                index_service.scan_and_register_local_files(node_id, shared_folder)
                 node.shared_files_count = count
                 database_viejo.update_node_shared_files_count(node_id, count)
             except Exception as e:
