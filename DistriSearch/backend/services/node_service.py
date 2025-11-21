@@ -7,6 +7,7 @@ import os
 
 logger = logging.getLogger(__name__)
 
+
 def register_node(node: NodeInfo) -> Dict:
     """Registra un nuevo nodo o actualiza uno existente."""
     existing_node = database.get_node(node.node_id)
@@ -25,6 +26,7 @@ def register_node(node: NodeInfo) -> Dict:
         "last_seen": node.last_seen
     }
 
+
 def update_node_heartbeat(node_id: str) -> bool:
     """Actualiza el estado y timestamp de última conexión del nodo."""
     node = database.get_node(node_id)
@@ -34,13 +36,16 @@ def update_node_heartbeat(node_id: str) -> bool:
     database.update_node_status(node_id, NodeStatus.ONLINE.value)
     return True
 
+
 def get_node(node_id: str) -> Optional[Dict]:
     """Obtiene información de un nodo."""
     return database.get_node(node_id)
 
+
 def get_all_nodes() -> List[Dict]:
     """Obtiene todos los nodos registrados."""
     return database.get_all_nodes()
+
 
 def check_node_timeouts():
     """Verifica nodos que no han enviado heartbeat recientemente."""
@@ -60,6 +65,7 @@ def check_node_timeouts():
         logger.info(f"Marcados {result.modified_count} nodos como offline por timeout")
     
     return result.modified_count
+
 
 def register_node_dynamic(
     node_id: str, 
@@ -112,6 +118,7 @@ def register_node_dynamic(
         "port": port
     }
 
+
 def get_node_config(node_id: str) -> Optional[Dict]:
     """Obtiene configuración completa de un nodo."""
     node = database.get_node(node_id)
@@ -121,5 +128,5 @@ def get_node_config(node_id: str) -> Optional[Dict]:
     mount = database.get_node_mount(node_id)
     node["mount_folder"] = mount
     node["api_key"] = os.getenv("ADMIN_API_KEY", "")
-    
+        
     return node
