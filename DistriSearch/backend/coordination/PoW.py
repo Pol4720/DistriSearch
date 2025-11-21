@@ -6,15 +6,11 @@ import hashlib
 import time
 import asyncio
 import logging
-from typing import Dict, List, Optional, Set
-from datetime import datetime, timedelta
-from collections import defaultdict
-import httpx
-from pymongo import MongoClient
+from typing import Optional
+from datetime import datetime
 import os
 
 logger = logging.getLogger(__name__)
-
 class ProofOfWorkElection:
     """
     Elección de líder mediante Prueba de Trabajo
