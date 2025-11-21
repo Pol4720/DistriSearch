@@ -4,6 +4,8 @@ from models import User, UserCreate, UserLogin, Token
 from database_sql import get_db
 from auth import authenticate_user, create_access_token, get_password_hash
 from datetime import timedelta
+from services.dynamic_replication import get_replication_service
+from security import require_api_key
 
 router = APIRouter()
 
@@ -40,3 +42,16 @@ async def login_for_access_token(form_data: UserLogin, db: Session = Depends(get
         data={"sub": user.username}, expires_delta=access_token_expires
     )
     return {"access_token": access_token, "token_type": "bearer"}
+
+@router.get("/status")
+async def get_replication_status(_: None = Depends(require_api_key)):
+    """Obtiene el estado de la replicación dinámica"""
+    service = get_replication_service()
+    return service.get_replication_status()
+
+@router.post("/sync")
+async def trigger_sync(_: None = Depends(require_api_key)):
+    """Fuerza una sincronización inmediata"""
+    service = get_replication_service()
+    result = await service.synchronize_eventual_consistency()
+    return {"status": "completed", **result}

@@ -23,17 +23,18 @@ services:
       - BACKEND_HOST=0.0.0.0
       - BACKEND_PORT=${BACKEND_PORT:-8000}
       - ADMIN_API_KEY=${ADMIN_API_KEY:-}
-      - MONGO_URI=mongodb://mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0
+      # MongoDB simple (sin replica set)
+      - MONGO_URI=mongodb://mongo:27017
       - MONGO_DBNAME=${MONGO_DBNAME:-distrisearch}
       - PYTHONPATH=/app
       - MAINTENANCE_INTERVAL_SECONDS=300
       - NODE_DISCOVERY_INTERVAL=30
+      # Configuración de replicación dinámica
+      - REPLICATION_ENABLED=true
+      - REPLICATION_FACTOR=3
+      - CONSISTENCY_MODEL=eventual
     depends_on:
-      mongo1:
-        condition: service_healthy
-      mongo2:
-        condition: service_healthy
-      mongo3:
+      mongo:
         condition: service_healthy
     networks:
       - distrisearch_network
@@ -75,17 +76,15 @@ services:
       - distrisearch_network
     restart: unless-stopped
 
-  # ---------------------------
-  # MongoDB replica set (3 nodos)
-  # ---------------------------
-  mongo1:
+  # MongoDB único (sin réplicas estáticas)
+  mongo:
     image: mongo:6.0
-    container_name: distrisearch-mongo1
-    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    container_name: distrisearch-mongo
+    command: ["mongod", "--bind_ip_all"]
     ports:
       - "27017:27017"
     volumes:
-      - mongo1_data:/data/db
+      - mongo_data:/data/db
     networks:
       - distrisearch_network
     healthcheck:
@@ -94,60 +93,9 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
-
-  mongo2:
-    image: mongo:6.0
-    container_name: distrisearch-mongo2
-    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
-    ports:
-      - "27018:27017"
-    volumes:
-      - mongo2_data:/data/db
-    networks:
-      - distrisearch_network
-    healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-
-  mongo3:
-    image: mongo:6.0
-    container_name: distrisearch-mongo3
-    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
-    ports:
-      - "27019:27017"
-    volumes:
-      - mongo3_data:/data/db
-    networks:
-      - distrisearch_network
-    healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-
-  # Inicia el replica set (solo ejecuta el script y sale)
-  mongo-init:
-    image: mongo:6.0.8
-    container_name: distrisearch-mongo-init
-    depends_on:
-      - mongo1
-      - mongo2
-      - mongo3
-    entrypoint: ["bash", "/scripts/init-repl.sh"]
-    volumes:
-      - ./mongo-init:/scripts:ro
-    networks:
-      - distrisearch_network
-    restart: "no"
 
 volumes:
-  mongo1_data:
-  mongo2_data:
-  mongo3_data:
+  mongo_data:
 
 networks:
   distrisearch_network:

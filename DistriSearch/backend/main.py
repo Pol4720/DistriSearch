@@ -5,6 +5,7 @@ import os
 import socket
 from routes import search, register, download, auth
 from services import replication_service
+from services.dynamic_replication import get_replication_service
 from services import node_service
 from database_sql import create_tables
 import database as database_viejo 
@@ -38,7 +39,23 @@ app.include_router(download.router)
 
 @app.on_event("startup")
 async def on_startup():
-    create_tables()  # Crear tablas SQLite si no existen
+    create_tables()
+    
+    # Iniciar servicio de replicación dinámica
+    repl_service = get_replication_service()
+    
+    async def _replication_loop():
+        """Sincronización periódica de consistencia eventual"""
+        interval = int(os.getenv("SYNC_INTERVAL_SECONDS", "60"))
+        while True:
+            try:
+                await repl_service.synchronize_eventual_consistency()
+            except Exception as e:
+                logger.error(f"Error en sincronización: {e}")
+            finally:
+                await asyncio.sleep(interval)
+    
+    asyncio.create_task(_replication_loop())
 
     # Lanzar tareas de mantenimiento en segundo plano (replicación y timeouts)
     async def _maintenance_loop():
