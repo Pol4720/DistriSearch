@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import os
 import socket
-from routes import search, register, download, auth
+from routes import search, register, download, auth, coordination
 from services import replication_service
 from services.dynamic_replication import get_replication_service
 from services import node_service
@@ -11,6 +11,8 @@ import database  # MongoDB únicamente
 import asyncio
 import logging
 import httpx
+from services.coordination.coordinator import get_coordinator
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -34,6 +36,7 @@ app.include_router(auth.router)
 app.include_router(search.router)
 app.include_router(register.router)
 app.include_router(download.router)
+app.include_router(coordination.router) 
 
 @app.on_event("startup")
 async def on_startup():
@@ -106,6 +109,32 @@ async def on_startup():
                         logger.info(f"Nodo {node['node_id']} descubierto como ONLINE")
             except Exception:
                 pass
+
+    # Iniciar coordinador distribuido
+    coordinator = get_coordinator()
+    
+    # Elección inicial de líder si es necesario
+    if not coordinator.get_current_leader():
+        asyncio.create_task(coordinator.start_election(reason="startup"))
+    
+    # Loop de verificación de líder
+    async def _leader_check_loop():
+        """Verifica periódicamente si el líder sigue activo"""
+        interval = 60  # segundos
+        while True:
+            try:
+                leader = coordinator.get_current_leader()
+                if leader:
+                    leader_node = database.get_node(leader)
+                    if not leader_node or leader_node.get("status") != "online":
+                        logger.warning(f"⚠️ Líder {leader} no está online - Iniciando nueva elección")
+                        await coordinator.start_election(reason="leader_timeout")
+            except Exception as e:
+                logger.error(f"Error en verificación de líder: {e}")
+            finally:
+                await asyncio.sleep(interval)
+    
+    asyncio.create_task(_leader_check_loop())
 
 @app.get("/")
 async def root():
