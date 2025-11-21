@@ -96,19 +96,17 @@ class DistributedMutex:
         await self.clock.update(remote_timestamp)
         
         async with self.lock:
-            # Conceder acceso si:
-            # 1. No estamos solicitando acceso
-            # 2. O nuestra solicitud tiene timestamp mayor (prioridad menor)
             should_reply = (
                 not self.requesting or 
                 remote_timestamp < self.request_timestamp or
-                (remote_timestamp == self.request_timestamp and remote_node < self.node_id)
+                (remote_timestamp == self.request_timestamp and 
+                 # Usar hash consistente para desempate
+                 hash(remote_node) < hash(self.node_id))
             )
             
             if not should_reply:
-                # Diferir respuesta hasta terminar nuestra región crítica
                 self.reply_deferred[resource_id].append(remote_node)
-        
+    
         return should_reply
     
     async def receive_reply(self):

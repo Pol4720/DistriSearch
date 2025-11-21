@@ -9,6 +9,7 @@ import re
 from pymongo import MongoClient
 import os
 import logging
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -425,10 +426,13 @@ class HierarchicalNamespace:
 
 # Singleton
 _namespace = None
+_namespace_lock = threading.Lock()
 
 def get_namespace() -> HierarchicalNamespace:
     """Obtiene instancia singleton del namespace"""
     global _namespace
     if _namespace is None:
-        _namespace = HierarchicalNamespace()
+        with _namespace_lock:
+            if _namespace is None:
+                _namespace = HierarchicalNamespace()
     return _namespace

@@ -10,18 +10,20 @@ logger = logging.getLogger(__name__)
 
 
 def get_node(node_id: str) -> Optional[Dict]:
-    """Obtiene información de un nodo."""
-    # ✅ Intentar desde cache primero
     cache = get_ip_cache()
+    
+    # Verificar si cache está desactualizado
     cached = cache.get(node_id)
     if cached:
-        return cached
+        # Validar con timestamp de DB cada 5 segundos
+        if (datetime.now() - cached.get('cache_time', datetime.min)).seconds < 5:
+            return cached
     
-    # Cache miss - consultar DB
+    # Cache miss o desactualizado - consultar DB
     node = database.get_node(node_id)
     
-    # Guardar en cache si existe
     if node:
+        node['cache_time'] = datetime.now()
         cache.put(node_id, node)
     
     return node

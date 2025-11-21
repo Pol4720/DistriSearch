@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from collections import OrderedDict
 import logging
 import os
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -97,10 +98,13 @@ class IPCache:
 
 # Singleton
 _ip_cache = None
+_ip_cache_lock = threading.Lock()
 
 def get_ip_cache() -> IPCache:
     """Obtiene instancia singleton del cache"""
     global _ip_cache
     if _ip_cache is None:
-        _ip_cache = IPCache()
+        with _ip_cache_lock:
+            if _ip_cache is None:
+                _ip_cache = IPCache()
     return _ip_cache

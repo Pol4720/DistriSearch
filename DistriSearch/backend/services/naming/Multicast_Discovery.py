@@ -10,6 +10,7 @@ import logging
 from typing import Callable, Optional, Dict
 from datetime import datetime
 import os
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -150,7 +151,19 @@ class MulticastDiscovery:
         """✅ CORREGIDO: Procesamiento completamente asíncrono"""
         try:
             message = json.loads(data.decode('utf-8'))
-            msg_type = message.get('type')
+            
+            # Validar campos requeridos
+            required_fields = ['type', 'node_id', 'ip_address', 'port']
+            if not all(field in message for field in required_fields):
+                logger.warning(f"Mensaje multicast incompleto: {message}")
+                return
+            
+            # Validar tipos
+            if not isinstance(message['port'], int) or message['port'] <= 0:
+                logger.warning(f"Puerto inválido: {message['port']}")
+                return
+            
+            msg_type = message['type']
             
             if msg_type == 'node_announce':
                 await self._handle_announce(message)
@@ -312,6 +325,7 @@ class MulticastDiscovery:
 
 # Singleton
 _multicast_service = None
+_multicast_service_lock = threading.Lock()
 
 async def get_multicast_service(
     node_id: str,
@@ -324,12 +338,14 @@ async def get_multicast_service(
     global _multicast_service
     
     if _multicast_service is None:
-        _multicast_service = MulticastDiscovery(
-            node_id, 
-            port, 
-            ip_address, 
-            on_node_discovered, 
-            on_node_lost
-        )
+        with _multicast_service_lock:
+            if _multicast_service is None:
+                _multicast_service = MulticastDiscovery(
+                    node_id, 
+                    port, 
+                    ip_address, 
+                    on_node_discovered, 
+                    on_node_lost
+                )
     
     return _multicast_service

@@ -9,7 +9,7 @@ from typing import List, Dict, Optional, Set
 from datetime import datetime, timedelta
 from collections import defaultdict
 import os
-
+import threading
 import httpx
 from pymongo import MongoClient
 
@@ -194,15 +194,18 @@ class DynamicReplicationService:
         }
     
     def _resolve_conflict(self, file_id: str, versions: List[Dict]) -> Dict:
-        """
-        Resolución de conflictos según estrategia configurada
-        - last_write_wins: Versión más reciente
-        - vector_clock: Relojes vectoriales (más complejo)
-        """
+        """Resolución de conflictos con manejo de errores"""
         if self.conflict_resolution == "last_write_wins":
-            # Ordenar por timestamp y tomar el más reciente
-            sorted_versions = sorted(versions, key=lambda v: v.get('last_updated', datetime.min), reverse=True)
-            return sorted_versions[0]
+            valid_versions = [
+                v for v in versions 
+                if v.get('last_updated') is not None
+            ]
+            
+            if not valid_versions:
+                logger.warning(f"No hay versiones válidas para {file_id}")
+                return versions[0] if versions else None
+            
+            return max(valid_versions, key=lambda v: v['last_updated'])
         
         # Otras estrategias...
         return versions[0]
@@ -260,9 +263,12 @@ class DynamicReplicationService:
 
 # Singleton global
 _replication_service = None
+_replication_service_lock = threading.Lock()
 
 def get_replication_service() -> DynamicReplicationService:
     global _replication_service
     if _replication_service is None:
-        _replication_service = DynamicReplicationService()
+        with _replication_service_lock:
+            if _replication_service is None:
+                _replication_service = DynamicReplicationService()
     return _replication_service

@@ -1,13 +1,14 @@
 import asyncio
 import logging
 from typing import Dict, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 import httpx
 from pymongo import MongoClient
 import os
 from .Lamport_Clock import LamportClock
 from .PoW import ProofOfWorkElection
 from .Distributed_Mutex import DistributedMutex
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -50,75 +51,86 @@ class DistributedCoordinator:
         """
         Inicia proceso de elección de líder mediante PoW
         """
-        if self.election_in_progress:
-            return {"status": "election_already_in_progress"}
-        
-        self.election_in_progress = True
-        logger.info(f"🗳️ Iniciando elección de líder - Razón: {reason}")
-        
-        try:
-            # Generar desafío
-            challenge = self.pow_election.generate_challenge()
-            
-            # Registrar elección en DB
-            election_doc = {
-                "term": self.pow_election.leader_term + 1,
-                "challenge": challenge,
-                "started_at": datetime.utcnow(),
-                "started_by": self.node_id,
-                "reason": reason,
+        # Verificar elección reciente en DB
+        recent_election = self.db.elections.find_one(
+            {
+                "started_at": {"$gte": datetime.utcnow() - timedelta(seconds=30)},
                 "status": "in_progress"
-            }
-            self.db.elections.insert_one(election_doc)
+            },
+            sort=[("term", -1)]
+        )
+        
+        if recent_election:
+            logger.info(f"Uniéndose a elección existente (término {recent_election['term']})")
+            challenge = recent_election['challenge']
+            # Participar en lugar de iniciar nueva
+        else:
+            self.election_in_progress = True
+            logger.info(f"🗳️ Iniciando elección de líder - Razón: {reason}")
             
-            # Notificar a todos los nodos del desafío
-            online_nodes = list(self.db.nodes.find({"status": "online"}))
-            
-            broadcast_tasks = []
-            for node in online_nodes:
-                if node['node_id'] != self.node_id:
-                    broadcast_tasks.append(
-                        self._notify_election_start(node, challenge)
-                    )
-            
-            await asyncio.gather(*broadcast_tasks, return_exceptions=True)
-            
-            # Intentar resolver el desafío localmente
-            logger.info(f"💻 Resolviendo desafío PoW (dificultad: {self.pow_election.difficulty})...")
-            nonce = await self.pow_election.solve_challenge(challenge, self.node_id)
-            
-            if nonce is not None:
-                # Solución encontrada - intentar reclamar liderazgo
-                success = await self._claim_leadership(challenge, nonce)
+            try:
+                # Generar desafío
+                challenge = self.pow_election.generate_challenge()
                 
-                if success:
-                    return {
-                        "status": "elected",
-                        "leader": self.node_id,
-                        "term": self.pow_election.leader_term,
-                        "nonce": nonce
-                    }
-            
-            # Esperar resultado de otros nodos
-            await asyncio.sleep(5)  # Timeout para recibir soluciones
-            
-            # Verificar quién ganó
-            current_election = self.db.elections.find_one(
-                {"term": self.pow_election.leader_term + 1},
-                sort=[("completed_at", -1)]
-            )
-            
-            if current_election and current_election.get("winner"):
-                return {
-                    "status": "completed",
-                    "leader": current_election["winner"],
-                    "term": current_election["term"]
+                # Registrar elección en DB
+                election_doc = {
+                    "term": self.pow_election.leader_term + 1,
+                    "challenge": challenge,
+                    "started_at": datetime.utcnow(),
+                    "started_by": self.node_id,
+                    "reason": reason,
+                    "status": "in_progress"
                 }
-            
-            return {"status": "no_solution_found"}
-            
-        finally:
-            self.election_in_progress = False
+                self.db.elections.insert_one(election_doc)
+                
+                # Notificar a todos los nodos del desafío
+                online_nodes = list(self.db.nodes.find({"status": "online"}))
+                
+                broadcast_tasks = []
+                for node in online_nodes:
+                    if node['node_id'] != self.node_id:
+                        broadcast_tasks.append(
+                            self._notify_election_start(node, challenge)
+                        )
+                
+                await asyncio.gather(*broadcast_tasks, return_exceptions=True)
+                
+                # Intentar resolver el desafío localmente
+                logger.info(f"💻 Resolviendo desafío PoW (dificultad: {self.pow_election.difficulty})...")
+                nonce = await self.pow_election.solve_challenge(challenge, self.node_id)
+                
+                if nonce is not None:
+                    # Solución encontrada - intentar reclamar liderazgo
+                    success = await self._claim_leadership(challenge, nonce)
+                    
+                    if success:
+                        return {
+                            "status": "elected",
+                            "leader": self.node_id,
+                            "term": self.pow_election.leader_term,
+                            "nonce": nonce
+                        }
+                
+                # Esperar resultado de otros nodos
+                await asyncio.sleep(5)  # Timeout para recibir soluciones
+                
+                # Verificar quién ganó
+                current_election = self.db.elections.find_one(
+                    {"term": self.pow_election.leader_term + 1},
+                    sort=[("completed_at", -1)]
+                )
+                
+                if current_election and current_election.get("winner"):
+                    return {
+                        "status": "completed",
+                        "leader": current_election["winner"],
+                        "term": current_election["term"]
+                    }
+                
+                return {"status": "no_solution_found"}
+                
+            finally:
+                self.election_in_progress = False
     
     async def _notify_election_start(self, node: Dict, challenge: str):
         """Notifica a un nodo sobre inicio de elección"""
@@ -263,10 +275,13 @@ class DistributedCoordinator:
 
 # Singleton global
 _coordinator = None
+_coordinator_lock = threading.Lock()
 
 def get_coordinator() -> DistributedCoordinator:
     """Obtiene instancia singleton del coordinador"""
     global _coordinator
     if _coordinator is None:
-        _coordinator = DistributedCoordinator()
+        with _coordinator_lock:
+            if _coordinator is None:  # Double-checked locking
+                _coordinator = DistributedCoordinator()
     return _coordinator
