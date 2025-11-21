@@ -4,11 +4,15 @@ Sistema de Coordinación Distribuida para DistriSearch
 """
 import time
 import asyncio
+import logging
 from typing import Dict, List
 from collections import defaultdict
 from pymongo import MongoClient
 from .Lamport_Clock import LamportClock
-from coordinator import logger
+import httpx
+import os
+
+logger = logging.getLogger(__name__)
 
 class DistributedMutex:
     """
@@ -35,20 +39,30 @@ class DistributedMutex:
             self.request_timestamp = await self.clock.increment()
             self.reply_count = 0
         
-        # Enviar solicitud a todos los nodos
-        messages = []
+        # ✅ CORRECCIÓN: Enviar solicitudes por red
+        client = MongoClient(os.getenv("MONGO_URI"))
+        db = client[os.getenv("MONGO_DBNAME", "distrisearch")]
+        
+        # Obtener información de nodos
+        send_tasks = []
         for node_id in all_nodes:
             if node_id != self.node_id:
-                messages.append({
-                    "type": "mutex_request",
-                    "resource_id": resource_id,
-                    "node_id": self.node_id,
-                    "timestamp": self.request_timestamp
-                })
+                node = db.nodes.find_one({"node_id": node_id})
+                if node and node.get("status") == "online":
+                    send_tasks.append(
+                        self._send_mutex_request(
+                            node,
+                            resource_id,
+                            self.request_timestamp
+                        )
+                    )
+        
+        # Enviar todas las solicitudes en paralelo
+        await asyncio.gather(*send_tasks, return_exceptions=True)
         
         # Esperar confirmación de todos
         required_replies = len(all_nodes) - 1
-        timeout = 30  # segundos
+        timeout = 30
         start_time = time.time()
         
         while self.reply_count < required_replies:
@@ -60,6 +74,19 @@ class DistributedMutex:
         
         logger.info(f"✅ Acceso concedido a {resource_id}")
         return True
+    
+    async def _send_mutex_request(self, node: Dict, resource_id: str, timestamp: int):
+        """Envía solicitud de mutex a un nodo"""
+        try:
+            async with httpx.AsyncClient(timeout=5) as client:
+                url = f"http://{node['ip_address']}:{node['port']}/coordination/mutex_request"
+                await client.post(url, json={
+                    "resource_id": resource_id,
+                    "node_id": self.node_id,
+                    "timestamp": timestamp
+                })
+        except Exception as e:
+            logger.error(f"Error enviando mutex_request a {node['node_id']}: {e}")
     
     async def handle_request(self, remote_node: str, remote_timestamp: int, resource_id: str) -> bool:
         """

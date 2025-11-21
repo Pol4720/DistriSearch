@@ -9,7 +9,10 @@ import logging
 from typing import Optional
 from datetime import datetime
 import os
-from coordinator import logger
+from concurrent.futures import ProcessPoolExecutor
+import multiprocessing
+
+logger = logging.getLogger(__name__)
 
 class ProofOfWorkElection:
     """
@@ -23,7 +26,8 @@ class ProofOfWorkElection:
         self.current_leader = None
         self.leader_timestamp = None
         self.leader_term = 0  # Término de liderazgo (incrementa con cada elección)
-        
+        self.executor = ProcessPoolExecutor(max_workers=multiprocessing.cpu_count())
+    
     def generate_challenge(self) -> str:
         """Genera un nuevo desafío para la prueba de trabajo"""
         timestamp = datetime.utcnow().isoformat()
@@ -37,21 +41,32 @@ class ProofOfWorkElection:
         hash_result = hashlib.sha256(data.encode()).hexdigest()
         return hash_result.startswith('0' * self.difficulty)
     
-    async def solve_challenge(self, challenge: str, node_id: str, max_iterations: int = 1000000) -> Optional[int]:
-        """
-        Intenta resolver el desafío de prueba de trabajo
-        Retorna el nonce si encuentra solución, None si no
-        """
+    def _solve_sync(self, challenge: str, node_id: str, max_iterations: int) -> Optional[int]:
+        """Versión síncrona para ejecutar en proceso separado"""
         for nonce in range(max_iterations):
             if self.verify_proof(challenge, nonce, node_id):
-                logger.info(f"✅ Solución encontrada! Nonce: {nonce}")
                 return nonce
-            
-            # Yield cada 1000 iteraciones para no bloquear
-            if nonce % 1000 == 0:
-                await asyncio.sleep(0)
-        
         return None
+    
+    async def solve_challenge(self, challenge: str, node_id: str, max_iterations: int = 1000000) -> Optional[int]:
+        """
+        Versión asíncrona que delega a proceso separado
+        """
+        loop = asyncio.get_event_loop()
+        
+        # Ejecutar en proceso separado
+        nonce = await loop.run_in_executor(
+            self.executor,
+            self._solve_sync,
+            challenge,
+            node_id,
+            max_iterations
+        )
+        
+        if nonce is not None:
+            logger.info(f"✅ Solución encontrada! Nonce: {nonce}")
+        
+        return nonce
     
     def set_leader(self, node_id: str, nonce: int, challenge: str):
         """Establece un nuevo líder después de verificar la prueba"""

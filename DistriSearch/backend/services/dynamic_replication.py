@@ -106,41 +106,43 @@ class DynamicReplicationService:
     async def _replicate_to_node(self, file_meta: Dict, source_node_id: str, target_node: Dict):
         """Replica archivo a un nodo específico"""
         try:
-            # Obtener contenido del archivo desde el nodo fuente
+            # 1. Obtener archivo desde nodo origen
             source_node = self.db.nodes.find_one({"node_id": source_node_id})
             if not source_node:
-                raise Exception(f"Nodo fuente {source_node_id} no encontrado")
+                raise Exception(f"Nodo origen {source_node_id} no encontrado")
             
-            # Descargar archivo del nodo fuente
-            async with httpx.AsyncClient(timeout=60) as client:
-                source_url = f"http://{source_node['ip_address']}:{source_node['port']}/files/{file_meta['file_id']}"
-                response = await client.get(source_url)
-                response.raise_for_status()
+            # 2. Descargar contenido
+            async with httpx.AsyncClient(timeout=30) as client:
+                file_url = f"http://{source_node['ip_address']}:{source_node['port']}/files/{file_meta['file_id']}"
+                response = await client.get(file_url)
+                
+                if response.status_code != 200:
+                    raise Exception(f"Error descargando archivo: {response.status_code}")
+                
                 file_content = response.content
             
-            # Subir al nodo destino
+            # 3. Enviar a nodo destino
             async with httpx.AsyncClient(timeout=60) as client:
-                target_url = f"http://{target_node['ip_address']}:{target_node['port']}/upload"
+                upload_url = f"http://{target_node['ip_address']}:{target_node['port']}/upload"
                 files = {'file': (file_meta['name'], file_content, file_meta['mime_type'])}
-                data = {'metadata': str(file_meta)}
                 
-                response = await client.post(target_url, files=files, data=data)
-                response.raise_for_status()
+                response = await client.post(upload_url, files=files)
+                
+                if response.status_code != 200:
+                    raise Exception(f"Error subiendo archivo: {response.status_code}")
             
-            # Registrar en índice central
-            self.db.files.insert_one({
-                **file_meta,
-                "node_id": target_node['node_id'],
-                "replicated_from": source_node_id,
-                "replication_timestamp": datetime.utcnow()
-            })
+            # 4. Registrar metadata en nodo destino
+            file_meta_copy = file_meta.copy()
+            file_meta_copy['node_id'] = target_node['node_id']
             
-            logger.info(f"Archivo {file_meta['file_id']} replicado a {target_node['node_id']}")
+            self.db.files.insert_one(file_meta_copy)
+            
+            logger.info(f"✅ Archivo {file_meta['file_id']} replicado a {target_node['node_id']}")
             return True
             
         except Exception as e:
-            logger.error(f"Error replicando a {target_node['node_id']}: {e}")
-            raise
+            logger.error(f"❌ Error replicando a {target_node['node_id']}: {e}")
+            return False
     
     async def synchronize_eventual_consistency(self):
         """

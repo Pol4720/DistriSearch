@@ -4,8 +4,27 @@ import database
 from datetime import datetime, timedelta
 import logging
 import os
+from services.naming.ip_cache import get_ip_cache  # ✅ Agregar import
 
 logger = logging.getLogger(__name__)
+
+
+def get_node(node_id: str) -> Optional[Dict]:
+    """Obtiene información de un nodo."""
+    # ✅ Intentar desde cache primero
+    cache = get_ip_cache()
+    cached = cache.get(node_id)
+    if cached:
+        return cached
+    
+    # Cache miss - consultar DB
+    node = database.get_node(node_id)
+    
+    # Guardar en cache si existe
+    if node:
+        cache.put(node_id, node)
+    
+    return node
 
 
 def register_node(node: NodeInfo) -> Dict:
@@ -19,6 +38,10 @@ def register_node(node: NodeInfo) -> Dict:
     
     node.last_seen = datetime.now()
     database.register_node(node)
+    
+    # ✅ Invalidar cache
+    cache = get_ip_cache()
+    cache.invalidate(node.node_id)
     
     return {
         "node_id": node.node_id,
@@ -35,11 +58,6 @@ def update_node_heartbeat(node_id: str) -> bool:
     
     database.update_node_status(node_id, NodeStatus.ONLINE.value)
     return True
-
-
-def get_node(node_id: str) -> Optional[Dict]:
-    """Obtiene información de un nodo."""
-    return database.get_node(node_id)
 
 
 def get_all_nodes() -> List[Dict]:
