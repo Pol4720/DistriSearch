@@ -6,14 +6,17 @@ import socket
 from routes import search, register, download, auth, coordination
 from services import replication_service
 from services.dynamic_replication import get_replication_service
-
 from services import node_service
-import database  # MongoDB únicamente
+import database  
 import asyncio
 import logging
 import httpx
 from services.coordination.coordinator import get_coordinator
-
+from services.naming.multicast_discovery import get_multicast_service
+from services.naming.hierarchical_naming import get_namespace
+from services.naming.ip_cache import get_ip_cache
+from typing import Dict
+from models import NodeInfo
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -41,8 +44,8 @@ app.include_router(coordination.router)
 
 @app.on_event("startup")
 async def on_startup():
-    """Inicialización - Solo MongoDB, sin SQLite."""
-    logger.info("🚀 Inicializando DistriSearch con MongoDB")
+    """Inicialización - MongoDB + Servicios de nombrado"""
+    logger.info("🚀 Inicializando DistriSearch")
     
     # Verificar conexión a MongoDB
     try:
@@ -136,6 +139,55 @@ async def on_startup():
                 await asyncio.sleep(interval)
     
     asyncio.create_task(_leader_check_loop())
+
+    # Inicializar namespace jerárquico
+    namespace = get_namespace()
+    logger.info("✅ Namespace jerárquico inicializado")
+    
+    # Inicializar IP cache
+    ip_cache = get_ip_cache()
+    logger.info("✅ IP Cache inicializado")
+    
+    # Inicializar multicast discovery
+    async def on_node_discovered_callback(node_info: Dict):
+        """Callback cuando se descubre un nodo nuevo"""
+        try:
+            from services import node_service
+            
+            # Registrar nodo automáticamente
+            node_data = {
+                "node_id": node_info['node_id'],
+                "ip_address": node_info['ip_address'],
+                "port": node_info['port'],
+                "status": "online"
+            }
+            
+            node_service.register_node(NodeInfo(**node_data))
+            logger.info(f"✅ Nodo auto-registrado vía multicast: {node_info['node_id']}")
+            
+        except Exception as e:
+            logger.error(f"Error registrando nodo descubierto: {e}")
+    
+    async def on_node_lost_callback(node_info: Dict):
+        """Callback cuando se pierde un nodo"""
+        logger.warning(f"⚠️ Nodo perdido: {node_info['node_id']}")
+    
+    # Obtener IP del backend
+    backend_ip = os.getenv("EXTERNAL_IP", "0.0.0.0")
+    backend_port = int(os.getenv("BACKEND_PORT", "8000"))
+    node_id = os.getenv("NODE_ID", "central")
+    
+    multicast = await get_multicast_service(
+        node_id,
+        backend_port,
+        backend_ip,
+        on_node_discovered_callback,
+        on_node_lost_callback
+    )
+    
+    # Iniciar multicast discovery
+    asyncio.create_task(multicast.start())
+    logger.info("✅ Multicast discovery iniciado")
 
 @app.get("/")
 async def root():
