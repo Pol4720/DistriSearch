@@ -7,8 +7,7 @@ from routes import search, register, download, auth
 from services import replication_service
 from services.dynamic_replication import get_replication_service
 from services import node_service
-from database_sql import create_tables
-import database as database_viejo 
+import database  # MongoDB únicamente
 import asyncio
 import logging
 import httpx
@@ -18,14 +17,13 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="DistriSearch API",
-    description="API para búsqueda distribuida de archivos",
-    version="0.1.0"
+    description="API para búsqueda distribuida de archivos con MongoDB",
+    version="2.0.0"
 )
 
-# Configurar CORS para permitir peticiones desde el frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # En producción, limitar a dominios específicos
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -39,7 +37,16 @@ app.include_router(download.router)
 
 @app.on_event("startup")
 async def on_startup():
-    create_tables()
+    """Inicialización - Solo MongoDB, sin SQLite."""
+    logger.info("🚀 Inicializando DistriSearch con MongoDB")
+    
+    # Verificar conexión a MongoDB
+    try:
+        database._client.admin.command('ping')
+        logger.info("✅ Conexión a MongoDB establecida")
+    except Exception as e:
+        logger.error(f"❌ Error conectando a MongoDB: {e}")
+        raise
     
     # Iniciar servicio de replicación dinámica
     repl_service = get_replication_service()
@@ -57,87 +64,60 @@ async def on_startup():
     
     asyncio.create_task(_replication_loop())
 
-    # Lanzar tareas de mantenimiento en segundo plano (replicación y timeouts)
     async def _maintenance_loop():
-        interval = int(os.getenv("MAINTENANCE_INTERVAL_SECONDS", "300"))  # 5 min por defecto
+        interval = int(os.getenv("MAINTENANCE_INTERVAL_SECONDS", "300"))
         while True:
             try:
-                # Marcar nodos con timeout como offline
-                try:
-                    node_service.check_node_timeouts()
-                except Exception:
-                    pass
-                # Ejecutar una pasada de replicación básica
-                try:
-                    replication_service.replicate_missing_files(batch=50)
-                except Exception:
-                    pass
+                node_service.check_node_timeouts()
+                replication_service.replicate_missing_files(batch=50)
+            except Exception as e:
+                logger.error(f"Error en mantenimiento: {e}")
             finally:
                 await asyncio.sleep(interval)
     
-    try:
-        asyncio.create_task(_maintenance_loop())
-    except Exception:
-        pass
+    asyncio.create_task(_maintenance_loop())
     
     async def _node_discovery_loop():
-        """
-        Descubre nodos dinámicamente y actualiza su estado.
-        Se ejecuta cada 30 segundos.
-        """
+        """Descubre nodos dinámicamente."""
         interval = int(os.getenv("NODE_DISCOVERY_INTERVAL", "30"))
         while True:
             try:
-                # 1. Verificar nodos que no han reportado heartbeat
                 node_service.check_node_timeouts()
-                
-                # 2. Intentar conectar con nodos marcados como "unknown" 
-                # (para nodos que se registraron pero no han confirmado)
                 await _probe_unknown_nodes()
-                
             except Exception as e:
                 logger.error(f"Error en discovery loop: {e}")
             finally:
                 await asyncio.sleep(interval)
     
-    try:
-        asyncio.create_task(_node_discovery_loop())
-    except Exception:
-        pass
+    asyncio.create_task(_node_discovery_loop())
 
     async def _probe_unknown_nodes():
-        """
-        Intenta contactar nodos con estado 'unknown' para verificar si están activos.
-        """
-        unknown_nodes = [n for n in database_viejo.get_all_nodes() 
+        """Intenta contactar nodos con estado 'unknown'."""
+        unknown_nodes = [n for n in database.get_all_nodes() 
                         if n.get("status") == "unknown"]
         
         for node in unknown_nodes:
             try:
-                # Intentar un simple GET al health endpoint del nodo
                 async with httpx.AsyncClient(timeout=5) as client:
                     url = f"http://{node['ip_address']}:{node['port']}/health"
                     response = await client.get(url)
                     if response.status_code == 200:
-                        # Nodo responde, marcar como online
                         node_service.update_node_heartbeat(node["node_id"])
                         logger.info(f"Nodo {node['node_id']} descubierto como ONLINE")
             except Exception:
-                # No responde, mantener unknown o marcar offline si ya pasó mucho tiempo
                 pass
 
 @app.get("/")
 async def root():
-    return {"message": "Bienvenido a DistriSearch API - Modo Distribuido"}
+    return {"message": "DistriSearch API - MongoDB + Replicación Dinámica", "version": "2.0.0"}
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "mode": "distributed"}
+    return {"status": "healthy", "mode": "distributed", "database": "mongodb"}
 
 def get_local_ip():
-    """Obtiene la IP local de la máquina para acceso desde red externa."""
+    """Obtiene la IP local de la máquina."""
     try:
-        # Crear un socket para obtener la IP
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
         local_ip = s.getsockname()[0]
@@ -147,40 +127,33 @@ def get_local_ip():
         return "127.0.0.1"
 
 if __name__ == "__main__":
-    # Configuración SSL/TLS
     ssl_enabled = os.getenv("ENABLE_SSL", "false").lower() in {"true", "1", "yes"}
     ssl_certfile = os.getenv("SSL_CERT_FILE", "../certs/distrisearch.crt")
     ssl_keyfile = os.getenv("SSL_KEY_FILE", "../certs/distrisearch.key")
     
-    # Configuración de host y puerto
     host = os.getenv("BACKEND_HOST", "0.0.0.0")
     port = int(os.getenv("BACKEND_PORT", "8000"))
     
-    # Información de red
     local_ip = get_local_ip()
     protocol = "https" if ssl_enabled else "http"
     
     logger.info("=" * 60)
-    logger.info("DistriSearch Backend - MODO DISTRIBUIDO")
+    logger.info("DistriSearch Backend v2.0 - MONGODB + REPLICACIÓN DINÁMICA")
     logger.info("=" * 60)
     logger.info(f"Protocolo: {protocol.upper()}")
     logger.info(f"Host: {host}")
     logger.info(f"Puerto: {port}")
     logger.info(f"IP Local (LAN): {local_ip}")
+    logger.info(f"Base de Datos: MongoDB (URI: {os.getenv('MONGO_URI', 'mongodb://localhost:27017')})")
     
     if ssl_enabled:
         logger.info(f"SSL Habilitado: ✓")
-        logger.info(f"Certificado: {ssl_certfile}")
-        logger.info(f"Clave privada: {ssl_keyfile}")
-        
-        # Verificar que los archivos existen
         if not os.path.exists(ssl_certfile):
             logger.warning(f"⚠ Certificado no encontrado: {ssl_certfile}")
-            logger.warning("Ejecuta: python scripts/generate_ssl_certs.ps1")
         if not os.path.exists(ssl_keyfile):
             logger.warning(f"⚠ Clave privada no encontrada: {ssl_keyfile}")
     else:
-        logger.info(f"SSL Habilitado: ✗ (Para habilitar: ENABLE_SSL=true)")
+        logger.info(f"SSL Habilitado: ✗")
     
     logger.info("-" * 60)
     logger.info(f"Acceso Local: {protocol}://localhost:{port}")
@@ -188,7 +161,6 @@ if __name__ == "__main__":
     logger.info(f"Documentación: {protocol}://localhost:{port}/docs")
     logger.info("=" * 60)
     
-    # Configuración de uvicorn
     uvicorn_config = {
         "app": "main:app",
         "host": host,
@@ -196,7 +168,6 @@ if __name__ == "__main__":
         "reload": os.getenv("RELOAD", "false").lower() in {"true", "1", "yes"},
     }
     
-    # Agregar SSL si está habilitado
     if ssl_enabled and os.path.exists(ssl_certfile) and os.path.exists(ssl_keyfile):
         uvicorn_config["ssl_certfile"] = ssl_certfile
         uvicorn_config["ssl_keyfile"] = ssl_keyfile
