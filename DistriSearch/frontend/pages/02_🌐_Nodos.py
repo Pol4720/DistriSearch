@@ -5,7 +5,7 @@ Registro, eliminación y monitoreo de nodos
 import streamlit as st
 import pandas as pd
 from utils.helpers import setup_page_config, init_session_state, get_api_client, normalize_status, require_auth
-from components.styles import inject_modern_css, get_animated_header
+from components.styles import apply_theme, get_animated_header
 from components.cards import node_card, empty_state, metric_card
 
 # Page config
@@ -16,17 +16,16 @@ init_session_state()
 require_auth()
 api = get_api_client()
 
-# Inject styles
-inject_modern_css(st.session_state.theme)
+# Apply theme
+apply_theme(st.session_state.theme)
 
 # Header
 st.markdown(get_animated_header("🌐 Gestión de Nodos", "Administra la red distribuida"), unsafe_allow_html=True)
 
-# Botón de refresco para nodos dinámicos
+# Botón de refresco
 col_refresh1, col_refresh2, col_refresh3 = st.columns([4,1,4])
 with col_refresh2:
     if st.button("🔄 Refrescar Nodos", key="refresh_nodes_btn", use_container_width=True):
-        st.cache_data.clear()  # Limpiar caché de la API
         st.rerun()
 
 st.markdown("<br>", unsafe_allow_html=True)
@@ -56,7 +55,7 @@ if nodes:
     
     st.markdown("<br>", unsafe_allow_html=True)
 
-# Tabs for different operations
+# Tabs
 tab1, tab2, tab3, tab4 = st.tabs(["📋 Nodos Activos", "➕ Añadir Nodo", "🗑️ Eliminar Nodo", "⚙️ Configuración Avanzada"])
 
 # Tab 1: Active Nodes
@@ -64,13 +63,13 @@ with tab1:
     st.markdown("### Nodos Registrados en el Sistema")
     
     if nodes:
-        # Display nodes as cards in a grid
+        # Display nodes as cards
         cols = st.columns(2)
         for idx, node in enumerate(nodes):
             with cols[idx % 2]:
                 node_card(node)
         
-        # Also show as table
+        # Table view
         st.markdown("<br><br>", unsafe_allow_html=True)
         with st.expander("📊 Ver como tabla"):
             ndf = pd.DataFrame([{
@@ -95,46 +94,92 @@ with tab2:
     
     st.markdown("""
     <div class="glass-panel" style="padding: 1.5rem; margin-bottom: 1.5rem;">
-        <p style="margin: 0;">Completa los datos del nodo para agregarlo a la red distribuida.</p>
+        <p style="margin: 0;">Los agentes dinámicos se auto-registran automáticamente. También puedes registrar nodos manualmente.</p>
     </div>
     """, unsafe_allow_html=True)
+    
+    # ✅ Registro rápido (solo verificar que existe)
+    st.markdown("#### 🚀 Verificar Nodo Dinámico")
+    st.info("💡 Si ya ejecutaste un agente, solo ingresa su ID para verificar que está registrado")
+    
+    col1, col2 = st.columns([3, 1])
+    
+    with col1:
+        quick_node_id = st.text_input(
+            "ID del nodo a verificar",
+            placeholder="agent_dev_01",
+            key="quick_node_id",
+            help="Ingresa el node_id del agente que ya iniciaste"
+        )
+    
+    with col2:
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("🔍 Verificar", key="quick_verify", use_container_width=True, type="primary"):
+            if quick_node_id:
+                try:
+                    existing = api.get_node(quick_node_id)
+                    if existing:
+                        status = existing.get('status', 'unknown')
+                        st.success(f"✅ Nodo **{quick_node_id}** encontrado (Estado: {status})")
+                        if status != 'online':
+                            st.warning(f"⚠️ El nodo está {status}. Verifica que el agente esté corriendo.")
+                        st.balloons()
+                    else:
+                        st.warning(f"⚠️ Nodo **{quick_node_id}** no encontrado. Asegúrate de que el agente se haya ejecutado correctamente.")
+                except Exception as e:
+                    st.error(f"❌ Error: {e}")
+            else:
+                st.warning("⚠️ Ingresa un ID de nodo")
+    
+    st.markdown("---")
+    
+    # ✅ Registro manual completo
+    st.markdown("#### 📝 Registro Manual de Nodo")
     
     col1, col2 = st.columns(2)
     
     with col1:
         node_id = st.text_input(
             "🆔 ID del Nodo",
-            placeholder="node1",
+            placeholder="node_manual_01",
+            key="manual_node_id",
             help="Identificador único del nodo"
         )
         node_name = st.text_input(
             "📛 Nombre del Nodo",
             placeholder="Agente Principal",
+            key="manual_node_name",
             help="Nombre descriptivo del nodo"
+        )
+        node_ip = st.text_input(
+            "🌐 IP del Nodo",
+            placeholder="192.168.1.100",
+            value="127.0.0.1",
+            key="manual_node_ip",
+            help="Dirección IP del nodo"
         )
     
     with col2:
-        st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("✅ Registrar Rápido", key="quick_register", use_container_width=True, type="primary"):
-            if node_id:
-                try:
-                    # Intentar obtener el nodo directamente desde la API
-                    # Si ya existe, solo actualizar su estado
-                    existing = api.get_node(node_id)
-                    if existing:
-                        st.success(f"✅ Nodo **{node_id}** ya está registrado (estado: {existing.get('status')})")
-                        st.balloons()
-                        st.rerun()
-                    else:
-                        st.warning(f"⚠️ Nodo **{node_id}** no encontrado. Asegúrate de que el agente se haya ejecutado.")
-                except Exception as e:
-                    st.error(f"❌ Error: {e}")
+        node_port = st.number_input(
+            "🔌 Puerto",
+            min_value=1,
+            max_value=65535,
+            value=8080,
+            key="manual_node_port",
+            help="Puerto del servidor del nodo"
+        )
+        node_status = st.selectbox(
+            "📊 Estado Inicial",
+            options=["online", "offline", "unknown"],
+            index=0,
+            key="manual_node_status"
+        )
     
     st.markdown("<br>", unsafe_allow_html=True)
     
     col_btn1, col_btn2, col_btn3 = st.columns([2, 1, 2])
     with col_btn2:
-        if st.button("✅ Registrar Nodo", use_container_width=True, type="primary"):
+        if st.button("✅ Registrar Nodo", use_container_width=True, type="primary", key="register_manual_btn"):
             if node_id and node_name and node_ip:
                 try:
                     res = api.register_node({
@@ -142,7 +187,7 @@ with tab2:
                         "name": node_name,
                         "ip_address": node_ip,
                         "port": int(node_port),
-                        "status": "online",
+                        "status": node_status,
                         "shared_files_count": 0
                     })
                     st.success(f"✅ Nodo **{res.get('node_id')}** registrado correctamente")
@@ -171,7 +216,8 @@ with tab3:
             node_options = {f"{n['name']} ({n['node_id']})": n['node_id'] for n in nodes}
             selected_node = st.selectbox(
                 "Selecciona el nodo a eliminar",
-                options=list(node_options.keys())
+                options=list(node_options.keys()),
+                key="delete_node_select"
             )
             del_id = node_options[selected_node]
         else:
@@ -182,6 +228,7 @@ with tab3:
         del_files = st.checkbox(
             "🗑️ Eliminar archivos del índice",
             value=True,
+            key="delete_files_checkbox",
             help="Si está marcado, también se eliminarán los archivos del nodo del índice central"
         )
     
@@ -189,7 +236,7 @@ with tab3:
     
     col_btn1, col_btn2, col_btn3 = st.columns([2, 1, 2])
     with col_btn2:
-        if st.button("🗑️ Eliminar Nodo", use_container_width=True, type="primary", disabled=not del_id):
+        if st.button("🗑️ Eliminar Nodo", use_container_width=True, type="primary", disabled=not del_id, key="delete_node_btn"):
             if del_id:
                 try:
                     res = api.delete_node(del_id, delete_files=del_files)
@@ -206,28 +253,33 @@ with tab4:
     with st.expander("🔄 Replicación y Tolerancia a Fallos", expanded=True):
         st.markdown("""
         <div class="glass-panel" style="padding: 1rem; margin-bottom: 1rem;">
-            <p style="margin: 0;">Ejecuta una pasada de replicación para mover archivos de nodos OFFLINE al repositorio central.</p>
+            <p style="margin: 0;">Ejecuta sincronización de replicación para garantizar consistencia eventual.</p>
         </div>
         """, unsafe_allow_html=True)
         
-        batch = st.slider(
-            "Tamaño del lote",
-            min_value=1,
-            max_value=200,
-            value=25,
-            step=1,
-            help="Número de archivos a procesar en cada lote"
-        )
+        col1, col2 = st.columns([3, 1])
         
-        if st.button("▶️ Ejecutar Replicación", type="primary"):
-            try:
-                with st.spinner("🔄 Ejecutando replicación..."):
-                    res = api.run_replication(batch=batch)
-                    st.success(f"✅ Replicación completada: **{res.get('replicated', 0)}** archivos replicados de **{res.get('checked', 0)}** revisados")
-            except Exception as e:
-                st.error(f"❌ Error ejecutando replicación: {e}")
+        with col1:
+            st.info("💡 La replicación se ejecuta automáticamente cada 60 segundos")
+        
+        with col2:
+            if st.button("▶️ Sincronizar Ahora", type="primary", use_container_width=True):
+                try:
+                    with st.spinner("🔄 Ejecutando replicación..."):
+                        res = api.run_replication()
+                        st.success(f"✅ Sincronización completada")
+                        st.json(res)
+                except Exception as e:
+                    st.error(f"❌ Error: {e}")
+        
+        # Mostrar estado
+        try:
+            status = api.get_replication_status()
+            st.markdown("#### Estado de Replicación")
+            st.json(status)
+        except:
+            pass
     
-        
     # Simulated node (local folder)
     with st.expander("🖥️ Nodo Simulado (Carpeta Local)", expanded=False):
         st.markdown("""
@@ -265,7 +317,7 @@ with tab4:
         
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("💾 Guardar Carpeta"):
+            if st.button("💾 Guardar Carpeta", key="save_mount_btn"):
                 if mount_node and mount_folder:
                     try:
                         res = api.set_node_mount(mount_node, mount_folder)
@@ -275,7 +327,7 @@ with tab4:
                         st.error(f"❌ Error: {e}")
         
         with col2:
-            if st.button("🔍 Escanear e Importar"):
+            if st.button("🔍 Escanear e Importar", key="import_folder_btn"):
                 if mount_node:
                     try:
                         with st.spinner("🔍 Escaneando carpeta..."):

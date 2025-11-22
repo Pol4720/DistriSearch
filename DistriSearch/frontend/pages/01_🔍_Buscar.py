@@ -4,6 +4,7 @@ Con interfaz moderna y componentes personalizados
 """
 import streamlit as st
 import pandas as pd
+import os  # ✅ AGREGAR IMPORT
 from utils.helpers import setup_page_config, init_session_state, get_api_client, format_size, require_auth
 from components.styles import apply_theme, get_animated_header
 
@@ -110,15 +111,13 @@ if buscar and query:
 if st.session_state.search_df is not None and not st.session_state.search_df.empty:
     df = st.session_state.search_df
     
-    # Success message with count
     st.success(f"✅ Se encontraron **{len(df)}** resultados")
     
     st.markdown("<br>", unsafe_allow_html=True)
     
     # Display results using custom cards
     for idx, row in df.iterrows():
-        # Get download URL
-        import os
+        # ✅ Get download URL correctamente
         from urllib.parse import urlparse
         
         public_base = os.getenv("DISTRISEARCH_BACKEND_PUBLIC_URL")
@@ -136,7 +135,7 @@ if st.session_state.search_df is not None and not st.session_state.search_df.emp
         
         download_url = f"{public_base}/download/file/{row['ID']}"
         
-        # Modern glassmorphism file card
+        # Modern file card
         score_html = f"<div style='color: var(--warning-color); font-weight: 600; margin-top: 0.5rem;'>⭐ Score: {row.get('Score', 'N/A')}</div>" if row.get('Score') else ''
         
         st.markdown(f"""

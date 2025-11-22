@@ -168,6 +168,12 @@ def search_files(query: str, file_type: Optional[str] = None, limit: int = 50) -
     return results
 
 # --------------------- Nodos ---------------------
+def _convert_objectid(doc: Dict) -> Dict:
+    """Convierte ObjectId de MongoDB a string para serialización JSON"""
+    if doc and "_id" in doc:
+        doc["_id"] = str(doc["_id"])
+    return doc
+
 def register_node(node: NodeInfo):
     doc = {
         "node_id": node.node_id,
@@ -181,10 +187,13 @@ def register_node(node: NodeInfo):
     _db.nodes.update_one({"node_id": node.node_id}, {"$set": doc}, upsert=True)
 
 def get_node(node_id: str) -> Optional[Dict]:
-    return _db.nodes.find_one({"node_id": node_id})
+    node = _db.nodes.find_one({"node_id": node_id})
+    return _convert_objectid(node) if node else None
 
 def get_all_nodes() -> List[Dict]:
-    return list(_db.nodes.find())
+    """✅ CORREGIDO: Convertir ObjectId a string"""
+    nodes = list(_db.nodes.find())
+    return [_convert_objectid(node) for node in nodes]
 
 def update_node_status(node_id: str, status: str):
     _db.nodes.update_one({"node_id": node_id}, {"$set": {"status": status, "last_seen": datetime.utcnow()}})
@@ -202,8 +211,8 @@ def set_node_mount(node_id: str, folder: str):
     _db.node_mounts.update_one({"node_id": node_id}, {"$set": {"node_id": node_id, "folder": folder}}, upsert=True)
 
 def get_node_mount(node_id: str) -> Optional[str]:
-    doc = _db.node_mounts.find_one({"node_id": node_id})
-    return doc["folder"] if doc else None
+    mount = _db.node_mounts.find_one({"node_id": node_id})
+    return mount.get("folder") if mount else None
 
 def delete_node_mount(node_id: str):
     _db.node_mounts.delete_one({"node_id": node_id})
@@ -217,7 +226,6 @@ def create_user(email: str, username: str, hashed_password: str) -> Dict:
         "username": username,
         "hashed_password": hashed_password,
         "is_active": True,
-        "is_superuser": False,
         "created_at": datetime.utcnow()
     }
     
@@ -229,21 +237,17 @@ def create_user(email: str, username: str, hashed_password: str) -> Dict:
         raise ValueError("Usuario o email ya existe")
 
 def get_user_by_username(username: str) -> Optional[Dict]:
-    """Obtiene un usuario por su username."""
+    """Obtiene usuario por username"""
     user = _db.users.find_one({"username": username})
-    if user:
-        user["_id"] = str(user["_id"])
-    return user
+    return _convert_objectid(user) if user else None
 
 def get_user_by_email(email: str) -> Optional[Dict]:
-    """Obtiene un usuario por su email."""
+    """Obtiene usuario por email"""
     user = _db.users.find_one({"email": email})
-    if user:
-        user["_id"] = str(user["_id"])
-    return user
+    return _convert_objectid(user) if user else None
 
 def log_activity(user_id: str, action: str, details: str):
-    """Registra actividad de usuario."""
+    """Registra actividad de usuario"""
     activity_doc = {
         "user_id": user_id,
         "action": action,
@@ -253,6 +257,9 @@ def log_activity(user_id: str, action: str, details: str):
     _db.activities.insert_one(activity_doc)
 
 def get_user_activities(user_id: str, limit: int = 50) -> List[Dict]:
-    """Obtiene actividades de un usuario."""
-    activities = _db.activities.find({"user_id": user_id}).sort("timestamp", -1).limit(limit)
-    return list(activities)
+    """Obtiene actividades de un usuario"""
+    activities = list(_db.activities.find(
+        {"user_id": user_id}
+    ).sort("timestamp", -1).limit(limit))
+    
+    return [_convert_objectid(activity) for activity in activities]
