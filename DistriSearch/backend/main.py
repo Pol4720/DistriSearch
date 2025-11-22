@@ -19,6 +19,8 @@ from models import NodeInfo
 import database
 import uvicorn
 import socket
+from services.checkpoint_service import get_checkpoint_service
+from services.reliability_metrics import get_reliability_metrics
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -84,14 +86,51 @@ async def lifespan(app: FastAPI):
 
     async def _maintenance_loop():
         interval = int(os.getenv("MAINTENANCE_INTERVAL_SECONDS", "300"))
+        
         while True:
             try:
-                node_service.check_node_timeouts()
+                # Verificar timeouts
+                timed_out_nodes = node_service.check_node_timeouts()
                 
-                # ✅ ACTUALIZAR: Mantener heartbeat del nodo central
+                # Mantener heartbeat del nodo central
                 node_service.update_node_heartbeat(node_id)
                 
+                # ✅ NUEVO: Recuperación automática de nodos caídos
+                if timed_out_nodes > 0:
+                    logger.warning(f"⚠️ Detectados {timed_out_nodes} nodos caídos - Iniciando recuperación")
+                    
+                    # Obtener nodos offline
+                    offline_nodes = [
+                        n for n in database.get_all_nodes() 
+                        if n.get('status') == 'offline'
+                    ]
+                    
+                    for node in offline_nodes:
+                        try:
+                            # Registrar falla
+                            await reliability_metrics.record_failure(
+                                node['node_id'],
+                                failure_type="crash",  # Timeout = crash failure
+                                details={"reason": "heartbeat_timeout"}
+                            )
+                            
+                            # Recuperar archivos
+                            result = await repl_service.recover_from_node_failure(node['node_id'])
+                            logger.info(f"📊 Recuperación de {node['node_id']}: {result}")
+                            
+                            # Registrar MTTR
+                            if result.get('duration_seconds'):
+                                await reliability_metrics.record_recovery(
+                                    node['node_id'],
+                                    result['duration_seconds']
+                                )
+                            
+                        except Exception as e:
+                            logger.error(f"Error recuperando {node['node_id']}: {e}")
+                
+                # Replicación preventiva
                 replication_service.replicate_missing_files(batch=50)
+                
             except Exception as e:
                 logger.error(f"Error en mantenimiento: {e}")
             finally:
@@ -219,7 +258,7 @@ async def lifespan(app: FastAPI):
     database.update_node_status(node_id, "offline")
     
     # Cancelar todas las tareas
-    for task in [replication_task, maintenance_task, discovery_task, leader_check_task, multicast_task]:
+    for task in [replication_task, maintenance_task, discovery_task, leader_check_task, multicast_task, checkpoint_task]:
         task.cancel()
         try:
             await task

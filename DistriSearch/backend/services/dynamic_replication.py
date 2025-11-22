@@ -104,45 +104,88 @@ class DynamicReplicationService:
         return results
     
     async def _replicate_to_node(self, file_meta: Dict, source_node_id: str, target_node: Dict):
-        """Replica archivo a un nodo específico"""
+        """
+        ✅ COMPLETADO: Replica archivo físico a un nodo específico
+        Implementa redundancia física según teoría de tolerancia a fallos
+        """
         try:
-            # 1. Obtener archivo desde nodo origen
-            source_node = self.db.nodes.find_one({"node_id": source_node_id})
-            if not source_node:
-                raise Exception(f"Nodo origen {source_node_id} no encontrado")
+            file_content = file_meta.get('file_content')
             
-            # 2. Descargar contenido
-            async with httpx.AsyncClient(timeout=30) as client:
-                file_url = f"http://{source_node['ip_address']}:{source_node['port']}/files/{file_meta['file_id']}"
-                response = await client.get(file_url)
+            # Si no viene el contenido, descargarlo desde nodo fuente
+            if not file_content:
+                source_node = self.db.nodes.find_one({"node_id": source_node_id})
+                if not source_node:
+                    raise Exception(f"Nodo fuente {source_node_id} no encontrado")
                 
-                if response.status_code != 200:
-                    raise Exception(f"Error descargando archivo: {response.status_code}")
-                
-                file_content = response.content
+                # ✅ REDUNDANCIA DE TIEMPO: Retry automático
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        async with httpx.AsyncClient(timeout=30) as client:
+                            download_url = f"http://{source_node['ip_address']}:{source_node['port']}/download/file/{file_meta['file_id']}"
+                            response = await client.get(download_url)
+                            
+                            if response.status_code == 200:
+                                file_content = response.content
+                                break
+                            else:
+                                raise Exception(f"Error HTTP {response.status_code}")
+                                
+                    except Exception as e:
+                        if attempt == max_retries - 1:
+                            raise
+                        logger.warning(f"⚠️ Intento {attempt+1}/{max_retries} falló: {e}")
+                        await asyncio.sleep(2 ** attempt)  # Backoff exponencial
             
-            # 3. Enviar a nodo destino
+            # ✅ Enviar archivo al nodo destino
             async with httpx.AsyncClient(timeout=60) as client:
-                upload_url = f"http://{target_node['ip_address']}:{target_node['port']}/upload"
-                files = {'file': (file_meta['name'], file_content, file_meta['mime_type'])}
+                files = {
+                    'file': (file_meta['name'], file_content, file_meta.get('mime_type', 'application/octet-stream'))
+                }
                 
-                response = await client.post(upload_url, files=files)
+                data = {
+                    'node_id': target_node['node_id'],
+                    'virtual_path': file_meta.get('path'),
+                    'replicate': 'false'  # ✅ Evitar replicación recursiva
+                }
                 
-                if response.status_code != 200:
-                    raise Exception(f"Error subiendo archivo: {response.status_code}")
-            
-            # 4. Registrar metadata en nodo destino
-            file_meta_copy = file_meta.copy()
-            file_meta_copy['node_id'] = target_node['node_id']
-            
-            self.db.files.insert_one(file_meta_copy)
-            
-            logger.info(f"✅ Archivo {file_meta['file_id']} replicado a {target_node['node_id']}")
-            return True
+                api_key = os.getenv("ADMIN_API_KEY")
+                headers = {"X-API-KEY": api_key} if api_key else {}
+                
+                upload_url = f"http://{target_node['ip_address']}:{target_node['port']}/register/upload"
+                
+                # ✅ REDUNDANCIA DE TIEMPO: Retry en envío
+                for attempt in range(3):
+                    try:
+                        response = await client.post(
+                            upload_url,
+                            files=files,
+                            data=data,
+                            headers=headers
+                        )
+                        
+                        if response.status_code == 200:
+                            logger.info(f"✅ Archivo {file_meta['file_id']} replicado a {target_node['node_id']}")
+                            return {
+                                "node_id": target_node['node_id'],
+                                "status": "success",
+                                "response": response.json()
+                            }
+                        else:
+                            raise Exception(f"Error en nodo destino: {response.status_code}")
+                            
+                    except Exception as e:
+                        if attempt == 2:
+                            raise
+                        await asyncio.sleep(2 ** attempt)
             
         except Exception as e:
             logger.error(f"❌ Error replicando a {target_node['node_id']}: {e}")
-            return False
+            return {
+                "node_id": target_node['node_id'],
+                "status": "failed",
+                "error": str(e)
+            }
     
     async def synchronize_eventual_consistency(self):
         """
