@@ -6,6 +6,7 @@ import logging
 import os
 import httpx
 from typing import Dict
+from datetime import datetime
 
 from routes import search, register, download, auth, coordination
 from services import replication_service, node_service
@@ -37,6 +38,34 @@ async def lifespan(app: FastAPI):
         logger.error(f"❌ Error conectando a MongoDB: {e}")
         raise
     
+    # ✅ NUEVO: Auto-registrar nodo central
+    backend_ip = os.getenv("EXTERNAL_IP")
+    if not backend_ip:
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            backend_ip = s.getsockname()[0]
+            s.close()
+        except Exception:
+            backend_ip = "127.0.0.1"
+    
+    backend_port = int(os.getenv("BACKEND_PORT", "8000"))
+    node_id = os.getenv("NODE_ID", "central")
+    
+    # Registrar el nodo central
+    central_node = NodeInfo(
+        node_id=node_id,
+        name="Backend Central",
+        ip_address=backend_ip,
+        port=backend_port,
+        status="online",
+        last_seen=datetime.now(),
+        shared_files_count=0
+    )
+    
+    database.register_node(central_node)
+    logger.info(f"✅ Nodo central registrado: {node_id} ({backend_ip}:{backend_port})")
+    
     # Iniciar servicio de replicación dinámica
     repl_service = get_replication_service()
     
@@ -58,6 +87,10 @@ async def lifespan(app: FastAPI):
         while True:
             try:
                 node_service.check_node_timeouts()
+                
+                # ✅ ACTUALIZAR: Mantener heartbeat del nodo central
+                node_service.update_node_heartbeat(node_id)
+                
                 replication_service.replicate_missing_files(batch=50)
             except Exception as e:
                 logger.error(f"Error en mantenimiento: {e}")
@@ -112,9 +145,22 @@ async def lifespan(app: FastAPI):
                 leader = coordinator.get_current_leader()
                 if leader:
                     leader_node = database.get_node(leader)
-                    if not leader_node or leader_node.get("status") != "online":
-                        logger.warning(f"⚠️ Líder {leader} no está online - Iniciando nueva elección")
-                        await coordinator.start_election(reason="leader_timeout")
+                    
+                    # ✅ FIX: Verificar que el nodo existe Y está online
+                    if not leader_node:
+                        logger.warning(f"⚠️ Líder {leader} no existe en DB - Iniciando nueva elección")
+                        await coordinator.start_election(reason="leader_not_found")
+                    elif leader_node.get("status") != "online":
+                        logger.warning(f"⚠️ Líder {leader} está {leader_node.get('status')} - Iniciando nueva elección")
+                        await coordinator.start_election(reason="leader_offline")
+                    else:
+                        # Todo OK
+                        logger.debug(f"✅ Líder {leader} está activo")
+                else:
+                    # No hay líder, iniciar elección
+                    logger.info("🗳️ No hay líder activo - Iniciando elección")
+                    await coordinator.start_election(reason="no_leader")
+                    
             except Exception as e:
                 logger.error(f"Error en verificación de líder: {e}")
             finally:
@@ -151,11 +197,6 @@ async def lifespan(app: FastAPI):
         """Callback cuando se pierde un nodo"""
         logger.warning(f"⚠️ Nodo perdido: {node_info['node_id']}")
     
-    # Obtener IP del backend
-    backend_ip = os.getenv("EXTERNAL_IP", "0.0.0.0")
-    backend_port = int(os.getenv("BACKEND_PORT", "8000"))
-    node_id = os.getenv("NODE_ID", "central")
-    
     multicast = await get_multicast_service(
         node_id,
         backend_port,
@@ -173,6 +214,9 @@ async def lifespan(app: FastAPI):
     
     # SHUTDOWN
     logger.info("🛑 Deteniendo DistriSearch...")
+    
+    # ✅ Marcar nodo central como offline antes de detener
+    database.update_node_status(node_id, "offline")
     
     # Cancelar todas las tareas
     for task in [replication_task, maintenance_task, discovery_task, leader_check_task, multicast_task]:
