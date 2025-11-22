@@ -5,10 +5,13 @@ from models import FileMeta, NodeInfo, NodeRegistration
 from services import index_service, node_service
 from datetime import datetime
 from security import require_api_key
-import database as database_viejo
+import database
 import os
 import mimetypes
 import hashlib
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/register",
