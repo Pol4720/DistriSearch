@@ -198,3 +198,43 @@ class ApiClient:
             timeout=60
         )
         return self._handle_response(response)
+
+    def upload_file(self, file_content: bytes, filename: str, node_id: str = "central") -> Dict:
+        """Sube un archivo al sistema"""
+        files = {
+            'file': (filename, file_content)
+        }
+        data = {
+            'node_id': node_id
+        }
+        
+        response = requests.post(
+            f"{self.base_url}/register/upload",
+            files=files,
+            data=data,
+            headers=self.headers,
+            timeout=60
+        )
+        return self._handle_response(response)
+
+    def upload_multiple_files(self, files_data: List[tuple], node_id: str = "central") -> Dict:
+        """
+        Sube múltiples archivos
+        files_data: Lista de tuplas (filename, content_bytes)
+        """
+        files = [
+            ('files', (filename, content))
+            for filename, content in files_data
+        ]
+        data = {
+            'node_id': node_id
+        }
+        
+        response = requests.post(
+            f"{self.base_url}/register/upload/bulk",
+            files=files,
+            data=data,
+            headers=self.headers,
+            timeout=120
+        )
+        return self._handle_response(response)

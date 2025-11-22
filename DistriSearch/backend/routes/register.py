@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Body
-from fastapi import Depends, Request
-from typing import List
+from fastapi import Depends, Request, File, UploadFile, Form
+from typing import List, Optional
 from models import FileMeta, NodeInfo, NodeRegistration
 from services import index_service, node_service
 from datetime import datetime
@@ -244,4 +244,137 @@ async def get_node_configuration(node_id: str):
     return {
         "status": "success",
         "config": config
+    }
+
+# ✅ NUEVO: Endpoint para subir archivos directamente
+@router.post("/upload")
+async def upload_file_to_system(
+    file: UploadFile = File(...),
+    node_id: Optional[str] = Form("central"),
+    virtual_path: Optional[str] = Form(None),
+    _: None = Depends(require_api_key)
+):
+    """
+    Sube un archivo al sistema y lo registra en MongoDB
+    - Extrae contenido de texto para indexación
+    - Calcula hash para deduplicación
+    - Registra en namespace jerárquico
+    """
+    try:
+        # Leer contenido
+        content_bytes = await file.read()
+        file_size = len(content_bytes)
+        
+        # Generar file_id único
+        file_hash = hashlib.sha256(content_bytes).hexdigest()
+        file_id = f"{node_id}_{file_hash[:16]}"
+        
+        # Detectar tipo MIME
+        mime_type, _ = mimetypes.guess_type(file.filename)
+        if not mime_type:
+            mime_type = "application/octet-stream"
+        
+        # Determinar tipo de archivo
+        if mime_type.startswith("text/") or mime_type in ["application/json", "application/xml"]:
+            file_type = "document"
+        elif mime_type.startswith("image/"):
+            file_type = "image"
+        elif mime_type.startswith("video/"):
+            file_type = "video"
+        elif mime_type.startswith("audio/"):
+            file_type = "audio"
+        elif mime_type in ["application/pdf", "application/msword", 
+                          "application/vnd.openxmlformats-officedocument.wordprocessingml.document"]:
+            file_type = "document"
+        else:
+            file_type = "other"
+        
+        # Extraer contenido de texto para indexación
+        content_text = None
+        if mime_type.startswith("text/"):
+            try:
+                content_text = content_bytes.decode('utf-8', errors='ignore')
+            except:
+                pass
+        
+        # Crear metadata
+        file_meta = FileMeta(
+            file_id=file_id,
+            name=file.filename,
+            path=virtual_path or f"/uploads/{file.filename}",
+            size=file_size,
+            mime_type=mime_type,
+            type=file_type,
+            node_id=node_id,
+            last_updated=datetime.now(),
+            content=content_text,
+            content_hash=file_hash
+        )
+        
+        # Registrar en base de datos
+        database.register_file(file_meta)
+        
+        # ✅ NUEVO: Guardar archivo físico en carpeta del nodo central
+        upload_folder = database.get_node_mount(node_id)
+        if not upload_folder:
+            # Crear carpeta por defecto
+            upload_folder = os.path.join(os.getcwd(), "uploads", node_id)
+            os.makedirs(upload_folder, exist_ok=True)
+            database.set_node_mount(node_id, upload_folder)
+        
+        file_path = os.path.join(upload_folder, file.filename)
+        with open(file_path, "wb") as f:
+            f.write(content_bytes)
+        
+        # Actualizar contador de archivos del nodo
+        total = database.get_node_file_count(node_id)
+        database.update_node_shared_files_count(node_id, total)
+        
+        logger.info(f"✅ Archivo subido: {file.filename} ({file_size} bytes) -> {file_id}")
+        
+        return {
+            "status": "success",
+            "file_id": file_id,
+            "filename": file.filename,
+            "size": file_size,
+            "mime_type": mime_type,
+            "type": file_type,
+            "node_id": node_id,
+            "path": file_path,
+            "content_indexed": content_text is not None,
+            "hash": file_hash
+        }
+        
+    except Exception as e:
+        logger.error(f"Error subiendo archivo: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/upload/bulk")
+async def upload_multiple_files(
+    files: List[UploadFile] = File(...),
+    node_id: Optional[str] = Form("central"),
+    _: None = Depends(require_api_key)
+):
+    """Sube múltiples archivos de una vez"""
+    results = []
+    
+    for file in files:
+        try:
+            result = await upload_file_to_system(file, node_id, None, None)
+            results.append(result)
+        except Exception as e:
+            results.append({
+                "filename": file.filename,
+                "status": "error",
+                "error": str(e)
+            })
+    
+    successful = sum(1 for r in results if r.get("status") == "success")
+    
+    return {
+        "total": len(files),
+        "successful": successful,
+        "failed": len(files) - successful,
+        "results": results
     }
