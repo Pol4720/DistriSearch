@@ -1,50 +1,32 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import uvicorn
-import os
-import socket
-from routes import search, register, download, auth, coordination
-from services import replication_service
-from services.dynamic_replication import get_replication_service
-from services import node_service
-import database  
+from contextlib import asynccontextmanager
 import asyncio
 import logging
+import os
 import httpx
+from typing import Dict
+
+from routes import search, register, download, auth, coordination
+from services import replication_service, node_service
+from services.dynamic_replication import get_replication_service
 from services.coordination.coordinator import get_coordinator
 from services.naming.multicast_discovery import get_multicast_service
 from services.naming.hierarchical_naming import get_namespace
 from services.naming.ip_cache import get_ip_cache
-from typing import Dict
 from models import NodeInfo
+import database
+import uvicorn
+import socket
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(
-    title="DistriSearch API",
-    description="API para búsqueda distribuida de archivos con MongoDB",
-    version="2.0.0"
-)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Registrar routers
-app.include_router(auth.router)
-app.include_router(search.router)
-app.include_router(register.router)
-app.include_router(download.router)
-app.include_router(coordination.router) 
-
-@app.on_event("startup")
-async def on_startup():
-    """Inicialización - MongoDB + Servicios de nombrado"""
+# ✅ NUEVO: Lifespan context manager
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Gestión del ciclo de vida de la aplicación"""
+    # STARTUP
     logger.info("🚀 Inicializando DistriSearch")
     
     # Verificar conexión a MongoDB
@@ -69,7 +51,7 @@ async def on_startup():
             finally:
                 await asyncio.sleep(interval)
     
-    asyncio.create_task(_replication_loop())
+    replication_task = asyncio.create_task(_replication_loop())
 
     async def _maintenance_loop():
         interval = int(os.getenv("MAINTENANCE_INTERVAL_SECONDS", "300"))
@@ -82,7 +64,7 @@ async def on_startup():
             finally:
                 await asyncio.sleep(interval)
     
-    asyncio.create_task(_maintenance_loop())
+    maintenance_task = asyncio.create_task(_maintenance_loop())
     
     async def _node_discovery_loop():
         """Descubre nodos dinámicamente."""
@@ -96,7 +78,7 @@ async def on_startup():
             finally:
                 await asyncio.sleep(interval)
     
-    asyncio.create_task(_node_discovery_loop())
+    discovery_task = asyncio.create_task(_node_discovery_loop())
 
     async def _probe_unknown_nodes():
         """Intenta contactar nodos con estado 'unknown'."""
@@ -119,12 +101,12 @@ async def on_startup():
     
     # Elección inicial de líder si es necesario
     if not coordinator.get_current_leader():
-        asyncio.create_task(coordinator.start_election(reason="startup"))
+        election_task = asyncio.create_task(coordinator.start_election(reason="startup"))
     
     # Loop de verificación de líder
     async def _leader_check_loop():
         """Verifica periódicamente si el líder sigue activo"""
-        interval = 60  # segundos
+        interval = 60
         while True:
             try:
                 leader = coordinator.get_current_leader()
@@ -138,7 +120,7 @@ async def on_startup():
             finally:
                 await asyncio.sleep(interval)
     
-    asyncio.create_task(_leader_check_loop())
+    leader_check_task = asyncio.create_task(_leader_check_loop())
 
     # Inicializar namespace jerárquico
     namespace = get_namespace()
@@ -152,9 +134,6 @@ async def on_startup():
     async def on_node_discovered_callback(node_info: Dict):
         """Callback cuando se descubre un nodo nuevo"""
         try:
-            from services import node_service
-            
-            # Registrar nodo automáticamente
             node_data = {
                 "node_id": node_info['node_id'],
                 "ip_address": node_info['ip_address'],
@@ -186,8 +165,51 @@ async def on_startup():
     )
     
     # Iniciar multicast discovery
-    asyncio.create_task(multicast.start())
+    multicast_task = asyncio.create_task(multicast.start())
     logger.info("✅ Multicast discovery iniciado")
+    
+    # ✅ Yield control (aplicación corriendo)
+    yield
+    
+    # SHUTDOWN
+    logger.info("🛑 Deteniendo DistriSearch...")
+    
+    # Cancelar todas las tareas
+    for task in [replication_task, maintenance_task, discovery_task, leader_check_task, multicast_task]:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+    
+    # Detener multicast
+    multicast.stop()
+    
+    logger.info("✅ DistriSearch detenido correctamente")
+
+
+# ✅ Crear app con lifespan
+app = FastAPI(
+    title="DistriSearch API",
+    description="API para búsqueda distribuida de archivos con MongoDB",
+    version="2.0.0",
+    lifespan=lifespan  # ✅ NUEVO: Usar lifespan en lugar de on_event
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Registrar routers
+app.include_router(auth.router)
+app.include_router(search.router)
+app.include_router(register.router)
+app.include_router(download.router)
+app.include_router(coordination.router)
 
 @app.get("/")
 async def root():

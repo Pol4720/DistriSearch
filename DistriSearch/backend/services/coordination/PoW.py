@@ -9,7 +9,7 @@ import logging
 from typing import Optional
 from datetime import datetime
 import os
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ThreadPoolExecutor  # ✅ CAMBIAR A Thread
 import multiprocessing
 
 logger = logging.getLogger(__name__)
@@ -17,16 +17,16 @@ logger = logging.getLogger(__name__)
 class ProofOfWorkElection:
     """
     Elección de líder mediante Prueba de Trabajo
-    El primer nodo en resolver el desafío criptográfico se convierte en líder
     """
     
     def __init__(self, difficulty: int = 4):
-        self.difficulty = difficulty  # Número de ceros iniciales requeridos
+        self.difficulty = difficulty
         self.current_challenge = None
         self.current_leader = None
         self.leader_timestamp = None
-        self.leader_term = 0  # Término de liderazgo (incrementa con cada elección)
-        self.executor = ProcessPoolExecutor(max_workers=multiprocessing.cpu_count())
+        self.leader_term = 0
+        # ✅ CAMBIAR: Usar ThreadPoolExecutor en lugar de ProcessPoolExecutor
+        self.executor = ThreadPoolExecutor(max_workers=multiprocessing.cpu_count())
     
     def generate_challenge(self) -> str:
         """Genera un nuevo desafío para la prueba de trabajo"""
@@ -42,7 +42,7 @@ class ProofOfWorkElection:
         return hash_result.startswith('0' * self.difficulty)
     
     def _solve_sync(self, challenge: str, node_id: str, max_iterations: int) -> Optional[int]:
-        """Versión síncrona para ejecutar en proceso separado"""
+        """Versión síncrona para ejecutar en thread"""
         for nonce in range(max_iterations):
             if self.verify_proof(challenge, nonce, node_id):
                 return nonce
@@ -50,11 +50,11 @@ class ProofOfWorkElection:
     
     async def solve_challenge(self, challenge: str, node_id: str, max_iterations: int = 1000000) -> Optional[int]:
         """
-        Versión asíncrona que delega a proceso separado
+        Resuelve el desafío PoW de forma asíncrona
         """
         loop = asyncio.get_event_loop()
         
-        # Ejecutar en proceso separado
+        # ✅ AHORA funciona con ThreadPoolExecutor
         nonce = await loop.run_in_executor(
             self.executor,
             self._solve_sync,

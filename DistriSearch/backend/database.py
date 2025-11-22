@@ -211,7 +211,7 @@ def delete_node_mount(node_id: str):
 # ==================== AUTENTICACIÓN (Migrado desde SQLite) ====================
 
 def create_user(email: str, username: str, hashed_password: str) -> Dict:
-    """Crea un nuevo usuario en MongoDB."""
+    """Crea un nuevo usuario en MongoDB"""
     user_doc = {
         "email": email,
         "username": username,
@@ -226,7 +226,7 @@ def create_user(email: str, username: str, hashed_password: str) -> Dict:
         user_doc["_id"] = str(result.inserted_id)
         return user_doc
     except DuplicateKeyError:
-        raise ValueError("Usuario o email ya registrado")
+        raise ValueError("Usuario o email ya existe")
 
 def get_user_by_username(username: str) -> Optional[Dict]:
     """Obtiene un usuario por su username."""

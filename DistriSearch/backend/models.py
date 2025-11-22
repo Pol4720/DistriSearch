@@ -73,13 +73,14 @@ class NodeRegistration(BaseModel):
     """Modelo simplificado para registro dinámico de nodos"""
     node_id: str
     name: Optional[str] = None
-    ip_address: Optional[str] = None  # Opcional: si no se proporciona, usamos la IP de la solicitud
-    port: int = 8080  # Puerto por defecto para agentes
-    shared_folder: Optional[str] = None  # Ruta de la carpeta compartida (si es local)
-    auto_scan: bool = False  # Si debe escanear automáticamente al registrarse
+    ip_address: Optional[str] = None
+    port: int = 8080
+    shared_folder: Optional[str] = None
+    auto_scan: bool = False
     
     class Config:
-        schema_extra = {
+        # ✅ CORREGIDO para Pydantic v2
+        json_schema_extra = {
             "example": {
                 "node_id": "agent_dynamic_01",
                 "name": "Agente Dynamico 1",

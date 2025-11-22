@@ -215,7 +215,7 @@ class DistributedCoordinator:
         if success:
             # Registrar adquisición
             await self.clock.increment()
-            self.db.mutex_events.insert_one({
+            self.db.mutex_events.insert_one({ 
                 "node_id": self.node_id,
                 "resource_id": resource_id,
                 "action": "acquire",
