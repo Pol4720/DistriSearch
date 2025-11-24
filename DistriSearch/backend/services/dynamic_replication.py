@@ -61,12 +61,21 @@ class DynamicReplicationService:
     async def replicate_file(self, file_meta: Dict, source_node_id: str) -> Dict:
         """
         Replica un archivo a N nodos según el factor de replicación
-        Protocolo: Escritura Local
         """
         file_id = file_meta['file_id']
         
-        # Obtener nodos destino
+        # Obtener nodos destino (excluir el nodo origen)
         target_nodes = self.get_replication_nodes(file_id, exclude_nodes={source_node_id})
+        
+        if not target_nodes:
+            logger.warning(f"⚠️ No hay nodos disponibles para replicar {file_id}")
+            return {
+                "file_id": file_id,
+                "replicated_to": [],
+                "failed": [],
+                "timestamp": datetime.utcnow(),
+                "error": "No target nodes available"
+            }
         
         results = {
             "file_id": file_id,
@@ -75,22 +84,39 @@ class DynamicReplicationService:
             "timestamp": datetime.utcnow()
         }
         
-        # Replicar en paralelo
+        # ✅ ARREGLO CRÍTICO: Replicar en paralelo con timeout
         tasks = []
         for node in target_nodes:
-            tasks.append(self._replicate_to_node(file_meta, source_node_id, node))
+            task = self._replicate_to_node(file_meta, source_node_id, node)
+            tasks.append(task)
         
-        responses = await asyncio.gather(*tasks, return_exceptions=True)
+        # Ejecutar con timeout de 30 segundos por réplica
+        try:
+            responses = await asyncio.wait_for(
+                asyncio.gather(*tasks, return_exceptions=True),
+                timeout=30.0
+            )
+        except asyncio.TimeoutError:
+            logger.error(f"⏱️ Timeout replicando {file_id}")
+            return results
         
+        # Procesar resultados
         for idx, response in enumerate(responses):
             node = target_nodes[idx]
             if isinstance(response, Exception):
+                logger.error(f"❌ Error replicando a {node['node_id']}: {response}")
                 results['failed'].append({
-                    'node_id': node['node_id'],
-                    'error': str(response)
+                    "node_id": node['node_id'],
+                    "error": str(response)
                 })
-            else:
+            elif response.get('status') == 'success':
                 results['replicated_to'].append(node['node_id'])
+                logger.info(f"✅ Replicado a {node['node_id']}")
+            else:
+                results['failed'].append({
+                    "node_id": node['node_id'],
+                    "error": response.get('error', 'Unknown error')
+                })
         
         # Guardar metadata de replicación
         self.db.replications.insert_one({
@@ -101,91 +127,61 @@ class DynamicReplicationService:
             "status": "completed" if not results['failed'] else "partial"
         })
         
+        logger.info(f"🔄 Replicación completa: {len(results['replicated_to'])}/{len(target_nodes)} exitosas")
+        
         return results
     
     async def _replicate_to_node(self, file_meta: Dict, source_node_id: str, target_node: Dict):
         """
-        ✅ COMPLETADO: Replica archivo físico a un nodo específico
-        Implementa redundancia física según teoría de tolerancia a fallos
+        ✅ ARREGLO CRÍTICO: Implementación real de replicación
         """
         try:
-            file_content = file_meta.get('file_content')
+            # 1. Leer archivo físico del nodo origen
+            source_path = file_meta.get('physical_path')
             
-            # Si no viene el contenido, descargarlo desde nodo fuente
-            if not file_content:
-                source_node = self.db.nodes.find_one({"node_id": source_node_id})
-                if not source_node:
-                    raise Exception(f"Nodo fuente {source_node_id} no encontrado")
-                
-                # ✅ REDUNDANCIA DE TIEMPO: Retry automático
-                max_retries = 3
-                for attempt in range(max_retries):
-                    try:
-                        async with httpx.AsyncClient(timeout=30) as client:
-                            download_url = f"http://{source_node['ip_address']}:{source_node['port']}/download/file/{file_meta['file_id']}"
-                            response = await client.get(download_url)
-                            
-                            if response.status_code == 200:
-                                file_content = response.content
-                                break
-                            else:
-                                raise Exception(f"Error HTTP {response.status_code}")
-                                
-                    except Exception as e:
-                        if attempt == max_retries - 1:
-                            raise
-                        logger.warning(f"⚠️ Intento {attempt+1}/{max_retries} falló: {e}")
-                        await asyncio.sleep(2 ** attempt)  # Backoff exponencial
+            if not source_path or not os.path.exists(source_path):
+                # Intentar reconstruir ruta
+                uploads_dir = os.path.abspath(os.path.join(
+                    os.path.dirname(__file__), "..", "uploads", source_node_id
+                ))
+                source_path = os.path.join(uploads_dir, file_meta['name'])
             
-            # ✅ Enviar archivo al nodo destino
-            async with httpx.AsyncClient(timeout=60) as client:
-                files = {
-                    'file': (file_meta['name'], file_content, file_meta.get('mime_type', 'application/octet-stream'))
-                }
-                
-                data = {
-                    'node_id': target_node['node_id'],
-                    'virtual_path': file_meta.get('path'),
-                    'replicate': 'false'  # ✅ Evitar replicación recursiva
-                }
-                
-                api_key = os.getenv("ADMIN_API_KEY")
-                headers = {"X-API-KEY": api_key} if api_key else {}
-                
-                upload_url = f"http://{target_node['ip_address']}:{target_node['port']}/register/upload"
-                
-                # ✅ REDUNDANCIA DE TIEMPO: Retry en envío
-                for attempt in range(3):
-                    try:
-                        response = await client.post(
-                            upload_url,
-                            files=files,
-                            data=data,
-                            headers=headers
-                        )
-                        
-                        if response.status_code == 200:
-                            logger.info(f"✅ Archivo {file_meta['file_id']} replicado a {target_node['node_id']}")
-                            return {
-                                "node_id": target_node['node_id'],
-                                "status": "success",
-                                "response": response.json()
-                            }
-                        else:
-                            raise Exception(f"Error en nodo destino: {response.status_code}")
-                            
-                    except Exception as e:
-                        if attempt == 2:
-                            raise
-                        await asyncio.sleep(2 ** attempt)
+            if not os.path.exists(source_path):
+                raise FileNotFoundError(f"Archivo origen no encontrado: {source_path}")
+            
+            # 2. Leer contenido
+            with open(source_path, 'rb') as f:
+                content = f.read()
+            
+            # 3. Guardar réplica en directorio del nodo destino
+            target_uploads_dir = os.path.abspath(os.path.join(
+                os.path.dirname(__file__), "..", "uploads", target_node['node_id']
+            ))
+            os.makedirs(target_uploads_dir, exist_ok=True)
+            
+            target_path = os.path.join(target_uploads_dir, file_meta['name'])
+            
+            # Escribir archivo
+            with open(target_path, 'wb') as f:
+                f.write(content)
+            
+            # 4. Registrar en MongoDB
+            replica_meta = file_meta.copy()
+            replica_meta['node_id'] = target_node['node_id']
+            replica_meta['is_replica'] = True
+            replica_meta['replica_source'] = source_node_id
+            replica_meta['replicated_at'] = datetime.utcnow()
+            
+            # Insertar en DB
+            self.db.files.insert_one(replica_meta)
+            
+            logger.info(f"✅ Réplica guardada: {target_node['node_id']}/{file_meta['name']}")
+            
+            return {"status": "success", "node_id": target_node['node_id']}
             
         except Exception as e:
             logger.error(f"❌ Error replicando a {target_node['node_id']}: {e}")
-            return {
-                "node_id": target_node['node_id'],
-                "status": "failed",
-                "error": str(e)
-            }
+            return {"status": "error", "error": str(e)}
     
     async def synchronize_eventual_consistency(self):
         """

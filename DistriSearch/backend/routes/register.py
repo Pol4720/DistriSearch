@@ -10,6 +10,7 @@ import os
 import mimetypes
 import hashlib
 import logging
+from services.dynamic_replication import get_replication_service 
 
 logger = logging.getLogger(__name__)
 
@@ -252,101 +253,123 @@ async def upload_file_to_system(
     file: UploadFile = File(...),
     node_id: Optional[str] = Form("central"),
     virtual_path: Optional[str] = Form(None),
+    replicate: Optional[str] = Form("false"),
     _: None = Depends(require_api_key)
 ):
     """
-    Sube un archivo al sistema y lo registra en MongoDB
-    - Extrae contenido de texto para indexación
-    - Calcula hash para deduplicación
-    - Registra en namespace jerárquico
+    Sube un archivo al sistema.
+    Si replicate=true, automáticamente lo replica a otros nodos.
     """
     try:
-        # Leer contenido
-        content_bytes = await file.read()
-        file_size = len(content_bytes)
+        # Leer contenido del archivo
+        content = await file.read()
+        
+        # Validar tamaño
+        max_size = 100 * 1024 * 1024  # 100 MB
+        if len(content) > max_size:
+            raise HTTPException(status_code=413, detail=f"Archivo muy grande (max: {max_size} bytes)")
+        
+        # Determinar ruta de almacenamiento
+        node = database.get_node(node_id)
+        if not node:
+            raise HTTPException(status_code=404, detail=f"Nodo {node_id} no encontrado")
+        
+        # Crear directorio del nodo si no existe
+        uploads_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "uploads", node_id))
+        os.makedirs(uploads_dir, exist_ok=True)
+        
+        # Guardar archivo
+        file_path = os.path.join(uploads_dir, file.filename)
+        
+        with open(file_path, "wb") as f:
+            f.write(content)
+        
+        # Calcular hash
+        content_hash = hashlib.sha256(content).hexdigest()
         
         # Generar file_id único
-        file_hash = hashlib.sha256(content_bytes).hexdigest()
-        file_id = f"{node_id}_{file_hash[:16]}"
-        
-        # Detectar tipo MIME
-        mime_type, _ = mimetypes.guess_type(file.filename)
-        if not mime_type:
-            mime_type = "application/octet-stream"
+        file_id = f"{node_id}_{content_hash[:16]}"
         
         # Determinar tipo de archivo
-        if mime_type.startswith("text/") or mime_type in ["application/json", "application/xml"]:
-            file_type = "document"
-        elif mime_type.startswith("image/"):
+        mime_type = file.content_type or "application/octet-stream"
+        
+        if mime_type.startswith("image/"):
             file_type = "image"
         elif mime_type.startswith("video/"):
             file_type = "video"
         elif mime_type.startswith("audio/"):
             file_type = "audio"
-        elif mime_type in ["application/pdf", "application/msword", 
-                          "application/vnd.openxmlformats-officedocument.wordprocessingml.document"]:
+        elif mime_type in ["application/pdf", "application/msword", "text/plain"]:
             file_type = "document"
         else:
             file_type = "other"
-        
-        # Extraer contenido de texto para indexación
-        content_text = None
-        if mime_type.startswith("text/"):
-            try:
-                content_text = content_bytes.decode('utf-8', errors='ignore')
-            except:
-                pass
         
         # Crear metadata
         file_meta = FileMeta(
             file_id=file_id,
             name=file.filename,
-            path=virtual_path or f"/uploads/{file.filename}",
-            size=file_size,
+            path=virtual_path or f"/{file.filename}",
+            size=len(content),
             mime_type=mime_type,
             type=file_type,
             node_id=node_id,
-            last_updated=datetime.now(),
-            content=content_text,
-            content_hash=file_hash
+            last_updated=datetime.utcnow(),
+            content_hash=content_hash
         )
         
         # Registrar en base de datos
         database.register_file(file_meta)
         
-        # ✅ NUEVO: Guardar archivo físico en carpeta del nodo central
-        upload_folder = database.get_node_mount(node_id)
-        if not upload_folder:
-            # Crear carpeta por defecto
-            upload_folder = os.path.join(os.getcwd(), "uploads", node_id)
-            os.makedirs(upload_folder, exist_ok=True)
-            database.set_node_mount(node_id, upload_folder)
+        logger.info(f"✅ Archivo subido: {file_id} ({len(content)} bytes)")
         
-        file_path = os.path.join(upload_folder, file.filename)
-        with open(file_path, "wb") as f:
-            f.write(content_bytes)
+        # ✅ ARREGLO CRÍTICO: Siempre intentar replicar si está habilitado
+        replication_result = None
+        should_replicate = replicate.lower() in {"true", "1", "yes"}
         
-        # Actualizar contador de archivos del nodo
-        total = database.get_node_file_count(node_id)
-        database.update_node_shared_files_count(node_id, total)
-        
-        logger.info(f"✅ Archivo subido: {file.filename} ({file_size} bytes) -> {file_id}")
+        if should_replicate:
+            try:
+                repl_service = get_replication_service()
+                
+                # Convertir FileMeta a dict
+                file_dict = {
+                    "file_id": file_meta.file_id,
+                    "name": file_meta.name,
+                    "path": file_meta.path,
+                    "size": file_meta.size,
+                    "mime_type": file_meta.mime_type,
+                    "type": file_meta.type,
+                    "node_id": file_meta.node_id,
+                    "content_hash": file_meta.content_hash,
+                    "physical_path": file_path,  # ✅ CRÍTICO: Pasar ruta física
+                    "last_updated": datetime.utcnow()
+                }
+                
+                # ✅ ESPERAR LA REPLICACIÓN (no fire-and-forget)
+                replication_result = await repl_service.replicate_file(
+                    file_dict,
+                    source_node_id=node_id
+                )
+                
+                logger.info(f"🔄 Replicación completa: {replication_result}")
+                
+            except Exception as e:
+                logger.error(f"⚠️ Error en replicación: {e}", exc_info=True)
+                # ✅ IMPORTANTE: Informar del error pero no fallar el upload
         
         return {
             "status": "success",
             "file_id": file_id,
             "filename": file.filename,
-            "size": file_size,
-            "mime_type": mime_type,
-            "type": file_type,
+            "size": len(content),
             "node_id": node_id,
+            "content_hash": content_hash,
             "path": file_path,
-            "content_indexed": content_text is not None,
-            "hash": file_hash
+            "replicated": replication_result is not None,
+            "replication_info": replication_result
         }
         
     except Exception as e:
-        logger.error(f"Error subiendo archivo: {e}")
+        logger.error(f"❌ Error subiendo archivo: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
