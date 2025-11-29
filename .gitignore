@@ -1,0 +1,39 @@
+# Directorios
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Entornos virtuales
+venv/
+env/
+ENV/
+
+# Logs
+*.log
+distrisearch.log
+
+# Datos persistentes
+data/
+*.db
+*.sqlite
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Tests
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Docker
+*.tar
+
+# OS
+.DS_Store
+Thumbs.db

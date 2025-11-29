@@ -2,21 +2,30 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Instalar dependencias del sistema si son necesarias
-RUN apt-get update && apt-get install -y \
-    gcc \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copiar requirements y instalar dependencias Python
+# Copiar requirements
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copiar código fuente
-COPY . /app
+COPY hypercube.py .
+COPY election.py .
+COPY storage.py .
+COPY network.py .
+COPY databalancer.py .
+COPY node.py .
+
+# Crear directorio para datos
+RUN mkdir -p /app/data
 
 # Variables de entorno por defecto
-ENV PYTHONUNBUFFERED=1
-ENV IPFS_API_URL=/ip4/127.0.0.1/tcp/5001
+ENV NODE_ID=0
+ENV DIMENSIONS=20
+ENV HOST=0.0.0.0
+ENV PORT=8000
 
-# El comando se especificará en docker-compose
-CMD ["python", "menu.py"]
+# Script de entrada
+COPY docker-entrypoint.py .
+
+EXPOSE 8000
+
+CMD ["python", "docker-entrypoint.py"]
