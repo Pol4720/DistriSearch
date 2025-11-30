@@ -1,0 +1,1244 @@
+\documentclass[12pt,a4paper]{article}
+
+% ============================================
+% PAQUETES
+% ============================================
+\usepackage[utf8]{inputenc}
+\usepackage[spanish]{babel}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{float}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{geometry}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric, arrows, positioning, fit, calc}
+
+% ============================================
+% CONFIGURACIÓN
+% ============================================
+\geometry{margin=2.5cm}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,
+    urlcolor=cyan,
+    citecolor=green
+}
+
+% Estilo de código
+\lstset{
+    backgroundcolor=\color{gray!10},
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    captionpos=b,
+    commentstyle=\color{green!60!black},
+    keywordstyle=\color{blue},
+    stringstyle=\color{orange},
+    frame=single,
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    showstringspaces=false
+}
+
+% Encabezado y pie de página
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{DistriSearch}
+\lhead{Sistemas Distribuidos}
+\rfoot{Página \thepage}
+
+% ============================================
+% PORTADA
+% ============================================
+\begin{document}
+
+\begin{titlepage}
+    \centering
+    \vspace*{2cm}
+    
+    {\Huge\bfseries DistriSearch\par}
+    \vspace{0.5cm}
+    {\Large Sistema de Búsqueda de Archivos Distribuido\par}
+    
+    \vspace{2cm}
+    
+    {\large\textbf{Informe Técnico del Proyecto}\par}
+    {\large Sistemas Distribuidos\par}
+    
+    \vspace{3cm}
+    
+    {\large\textbf{Autores:}\par}
+    \vspace{0.5cm}
+    % TODO: Agregar nombres de los integrantes
+    Nombre Apellido 1\\
+    Nombre Apellido 2\\
+    Nombre Apellido 3\\
+    
+    \vspace{3cm}
+    
+    {\large Universidad de La Habana\par}
+    {\large Facultad de Matemática y Computación\par}
+    
+    \vspace{1cm}
+    
+    {\large Noviembre 2025\par}
+    
+\end{titlepage}
+
+% ============================================
+% ÍNDICE
+% ============================================
+\tableofcontents
+\newpage
+
+% ============================================
+% RESUMEN EJECUTIVO
+% ============================================
+\section{Resumen Ejecutivo}
+
+DistriSearch es un sistema distribuido de búsqueda e indexación de archivos que permite a múltiples nodos compartir y buscar archivos de manera eficiente. El sistema está diseñado para escalar desde pequeños clusters de 3-4 nodos hasta deployments empresariales de más de 100 nodos.
+
+\subsection{Objetivos del Sistema}
+\begin{itemize}
+    \item Proporcionar búsqueda full-text distribuida sobre archivos compartidos
+    \item Garantizar alta disponibilidad mediante replicación de datos
+    \item Soportar la adición y eliminación dinámica de nodos
+    \item Mantener consistencia eventual de los datos
+    \item Proveer una interfaz web intuitiva para usuarios
+\end{itemize}
+
+\subsection{Tecnologías Principales}
+\begin{itemize}
+    \item \textbf{Backend}: Python (FastAPI) con arquitectura async/await
+    \item \textbf{Frontend}: Streamlit para interfaz de usuario
+    \item \textbf{Base de Datos}: MongoDB con GridFS para archivos grandes
+    \item \textbf{Mensajería}: Redis para pub/sub distribuido
+    \item \textbf{Contenedores}: Docker y Docker Compose
+    \item \textbf{Monitoreo}: Prometheus y Grafana (opcional)
+\end{itemize}
+
+\newpage
+
+% ============================================
+% 1. ARQUITECTURA DEL SISTEMA
+% ============================================
+\section{Arquitectura del Sistema}
+
+\subsection{Problema de Diseño}
+
+El diseño del sistema enfrenta varios desafíos fundamentales:
+
+\begin{enumerate}
+    \item \textbf{Escalabilidad}: ¿Cómo soportar desde 3 hasta 100+ nodos sin degradación significativa?
+    \item \textbf{Disponibilidad}: ¿Cómo mantener el servicio operativo ante fallas de nodos?
+    \item \textbf{Consistencia}: ¿Cómo garantizar que las búsquedas retornen resultados actualizados?
+    \item \textbf{Particionamiento}: ¿Cómo distribuir los datos entre nodos de manera eficiente?
+\end{enumerate}
+
+\subsection{Organización del Sistema Distribuido}
+
+El sistema sigue una arquitectura \textbf{híbrida} que combina elementos de:
+
+\begin{itemize}
+    \item \textbf{Cliente-Servidor}: Los usuarios interactúan con el frontend que actúa como cliente del backend.
+    \item \textbf{Peer-to-Peer}: Los nodos agentes se comunican entre sí para replicación y coordinación.
+    \item \textbf{Coordinador Dinámico}: Un nodo es elegido líder mediante el protocolo Raft.
+\end{itemize}
+
+\begin{figure}[H]
+    \centering
+    \begin{tikzpicture}[
+        node distance=2cm,
+        component/.style={rectangle, draw, rounded corners, minimum width=3cm, minimum height=1cm, fill=blue!20},
+        database/.style={cylinder, draw, shape border rotate=90, aspect=0.25, minimum height=1.5cm, minimum width=2cm, fill=green!20},
+        user/.style={rectangle, draw, rounded corners, minimum width=2cm, minimum height=0.8cm, fill=yellow!20}
+    ]
+        % Usuario
+        \node[user] (user) {Usuario};
+        
+        % Frontend
+        \node[component, below=of user] (frontend) {Frontend (Streamlit)};
+        
+        % Backend
+        \node[component, below=of frontend] (backend) {Backend (FastAPI)};
+        
+        % Agentes
+        \node[component, below left=2cm and 1cm of backend] (agent1) {Agente 1};
+        \node[component, below=of backend] (agent2) {Agente 2 (Líder)};
+        \node[component, below right=2cm and 1cm of backend] (agent3) {Agente 3};
+        
+        % Bases de datos
+        \node[database, right=3cm of backend] (mongodb) {MongoDB};
+        \node[database, below=of mongodb] (redis) {Redis};
+        
+        % Conexiones
+        \draw[->] (user) -- (frontend);
+        \draw[<->] (frontend) -- (backend);
+        \draw[<->] (backend) -- (agent1);
+        \draw[<->] (backend) -- (agent2);
+        \draw[<->] (backend) -- (agent3);
+        \draw[<->] (backend) -- (mongodb);
+        \draw[<->] (backend) -- (redis);
+        
+        % Conexiones P2P entre agentes
+        \draw[<->, dashed] (agent1) -- (agent2);
+        \draw[<->, dashed] (agent2) -- (agent3);
+        \draw[<->, dashed] (agent1) to[bend left=30] (agent3);
+        
+    \end{tikzpicture}
+    \caption{Arquitectura general del sistema DistriSearch}
+    \label{fig:arquitectura}
+\end{figure}
+
+\subsection{Roles del Sistema}
+
+El sistema define los siguientes roles para los nodos:
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{|l|p{8cm}|l|}
+        \hline
+        \textbf{Rol} & \textbf{Responsabilidades} & \textbf{Instancias} \\
+        \hline
+        \texttt{COORDINATOR} & 
+        Elección de líder, coordinación de transacciones, gestión de membresía del cluster & 
+        1 (elegido) \\
+        \hline
+        \texttt{WORKER} & 
+        Almacenamiento de archivos, indexación local, respuesta a búsquedas, replicación & 
+        N \\
+        \hline
+        \texttt{GATEWAY} & 
+        Punto de entrada para clientes, balanceo de carga, routing de peticiones & 
+        1+ \\
+        \hline
+        \texttt{HYBRID} & 
+        Combina funciones de WORKER y GATEWAY (modo por defecto) & 
+        N \\
+        \hline
+    \end{tabular}
+    \caption{Roles de nodos en el sistema}
+    \label{tab:roles}
+\end{table}
+
+\subsection{Distribución de Servicios en Redes Docker}
+
+El sistema utiliza una arquitectura de \textbf{doble red} para seguridad y aislamiento:
+
+\subsubsection{Red Interna (\texttt{internal\_network})}
+
+Red privada para comunicación entre servicios del backend:
+
+\begin{itemize}
+    \item Backend API
+    \item MongoDB
+    \item Redis
+    \item Agentes
+    \item Prometheus (monitoreo)
+\end{itemize}
+
+\textbf{Características}:
+\begin{itemize}
+    \item No expuesta al exterior
+    \item Comunicación segura entre contenedores
+    \item DNS interno de Docker para descubrimiento
+\end{itemize}
+
+\subsubsection{Red de Cliente (\texttt{client\_network})}
+
+Red para comunicación con usuarios finales:
+
+\begin{itemize}
+    \item Frontend (Streamlit)
+    \item Backend API (puerto expuesto)
+    \item Grafana (monitoreo, opcional)
+\end{itemize}
+
+\begin{figure}[H]
+    \centering
+    \begin{tikzpicture}[
+        network/.style={rectangle, draw, dashed, rounded corners, minimum width=8cm, minimum height=4cm},
+        service/.style={rectangle, draw, rounded corners, minimum width=2cm, minimum height=0.8cm, fill=blue!20},
+        db/.style={rectangle, draw, rounded corners, minimum width=2cm, minimum height=0.8cm, fill=green!20}
+    ]
+        % Red interna
+        \node[network, fill=red!5] (internal) at (0,0) {};
+        \node[above] at (internal.north) {\texttt{internal\_network}};
+        
+        % Servicios internos
+        \node[service] at (-2, 0.5) {Backend};
+        \node[db] at (0, 0.5) {MongoDB};
+        \node[db] at (2, 0.5) {Redis};
+        \node[service] at (-2, -0.8) {Agent 1};
+        \node[service] at (0, -0.8) {Agent 2};
+        \node[service] at (2, -0.8) {Agent 3};
+        
+        % Red cliente
+        \node[network, fill=blue!5] (client) at (0,-4) {};
+        \node[above] at (client.north) {\texttt{client\_network}};
+        
+        \node[service] at (-2, -4) {Frontend};
+        \node[service] at (0, -4) {Backend API};
+        \node[service] at (2, -4) {Grafana};
+        
+        % Conexión entre redes
+        \draw[<->, thick] (0, -1.5) -- (0, -2.5);
+        
+    \end{tikzpicture}
+    \caption{Distribución de servicios en redes Docker}
+    \label{fig:redes}
+\end{figure}
+
+\newpage
+
+% ============================================
+% 2. PROCESOS
+% ============================================
+\section{Procesos del Sistema}
+
+\subsection{Problema de Procesos}
+
+La cuestión fundamental es: \textit{¿Cuántos programas o servicios necesita el sistema y cómo se organizan?}
+
+\subsection{Tipos de Procesos}
+
+El sistema cuenta con los siguientes tipos de procesos:
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{|l|l|p{6cm}|}
+        \hline
+        \textbf{Proceso} & \textbf{Tipo} & \textbf{Descripción} \\
+        \hline
+        Backend API & Servidor HTTP & Procesa peticiones REST, coordina con agentes \\
+        \hline
+        Frontend & Servidor Web & Interfaz de usuario Streamlit \\
+        \hline
+        Agente & Daemon & Escanea carpetas, indexa archivos, sirve descargas \\
+        \hline
+        MongoDB & Base de Datos & Almacenamiento persistente \\
+        \hline
+        Redis & Message Broker & Pub/Sub para eventos distribuidos \\
+        \hline
+        Scanner (dentro del Agente) & Worker & Escaneo periódico de archivos \\
+        \hline
+        Message Bus Worker & Background Task & Procesa cola de eventos \\
+        \hline
+    \end{tabular}
+    \caption{Tipos de procesos en el sistema}
+    \label{tab:procesos}
+\end{table}
+
+\subsection{Organización de Procesos por Instancia}
+
+\subsubsection{Instancia Backend (1 contenedor)}
+\begin{itemize}
+    \item Proceso principal: Uvicorn (servidor ASGI)
+    \item Workers internos (asyncio tasks):
+    \begin{itemize}
+        \item Message Bus processor
+        \item Cluster manager heartbeat
+        \item Anti-entropy loop
+        \item Checkpoint scheduler
+    \end{itemize}
+\end{itemize}
+
+\subsubsection{Instancia Agente (N contenedores)}
+\begin{itemize}
+    \item Proceso principal: FastAPI server
+    \item Workers internos:
+    \begin{itemize}
+        \item File scanner (periódico)
+        \item Uploader service
+        \item Raft election loop
+        \item Replication worker
+    \end{itemize}
+\end{itemize}
+
+\subsection{Patrón de Diseño para Desempeño}
+
+El sistema utiliza un patrón \textbf{async/await con event loop} basado en:
+
+\begin{enumerate}
+    \item \textbf{Asyncio (Python)}: 
+    \begin{itemize}
+        \item Event loop único por proceso
+        \item Coroutines para I/O no bloqueante
+        \item Tasks para operaciones concurrentes
+    \end{itemize}
+    
+    \item \textbf{FastAPI con Uvicorn}:
+    \begin{itemize}
+        \item Servidor ASGI asíncrono
+        \item Múltiples workers opcionales
+        \item Manejo eficiente de conexiones HTTP
+    \end{itemize}
+    
+    \item \textbf{Hybrid Threading para CPU-bound}:
+    \begin{itemize}
+        \item ThreadPoolExecutor para operaciones de I/O de archivos
+        \item ProcessPoolExecutor para indexación pesada (opcional)
+    \end{itemize}
+\end{enumerate}
+
+\begin{lstlisting}[language=Python, caption=Ejemplo de patrón async/await]
+async def search_files(query: str) -> List[FileResult]:
+    # Crear tareas para buscar en paralelo
+    tasks = [
+        search_in_node(node, query) 
+        for node in cluster_nodes
+    ]
+    
+    # Ejecutar en paralelo y agregar resultados
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    return merge_results(results)
+\end{lstlisting}
+
+\newpage
+
+% ============================================
+% 3. COMUNICACIÓN
+% ============================================
+\section{Comunicación}
+
+\subsection{Problema de Comunicación}
+
+El desafío principal es: \textit{¿Cómo enviar información de manera eficiente y confiable entre los componentes del sistema?}
+
+\subsection{Tipos de Comunicación Utilizados}
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{|l|l|p{5cm}|}
+        \hline
+        \textbf{Tipo} & \textbf{Uso} & \textbf{Justificación} \\
+        \hline
+        REST/HTTP & Cliente-Servidor & Simplicidad, compatibilidad, stateless \\
+        \hline
+        Redis Pub/Sub & Eventos distribuidos & Desacoplamiento, broadcast eficiente \\
+        \hline
+        RPC (JSON-RPC) & Servidor-Servidor & Llamadas síncronas entre nodos \\
+        \hline
+        HTTP Streaming & Descarga de archivos & Transferencia eficiente de archivos grandes \\
+        \hline
+    \end{tabular}
+    \caption{Tipos de comunicación en el sistema}
+    \label{tab:comunicacion}
+\end{table}
+
+\subsection{Comunicación Cliente-Servidor}
+
+\subsubsection{Frontend $\leftrightarrow$ Backend}
+
+\begin{itemize}
+    \item \textbf{Protocolo}: HTTP/HTTPS REST
+    \item \textbf{Formato}: JSON
+    \item \textbf{Autenticación}: JWT Bearer tokens
+    \item \textbf{Endpoints principales}:
+    \begin{itemize}
+        \item \texttt{POST /api/auth/login} - Autenticación
+        \item \texttt{GET /api/search?q=...} - Búsqueda de archivos
+        \item \texttt{GET /api/files/\{file\_id\}/download} - Descarga
+        \item \texttt{GET /api/nodes} - Estado del cluster
+    \end{itemize}
+\end{itemize}
+
+\subsection{Comunicación Servidor-Servidor}
+
+\subsubsection{Backend $\leftrightarrow$ Agentes}
+
+\begin{itemize}
+    \item \textbf{Protocolo}: HTTP REST + Redis Pub/Sub
+    \item \textbf{Operaciones REST}:
+    \begin{itemize}
+        \item Registro de nodo
+        \item Indexación de archivos
+        \item Solicitud de descarga
+        \item Health checks
+    \end{itemize}
+    \item \textbf{Eventos Pub/Sub}:
+    \begin{itemize}
+        \item \texttt{node\_joined} / \texttt{node\_left}
+        \item \texttt{file\_indexed} / \texttt{file\_deleted}
+        \item \texttt{leader\_elected}
+        \item \texttt{replication\_required}
+    \end{itemize}
+\end{itemize}
+
+\subsubsection{Agente $\leftrightarrow$ Agente}
+
+Comunicación P2P para coordinación:
+
+\begin{itemize}
+    \item \textbf{Raft Consensus}:
+    \begin{itemize}
+        \item \texttt{RequestVote} RPC
+        \item \texttt{AppendEntries} RPC (heartbeats + log replication)
+    \end{itemize}
+    \item \textbf{Replicación}:
+    \begin{itemize}
+        \item \texttt{POST /api/replication/write}
+        \item \texttt{GET /api/replication/read/\{resource\_id\}}
+        \item \texttt{GET /api/replication/merkle/root}
+    \end{itemize}
+\end{itemize}
+
+\subsection{Comunicación entre Procesos}
+
+Dentro de un mismo contenedor, los procesos se comunican mediante:
+
+\begin{itemize}
+    \item \textbf{Message Bus interno}: Cola de eventos con prioridades
+    \item \textbf{Shared memory}: Para métricas y estado
+    \item \textbf{asyncio.Queue}: Para tareas asíncronas
+\end{itemize}
+
+\begin{lstlisting}[language=Python, caption=Ejemplo de Message Bus]
+# Publicar evento
+await message_bus.publish(Event(
+    event_type=EventType.FILE_INDEXED,
+    data={"file_id": file_id, "node_id": node_id},
+    priority=EventPriority.NORMAL
+))
+
+# Suscribirse a eventos
+@message_bus.subscribe(EventType.FILE_INDEXED)
+async def on_file_indexed(event: Event):
+    await update_search_index(event.data)
+\end{lstlisting}
+
+\newpage
+
+% ============================================
+% 4. COORDINACIÓN
+% ============================================
+\section{Coordinación}
+
+\subsection{Problema de Coordinación}
+
+El desafío es: \textit{¿Cómo poner de acuerdo a todos los servicios para actuar de manera coherente?}
+
+\subsection{Sincronización de Acciones}
+
+\subsubsection{Relojes Lógicos}
+
+El sistema implementa dos tipos de relojes lógicos:
+
+\begin{enumerate}
+    \item \textbf{Reloj de Lamport}: Para ordenamiento causal simple
+    \begin{itemize}
+        \item Cada evento local incrementa el contador
+        \item Al recibir mensaje: $C_{local} = max(C_{local}, C_{recibido}) + 1$
+    \end{itemize}
+    
+    \item \textbf{Vector Clocks}: Para detectar concurrencia
+    \begin{itemize}
+        \item Cada nodo mantiene contador por cada nodo conocido
+        \item Permite detectar eventos concurrentes vs. causalmente relacionados
+    \end{itemize}
+\end{enumerate}
+
+\subsubsection{Elección de Líder (Raft)}
+
+\begin{itemize}
+    \item \textbf{Estados}: Follower, Candidate, Leader
+    \item \textbf{Términos}: Número monotónicamente creciente para detectar líderes obsoletos
+    \item \textbf{Timeout aleatorio}: 150-300ms para evitar split votes
+    \item \textbf{Log replication}: Entradas confirmadas cuando mayoría replica
+\end{itemize}
+
+\begin{figure}[H]
+    \centering
+    \begin{tikzpicture}[
+        state/.style={circle, draw, minimum size=2cm, fill=blue!20},
+        ->, >=stealth, thick
+    ]
+        \node[state] (follower) at (0, 0) {Follower};
+        \node[state] (candidate) at (4, 0) {Candidate};
+        \node[state] (leader) at (8, 0) {Leader};
+        
+        \draw (follower) to[bend left=20] node[above] {timeout} (candidate);
+        \draw (candidate) to[bend left=20] node[above] {mayoría} (leader);
+        \draw (candidate) to[bend left=20] node[below] {pierde} (follower);
+        \draw (leader) to[bend left=40] node[below] {término mayor} (follower);
+        \draw (candidate) to[loop above] node {split vote} (candidate);
+        
+    \end{tikzpicture}
+    \caption{Transiciones de estado en Raft}
+    \label{fig:raft}
+\end{figure}
+
+\subsection{Acceso Exclusivo a Recursos}
+
+\subsubsection{Distributed Mutex (Ricart-Agrawala)}
+
+Para operaciones que requieren exclusión mutua:
+
+\begin{enumerate}
+    \item Nodo solicita acceso enviando timestamp a todos
+    \item Otros nodos responden si no están solicitando o tienen timestamp mayor
+    \item Se otorga acceso cuando se reciben respuestas de mayoría
+    \item Al liberar, se envían respuestas diferidas
+\end{enumerate}
+
+\subsubsection{Condiciones de Carrera Manejadas}
+
+\begin{itemize}
+    \item \textbf{Escrituras concurrentes}: Resueltas con Vector Clocks + Last-Write-Wins
+    \item \textbf{Registro de nodos}: Protegido por lock distribuido
+    \item \textbf{Elección de líder}: Términos de Raft previenen múltiples líderes
+\end{itemize}
+
+\subsection{Toma de Decisiones Distribuidas}
+
+\subsubsection{Two-Phase Commit (2PC)}
+
+Para transacciones que afectan múltiples nodos:
+
+\begin{enumerate}
+    \item \textbf{Fase Prepare}: Coordinador pregunta a participantes si pueden commit
+    \item \textbf{Fase Commit/Abort}: Coordinador decide según votos
+\end{enumerate}
+
+\subsubsection{Quorum-based Decisions}
+
+Para operaciones de lectura/escritura:
+\begin{itemize}
+    \item $W + R > N$ garantiza consistencia fuerte
+    \item Quorum de escritura: $W = \lfloor N/2 \rfloor + 1$
+    \item Quorum de lectura: $R = \lfloor N/2 \rfloor + 1$
+\end{itemize}
+
+\subsection{Fencing para Split-Brain}
+
+Mecanismo para prevenir situaciones donde múltiples nodos creen ser líder:
+
+\begin{itemize}
+    \item \textbf{Fencing Token}: Número monotónico asignado al convertirse en líder
+    \item \textbf{Validación}: Operaciones rechazadas si token es obsoleto
+    \item \textbf{Detección}: Verificación periódica de líderes múltiples
+    \item \textbf{Resolución}: Líder con token mayor gana
+\end{itemize}
+
+\newpage
+
+% ============================================
+% 5. NOMBRADO Y LOCALIZACIÓN
+% ============================================
+\section{Nombrado y Localización}
+
+\subsection{Problema de Nombrado}
+
+El desafío es: \textit{¿Dónde se encuentra un recurso y cómo llegar a él?}
+
+\subsection{Identificación de Datos y Servicios}
+
+\subsubsection{Identificadores de Archivos}
+
+Cada archivo tiene un identificador único compuesto por:
+
+\begin{lstlisting}
+file_id = sha256(node_id + path + content_hash)
+\end{lstlisting}
+
+\begin{itemize}
+    \item \textbf{Unicidad}: Garantizada por hash criptográfico
+    \item \textbf{Determinístico}: El mismo archivo genera el mismo ID
+    \item \textbf{Verificable}: Permite detectar modificaciones
+\end{itemize}
+
+\subsubsection{Identificadores de Nodos}
+
+\begin{lstlisting}
+node_id = f"{hostname}-{uuid4()}"
+\end{lstlisting}
+
+\begin{itemize}
+    \item Único globalmente
+    \item Persistente entre reinicios (almacenado en config)
+    \item Legible para debugging
+\end{itemize}
+
+\subsubsection{Identificadores de Servicios}
+
+\begin{lstlisting}
+service_id = f"{service_type}:{node_id}:{port}"
+# Ejemplo: "search:node-alpha-1234:8001"
+\end{lstlisting}
+
+\subsection{Ubicación de Datos y Servicios}
+
+\subsubsection{Service Registry}
+
+Registro centralizado (con respaldo distribuido) de servicios:
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{|l|l|l|l|}
+        \hline
+        \textbf{Service ID} & \textbf{Host} & \textbf{Port} & \textbf{Status} \\
+        \hline
+        search:node-1:8001 & 172.18.0.5 & 8001 & HEALTHY \\
+        search:node-2:8001 & 172.18.0.6 & 8001 & HEALTHY \\
+        upload:node-1:8002 & 172.18.0.5 & 8002 & DEGRADED \\
+        \hline
+    \end{tabular}
+    \caption{Ejemplo de Service Registry}
+\end{table}
+
+\subsubsection{Consistent Hashing}
+
+Para determinar qué nodo almacena qué datos:
+
+\begin{itemize}
+    \item Anillo virtual de $2^{32}$ posiciones
+    \item Nodos colocados según hash de su ID
+    \item Datos asignados al siguiente nodo en el anillo
+    \item Nodos virtuales para balanceo uniforme
+\end{itemize}
+
+\subsection{Localización de Datos y Servicios}
+
+\subsubsection{Descubrimiento de Servicios}
+
+\begin{enumerate}
+    \item \textbf{DNS interno de Docker}: Resolución por nombre de contenedor
+    \item \textbf{Service Registry}: Consulta de servicios disponibles
+    \item \textbf{Health Checks}: Verificación periódica de disponibilidad
+\end{enumerate}
+
+\subsubsection{Localización de Archivos}
+
+Para encontrar un archivo específico:
+
+\begin{enumerate}
+    \item Cliente envía búsqueda al backend
+    \item Backend consulta índice en MongoDB
+    \item Índice retorna \texttt{(file\_id, node\_id)} tuples
+    \item Backend consulta Service Registry para localizar nodo
+    \item Se establece conexión directa para descarga
+\end{enumerate}
+
+\newpage
+
+% ============================================
+% 6. CONSISTENCIA Y REPLICACIÓN
+% ============================================
+\section{Consistencia y Replicación}
+
+\subsection{Problema de Consistencia}
+
+El desafío es: \textit{¿Cómo garantizar que las copias de un dato sean coherentes?}
+
+\subsection{Distribución de Datos}
+
+\subsubsection{Particionamiento}
+
+Los datos se distribuyen usando \textbf{Consistent Hashing}:
+
+\begin{itemize}
+    \item Cada archivo pertenece a un nodo primario
+    \item Réplicas se colocan en nodos siguientes del anillo
+    \item Re-balanceo automático al agregar/eliminar nodos
+\end{itemize}
+
+\subsubsection{Tipos de Datos}
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{|l|l|l|}
+        \hline
+        \textbf{Tipo} & \textbf{Almacenamiento} & \textbf{Replicación} \\
+        \hline
+        Metadatos de archivos & MongoDB & Síncrona \\
+        Contenido de archivos & GridFS + Nodos & Eventual \\
+        Índice de búsqueda & MongoDB & Síncrona \\
+        Estado del cluster & Redis + Memory & Eventual \\
+        Log de Raft & MongoDB & Por consenso \\
+        \hline
+    \end{tabular}
+    \caption{Distribución de tipos de datos}
+\end{table}
+
+\subsection{Replicación}
+
+\subsubsection{Factor de Replicación}
+
+\begin{itemize}
+    \item Configurable (por defecto: 3)
+    \item Mínimo: $\lfloor N/2 \rfloor + 1$ para quorum
+    \item Máximo: N (todos los nodos)
+\end{itemize}
+
+\subsubsection{Estrategias de Replicación}
+
+\begin{enumerate}
+    \item \textbf{Síncrona (STRONG)}:
+    \begin{itemize}
+        \item Espera confirmación de todas las réplicas
+        \item Mayor latencia, máxima consistencia
+        \item Usada para: metadatos críticos
+    \end{itemize}
+    
+    \item \textbf{Quorum (QUORUM)}:
+    \begin{itemize}
+        \item Espera confirmación de mayoría
+        \item Balance entre latencia y consistencia
+        \item Usada por defecto
+    \end{itemize}
+    
+    \item \textbf{Asíncrona (EVENTUAL)}:
+    \begin{itemize}
+        \item Confirma inmediatamente, replica en background
+        \item Mínima latencia, consistencia eventual
+        \item Usada para: contenido de archivos
+    \end{itemize}
+\end{enumerate}
+
+\subsection{Confiabilidad de Réplicas}
+
+\subsubsection{Resolución de Conflictos}
+
+Cuando versiones divergen:
+
+\begin{enumerate}
+    \item \textbf{Last-Write-Wins (LWW)}: Timestamp más reciente gana
+    \item \textbf{Vector Clocks}: Detecta si son concurrentes o causales
+    \item \textbf{Merge}: Para datos que soportan fusión (ej: CRDTs)
+\end{enumerate}
+
+\subsubsection{Anti-Entropy con Merkle Trees}
+
+Proceso periódico para reparar inconsistencias:
+
+\begin{enumerate}
+    \item Cada nodo calcula hash de sus datos (Merkle root)
+    \item Compara roots con otros nodos
+    \item Si difieren, compara branches para identificar diferencias
+    \item Solo intercambia datos que difieren
+\end{enumerate}
+
+\begin{lstlisting}[language=Python, caption=Algoritmo de anti-entropy simplificado]
+async def anti_entropy(peer_node):
+    my_root = get_merkle_root()
+    peer_root = await peer.get_merkle_root()
+    
+    if my_root == peer_root:
+        return  # Sincronizados
+    
+    # Encontrar diferencias
+    diff_resources = await compare_merkle_branches(peer)
+    
+    for resource_id in diff_resources:
+        await sync_resource(resource_id, peer)
+\end{lstlisting}
+
+\newpage
+
+% ============================================
+% 7. TOLERANCIA A FALLAS
+% ============================================
+\section{Tolerancia a Fallas}
+
+\subsection{Problema de Tolerancia}
+
+El desafío es: \textit{¿Cómo mantener el sistema operativo cuando componentes fallan?}
+
+\subsection{Respuesta a Errores}
+
+\subsubsection{Tipos de Fallas Manejadas}
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{|l|p{5cm}|p{4cm}|}
+        \hline
+        \textbf{Tipo} & \textbf{Descripción} & \textbf{Respuesta} \\
+        \hline
+        CRASH & Nodo deja de funcionar & Failover + Replicación \\
+        \hline
+        OMISSION & Mensajes perdidos & Retry + Timeout \\
+        \hline
+        TIMING & Respuestas lentas & Timeout + Circuit Breaker \\
+        \hline
+        BYZANTINE & Comportamiento arbitrario & No soportado \\
+        \hline
+    \end{tabular}
+    \caption{Tipos de fallas y respuestas}
+\end{table}
+
+\subsubsection{Circuit Breaker Pattern}
+
+Protege contra fallos en cascada:
+
+\begin{figure}[H]
+    \centering
+    \begin{tikzpicture}[
+        state/.style={circle, draw, minimum size=1.8cm, fill=blue!20},
+        ->, >=stealth, thick
+    ]
+        \node[state, fill=green!20] (closed) at (0, 0) {CLOSED};
+        \node[state, fill=red!20] (open) at (4, 0) {OPEN};
+        \node[state, fill=yellow!20] (half) at (2, -2.5) {HALF-OPEN};
+        
+        \draw (closed) to[bend left=20] node[above] {5 fallos} (open);
+        \draw (open) to[bend left=20] node[right] {timeout 60s} (half);
+        \draw (half) to[bend left=20] node[left] {3 éxitos} (closed);
+        \draw (half) to[bend right=40] node[right] {1 fallo} (open);
+        
+    \end{tikzpicture}
+    \caption{Estados del Circuit Breaker}
+    \label{fig:circuit-breaker}
+\end{figure}
+
+\subsection{Nivel de Tolerancia Esperado}
+
+\begin{itemize}
+    \item \textbf{Tolerancia a $f$ fallas}: El sistema tolera $f = \lfloor (N-1)/2 \rfloor$ fallas simultáneas
+    \item \textbf{Con N=5 nodos}: Tolera 2 fallas simultáneas
+    \item \textbf{Con N=7 nodos}: Tolera 3 fallas simultáneas
+\end{itemize}
+
+\subsubsection{Métricas de Confiabilidad}
+
+\begin{itemize}
+    \item \textbf{MTTF} (Mean Time To Failure): Tiempo promedio hasta falla
+    \item \textbf{MTTR} (Mean Time To Repair): Tiempo promedio de recuperación
+    \item \textbf{MTBF} (Mean Time Between Failures): $MTBF = MTTF + MTTR$
+    \item \textbf{Availability}: $A = \frac{MTTF}{MTTF + MTTR}$
+\end{itemize}
+
+\subsection{Fallos Parciales}
+
+\subsubsection{Nodos Caídos Temporalmente}
+
+\begin{enumerate}
+    \item \textbf{Detección}: Heartbeats cada 5 segundos, timeout de 15 segundos
+    \item \textbf{Sospecha}: Nodo marcado como SUSPECT
+    \item \textbf{Confirmación}: Phi Accrual Failure Detector ($\phi > 8$)
+    \item \textbf{Failover}: Servicios migrados a otros nodos
+    \item \textbf{Recuperación}: Nodo puede re-unirse y sincronizar
+\end{enumerate}
+
+\subsubsection{Nodos Nuevos}
+
+\begin{enumerate}
+    \item Nuevo nodo contacta a nodo conocido (seed)
+    \item Recibe lista de miembros del cluster
+    \item Registra sus servicios en el Service Registry
+    \item Recibe datos asignados por Consistent Hashing
+    \item Comienza a participar en replicación
+\end{enumerate}
+
+\subsection{Checkpointing}
+
+\subsubsection{Checkpoints Locales}
+
+\begin{itemize}
+    \item Guardado periódico del estado (cada 5 minutos)
+    \item Almacenamiento en disco local + MongoDB
+    \item Limpieza automática (máximo 5 checkpoints)
+\end{itemize}
+
+\subsubsection{Checkpoints Distribuidos}
+
+Protocolo Chandy-Lamport simplificado:
+
+\begin{enumerate}
+    \item Iniciador crea checkpoint local y notifica a todos
+    \item Cada nodo crea su checkpoint y responde
+    \item Checkpoint global completo cuando mayoría responde
+    \item Permite recuperación consistente del sistema completo
+\end{enumerate}
+
+\newpage
+
+% ============================================
+% 8. SEGURIDAD
+% ============================================
+\section{Seguridad}
+
+\subsection{Problema de Seguridad}
+
+El desafío es: \textit{¿Qué tan vulnerable es el diseño y cómo protegemos el sistema?}
+
+\subsection{Seguridad en la Comunicación}
+
+\subsubsection{HTTPS/TLS}
+
+\begin{itemize}
+    \item Certificados SSL/TLS para todas las comunicaciones externas
+    \item Generación automática de certificados self-signed para desarrollo
+    \item Soporte para certificados de CA para producción
+\end{itemize}
+
+\subsubsection{Comunicación Interna}
+
+\begin{itemize}
+    \item Red Docker aislada (\texttt{internal\_network})
+    \item Tokens JWT para autenticación entre servicios
+    \item Validación de origen para peticiones inter-nodo
+\end{itemize}
+
+\subsection{Seguridad en el Diseño}
+
+\subsubsection{Principios Aplicados}
+
+\begin{enumerate}
+    \item \textbf{Defensa en profundidad}: Múltiples capas de seguridad
+    \item \textbf{Mínimo privilegio}: Cada componente tiene permisos mínimos necesarios
+    \item \textbf{Fail-secure}: Ante errores, denegar acceso por defecto
+    \item \textbf{Separación de redes}: Cliente vs. interna
+\end{enumerate}
+
+\subsubsection{Vulnerabilidades Mitigadas}
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{|l|p{6cm}|}
+        \hline
+        \textbf{Amenaza} & \textbf{Mitigación} \\
+        \hline
+        SQL/NoSQL Injection & Uso de ODM (Motor) con queries parametrizadas \\
+        \hline
+        XSS & Frontend Streamlit no renderiza HTML arbitrario \\
+        \hline
+        CSRF & Tokens JWT en headers, no cookies \\
+        \hline
+        DDoS & Rate limiting por IP y usuario \\
+        \hline
+        Man-in-the-Middle & TLS obligatorio en producción \\
+        \hline
+    \end{tabular}
+    \caption{Amenazas y mitigaciones}
+\end{table}
+
+\subsection{Autenticación y Autorización}
+
+\subsubsection{Autenticación de Usuarios}
+
+\begin{enumerate}
+    \item Usuario envía credenciales (username + password)
+    \item Backend verifica contra hash bcrypt en MongoDB
+    \item Si válido, genera token JWT con claims:
+    \begin{lstlisting}[language=Python]
+{
+    "sub": "user_id",
+    "username": "john_doe",
+    "roles": ["user", "admin"],
+    "exp": 1732900800,  # 24h
+    "iat": 1732814400
+}
+    \end{lstlisting}
+    \item Token enviado en header: \texttt{Authorization: Bearer <token>}
+\end{enumerate}
+
+\subsubsection{Autenticación de Nodos}
+
+\begin{itemize}
+    \item Cada nodo tiene un \texttt{node\_id} único
+    \item Tokens de nodo para comunicación inter-nodo
+    \item Validación de IP + node\_id para registro
+\end{itemize}
+
+\subsubsection{Sistema de Roles (RBAC)}
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{|l|l|p{5cm}|}
+        \hline
+        \textbf{Rol} & \textbf{Permisos} & \textbf{Descripción} \\
+        \hline
+        \texttt{guest} & \texttt{read:files} & Usuario no autenticado \\
+        \hline
+        \texttt{user} & \texttt{read:*, write:files} & Usuario estándar \\
+        \hline
+        \texttt{admin} & \texttt{*:*} & Administrador \\
+        \hline
+        \texttt{node} & \texttt{internal:*} & Nodo del cluster \\
+        \hline
+    \end{tabular}
+    \caption{Roles y permisos}
+\end{table}
+
+\subsubsection{Rate Limiting}
+
+Protección contra abuso:
+
+\begin{itemize}
+    \item \textbf{Por IP}: 100 requests/minuto
+    \item \textbf{Por usuario}: 200 requests/minuto
+    \item \textbf{Por endpoint crítico}: 10 requests/minuto (ej: login)
+    \item Implementación con algoritmo Token Bucket
+\end{itemize}
+
+\subsection{Auditoría}
+
+\begin{itemize}
+    \item Registro de todas las operaciones sensibles
+    \item Almacenamiento en MongoDB (colección \texttt{audit\_logs})
+    \item Campos: timestamp, user\_id, action, resource, ip\_address, result
+    \item Retención: 90 días por defecto
+\end{itemize}
+
+\newpage
+
+% ============================================
+% CONCLUSIONES
+% ============================================
+\section{Conclusiones}
+
+DistriSearch implementa una arquitectura distribuida robusta que aborda los principales desafíos de los sistemas distribuidos:
+
+\begin{enumerate}
+    \item \textbf{Arquitectura}: Diseño híbrido cliente-servidor con coordinación P2P mediante Raft, soportando escalabilidad de 3 a 100+ nodos.
+    
+    \item \textbf{Procesos}: Modelo async/await eficiente con FastAPI/Uvicorn, minimizando overhead de threads mientras mantiene alta concurrencia.
+    
+    \item \textbf{Comunicación}: Combinación de REST para operaciones síncronas y Redis Pub/Sub para eventos asíncronos, con RPC para coordinación entre nodos.
+    
+    \item \textbf{Coordinación}: Implementación de Raft para consenso, relojes lógicos para ordenamiento, y mutex distribuido para exclusión mutua.
+    
+    \item \textbf{Nombrado}: Sistema de identificadores únicos con Consistent Hashing para distribución y Service Registry para localización.
+    
+    \item \textbf{Consistencia}: Modelo de consistencia configurable (eventual, quorum, fuerte) con resolución de conflictos mediante Vector Clocks y anti-entropy con Merkle Trees.
+    
+    \item \textbf{Tolerancia a fallas}: Circuit breakers, failover automático, checkpointing distribuido, y fencing tokens para prevenir split-brain.
+    
+    \item \textbf{Seguridad}: TLS para comunicaciones, JWT para autenticación, RBAC para autorización, y rate limiting para protección contra abuso.
+\end{enumerate}
+
+\subsection{Trabajo Futuro}
+
+\begin{itemize}
+    \item Implementar búsqueda semántica con embeddings
+    \item Añadir soporte para Byzantine Fault Tolerance
+    \item Optimizar anti-entropy con vectores de versión
+    \item Implementar sharding automático basado en carga
+    \item Añadir observabilidad completa con OpenTelemetry
+\end{itemize}
+
+\newpage
+
+% ============================================
+% APÉNDICES
+% ============================================
+\appendix
+
+\section{Configuración de Docker Compose}
+
+\begin{lstlisting}[language=yaml, caption=docker-compose.yml (extracto)]
+version: "3.8"
+
+networks:
+  internal_network:
+    driver: bridge
+    internal: true
+  client_network:
+    driver: bridge
+
+services:
+  backend:
+    build: ./backend
+    networks:
+      - internal_network
+      - client_network
+    depends_on:
+      - mongodb
+      - redis
+
+  frontend:
+    build: ./frontend
+    networks:
+      - client_network
+    ports:
+      - "8501:8501"
+
+  mongodb:
+    image: mongo:6
+    networks:
+      - internal_network
+
+  redis:
+    image: redis:7-alpine
+    networks:
+      - internal_network
+\end{lstlisting}
+
+\section{Estructura del Proyecto}
+
+\begin{lstlisting}
+DistriSearch/
+    backend/
+        core/           # Modulos del sistema distribuido
+            config.py
+            message_bus.py
+            cluster_manager.py
+            coordination.py
+            replication.py
+            fault_tolerance.py
+            security.py
+        routes/         # Endpoints API
+        services/       # Logica de negocio
+        main.py
+    frontend/
+        app.py
+        pages/
+        components/
+    agent/
+        agent.py
+        scanner.py
+        uploader.py
+    deploy/
+        docker-compose.yml
+\end{lstlisting}
+
+% ============================================
+% BIBLIOGRAFÍA
+% ============================================
+\newpage
+\begin{thebibliography}{9}
+
+\bibitem{raft}
+Diego Ongaro and John Ousterhout.
+\textit{In Search of an Understandable Consensus Algorithm (Extended Version)}.
+Stanford University, 2014.
+
+\bibitem{lamport}
+Leslie Lamport.
+\textit{Time, Clocks, and the Ordering of Events in a Distributed System}.
+Communications of the ACM, 1978.
+
+\bibitem{dynamo}
+Giuseppe DeCandia et al.
+\textit{Dynamo: Amazon's Highly Available Key-value Store}.
+SOSP '07, 2007.
+
+\bibitem{merkle}
+Ralph Merkle.
+\textit{A Digital Signature Based on a Conventional Encryption Function}.
+CRYPTO '87, 1987.
+
+\bibitem{chandy-lamport}
+K. Mani Chandy and Leslie Lamport.
+\textit{Distributed Snapshots: Determining Global States of Distributed Systems}.
+ACM TOCS, 1985.
+
+\bibitem{circuitbreaker}
+Michael T. Nygard.
+\textit{Release It!: Design and Deploy Production-Ready Software}.
+Pragmatic Bookshelf, 2018.
+
+\end{thebibliography}
+
+\end{document}

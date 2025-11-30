@@ -1,19 +1,69 @@
 import requests
 from typing import Dict, List, Optional
+import streamlit as st
 
 class ApiClient:
     """Cliente para interactuar con la API del backend"""
 
-    def __init__(self, base_url: str, api_key: Optional[str] = None):
+    def __init__(self, base_url: str, api_key: Optional[str] = None, token: Optional[str] = None):
         self.base_url = base_url.rstrip('/')
         self.headers = {}
         if api_key:
             self.headers["X-API-KEY"] = api_key
+        if token:
+            self.headers["Authorization"] = f"Bearer {token}"
     
+    def set_token(self, token: str):
+        """Actualiza el token de autenticación"""
+        self.headers["Authorization"] = f"Bearer {token}"
+    
+    def _handle_response(self, response):
+        """Maneja respuestas HTTP con logging de errores"""
+        try:
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.HTTPError as e:
+            error_detail = response.text
+            try:
+                error_json = response.json()
+                error_detail = error_json.get('detail', error_detail)
+            except:
+                pass
+            raise Exception(f"HTTP {response.status_code}: {error_detail}")
+        except Exception as e:
+            raise Exception(f"Error: {str(e)}")
+    
+    # ✅ NUEVO: Autenticación
+    def login(self, username: str, password: str) -> Dict:
+        """Inicia sesión y retorna token"""
+        response = requests.post(
+            f"{self.base_url}/auth/token",
+            data={"username": username, "password": password},
+            timeout=10
+        )
+        return self._handle_response(response)
+    
+    def register(self, email: str, username: str, password: str) -> Dict:
+        """Registra un nuevo usuario"""
+        response = requests.post(
+            f"{self.base_url}/auth/register",
+            json={"email": email, "username": username, "password": password},
+            timeout=10
+        )
+        return self._handle_response(response)
+    
+    def get_current_user(self) -> Dict:
+        """Obtiene información del usuario actual"""
+        response = requests.get(
+            f"{self.base_url}/auth/me",
+            headers=self.headers,
+            timeout=5
+        )
+        return self._handle_response(response)
+    
+    # ✅ BÚSQUEDA
     def search_files(self, query: str, file_type: Optional[str] = None, max_results: int = 50) -> Dict:
-        """
-        Busca archivos en el sistema
-        """
+        """Busca archivos en el sistema"""
         params = {
             'q': query,
             'max_results': max_results
@@ -21,16 +71,17 @@ class ApiClient:
         
         if file_type:
             params['file_type'] = file_type
+        
         response = requests.get(
             f"{self.base_url}/search/",
             params=params,
-            headers=self.headers or None,
+            headers=self.headers,
+            timeout=10
         )
-        response.raise_for_status()
-        return response.json()
+        return self._handle_response(response)
 
     def search_files_with_score(self, query: str, file_type: Optional[str] = None, max_results: int = 50) -> Dict:
-        """Búsqueda incluyendo el score por resultado (bm25)."""
+        """Búsqueda incluyendo el score BM25"""
         params = {
             'q': query,
             'max_results': max_results,
@@ -38,166 +89,152 @@ class ApiClient:
         }
         if file_type:
             params['file_type'] = file_type
+        
         response = requests.get(
             f"{self.base_url}/search/",
             params=params,
-            headers=self.headers or None,
+            headers=self.headers,
+            timeout=10
         )
-        response.raise_for_status()
-        return response.json()
+        return self._handle_response(response)
     
-    def get_download_url(self, file_id: str) -> Dict:
-        """Obtiene información de descarga del backend.
-
-        Respuesta esperada:
-        {
-          "download_url": "http://.../download/file/{id}",
-          "direct_node_url": "http://..." | null,
-          "node": {...}
-        }
-        """
-        response = requests.post(
-            f"{self.base_url}/download/",
-            json={'file_id': file_id},
-            headers=self.headers or None
-        )
-        response.raise_for_status()
-        return response.json()
-    
+    # ✅ NODOS
     def get_nodes(self) -> List[Dict]:
-        """
-        Obtiene la lista de nodos conectados
-        """
+        """Obtiene la lista de nodos conectados"""
         response = requests.get(
             f"{self.base_url}/search/nodes",
-            headers=self.headers or None,
+            headers=self.headers,
+            timeout=5
         )
-        response.raise_for_status()
-        return response.json()
+        return self._handle_response(response)
+    
+    def get_node(self, node_id: str) -> Optional[Dict]:
+        """Obtiene información de un nodo específico"""
+        try:
+            nodes = self.get_nodes()
+            for node in nodes:
+                if node.get('node_id') == node_id:
+                    return node
+            return None
+        except:
+            return None
 
-    # --- Node management ---
     def register_node(self, node: Dict) -> Dict:
+        """Registra un nuevo nodo"""
         response = requests.post(
             f"{self.base_url}/register/node",
             json=node,
-            headers=self.headers or None,
+            headers=self.headers,
+            timeout=10
         )
-        response.raise_for_status()
-        return response.json()
+        return self._handle_response(response)
 
     def delete_node(self, node_id: str, delete_files: bool = True) -> Dict:
+        """Elimina un nodo"""
         response = requests.delete(
             f"{self.base_url}/register/node/{node_id}",
             params={"delete_files": str(delete_files).lower()},
-            headers=self.headers or None,
+            headers=self.headers,
+            timeout=10
         )
-        response.raise_for_status()
-        return response.json()
-
-    def run_replication(self, batch: int = 25) -> Dict:
+        return self._handle_response(response)
+    
+    # ✅ ESTADÍSTICAS
+    def get_stats(self) -> Dict:
+        """Obtiene estadísticas del sistema"""
+        response = requests.get(
+            f"{self.base_url}/search/stats",
+            headers=self.headers,
+            timeout=5
+        )
+        return self._handle_response(response)
+    
+    # ✅ DESCARGA
+    def get_download_url(self, file_id: str) -> Dict:
+        """Obtiene información de descarga del backend"""
         response = requests.post(
-            f"{self.base_url}/central/replication/run",
-            params={"batch": batch},
-            headers=self.headers or None,
+            f"{self.base_url}/download/",
+            json={'file_id': file_id},
+            headers=self.headers,
+            timeout=10
         )
-        response.raise_for_status()
-        return response.json()
-
+        return self._handle_response(response)
+    
+    # ✅ REPLICACIÓN
+    def run_replication(self, batch: int = 25) -> Dict:
+        """Ejecuta replicación de archivos"""
+        response = requests.post(
+            f"{self.base_url}/auth/replication/sync",
+            headers=self.headers,
+            timeout=60
+        )
+        return self._handle_response(response)
+    
+    def get_replication_status(self) -> Dict:
+        """Obtiene estado de replicación"""
+        response = requests.get(
+            f"{self.base_url}/auth/replication/status",
+            headers=self.headers,
+            timeout=5
+        )
+        return self._handle_response(response)
+    
+    # ✅ CONFIGURACIÓN AVANZADA (Nodos simulados)
     def set_node_mount(self, node_id: str, folder: str) -> Dict:
+        """Configura carpeta montada para un nodo"""
         response = requests.post(
             f"{self.base_url}/register/node/{node_id}/mount",
             json={"folder": folder},
-            headers=self.headers or None,
+            headers=self.headers,
+            timeout=10
         )
-        response.raise_for_status()
-        return response.json()
+        return self._handle_response(response)
 
     def import_node_folder(self, node_id: str) -> Dict:
+        """Escanea e importa archivos de carpeta de nodo"""
         response = requests.post(
             f"{self.base_url}/register/node/{node_id}/scan-import",
-            headers=self.headers or None,
+            headers=self.headers,
+            timeout=60
         )
-        response.raise_for_status()
-        return response.json()
-    
-    def get_stats(self) -> Dict:
+        return self._handle_response(response)
+
+    def upload_file(self, file_content: bytes, filename: str, node_id: str = "central") -> Dict:
+        """Sube un archivo al sistema"""
+        files = {
+            'file': (filename, file_content)
+        }
+        data = {
+            'node_id': node_id
+        }
+        
+        response = requests.post(
+            f"{self.base_url}/register/upload",
+            files=files,
+            data=data,
+            headers=self.headers,
+            timeout=60
+        )
+        return self._handle_response(response)
+
+    def upload_multiple_files(self, files_data: List[tuple], node_id: str = "central") -> Dict:
         """
-        Obtiene estadísticas del sistema
+        Sube múltiples archivos
+        files_data: Lista de tuplas (filename, content_bytes)
         """
-        response = requests.get(
-            f"{self.base_url}/search/stats",
-            headers=self.headers or None,
-        )
-        response.raise_for_status()
-        return response.json()
-
-    # --- Centralized mode helpers ---
-    def central_scan(self, folder: Optional[str] = None) -> Dict:
-        """Escanea la carpeta central y reindexa archivos."""
-        payload = {"folder": folder} if folder else {}
+        files = [
+            ('files', (filename, content))
+            for filename, content in files_data
+        ]
+        data = {
+            'node_id': node_id
+        }
+        
         response = requests.post(
-            f"{self.base_url}/central/scan",
-            json=payload,
-            headers=self.headers or None,
+            f"{self.base_url}/register/upload/bulk",
+            files=files,
+            data=data,
+            headers=self.headers,
+            timeout=120
         )
-        response.raise_for_status()
-        return response.json()
-
-    def get_mode(self) -> Dict:
-        """Obtiene estado de modos centralizado/distribuido."""
-        response = requests.get(
-            f"{self.base_url}/central/mode",
-            headers=self.headers or None,
-        )
-        response.raise_for_status()
-        return response.json()
-
-    # --- DHT helpers ---
-    def dht_start(self) -> Dict:
-        """Inicia el servicio DHT en modo inproc si está habilitado."""
-        response = requests.post(
-            f"{self.base_url}/dht/start",
-            headers=self.headers or None,
-        )
-        response.raise_for_status()
-        return response.json()
-
-    def dht_join(self, seed_ip: str, seed_port: Optional[int] = None) -> Dict:
-        params = {"seed_ip": seed_ip}
-        if seed_port:
-            params["seed_port"] = seed_port
-        response = requests.post(
-            f"{self.base_url}/dht/join",
-            params=params,
-            headers=self.headers or None,
-        )
-        response.raise_for_status()
-        return response.json()
-
-    def dht_upload(self, filename: str, data: str) -> Dict:
-        response = requests.post(
-            f"{self.base_url}/dht/upload",
-            params={"filename": filename, "data": data},
-            headers=self.headers or None,
-        )
-        response.raise_for_status()
-        return response.json()
-
-    def dht_download(self, filename: str) -> Dict:
-        response = requests.post(
-            f"{self.base_url}/dht/download",
-            params={"filename": filename},
-            headers=self.headers or None,
-        )
-        response.raise_for_status()
-        return response.json()
-
-    def dht_finger(self) -> Dict:
-        response = requests.get(f"{self.base_url}/dht/finger", headers=self.headers or None)
-        response.raise_for_status()
-        return response.json()
-
-    def dht_sucpred(self) -> Dict:
-        response = requests.get(f"{self.base_url}/dht/sucpred", headers=self.headers or None)
-        response.raise_for_status()
-        return response.json()
+        return self._handle_response(response)
