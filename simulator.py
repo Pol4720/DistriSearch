@@ -7,8 +7,8 @@ import sys
 from typing import List
 import argparse
 
-from node import DistributedNode
-from network import create_network
+from node.node import DistributedNode
+from network.simulated_network import SimulatedNetwork
 
 
 # Configurar logging
@@ -38,12 +38,12 @@ class Simulator:
         self.dimensions = dimensions
         self.nodes: List[DistributedNode] = []
         
-        # Crear red simulada compartida
-        self.network = create_network("simulated", latency_ms=5)
+        # Crear red simulada compartida (usamos node_id=0 como coordinador)
+        self.network = SimulatedNetwork(node_id=0, latency_ms=5)
     
     async def setup_nodes(self):
         """Crea e inicializa todos los nodos."""
-        logger.info(f"Creando {self.num_nodes} nodos...")
+        print(f"Creando {self.num_nodes} nodos...")  # ← SIN SÍMBOLO ✓
         
         # Generar IDs de nodos (0 a num_nodes-1 para simplificar)
         node_ids = list(range(self.num_nodes))
@@ -64,10 +64,23 @@ class Simulator:
             # Cada nodo conoce a todos los demás al inicio
             bootstrap_nodes = node_ids.copy()
             
-            logger.info(f"Inicializando nodo {node.node_id}...")
+            print(f"Inicializando nodo {node.node_id}...")
             await node.initialize(bootstrap_nodes)
         
-        logger.info(f"✓ {len(self.nodes)} nodos inicializados")
+        # Verificar que hay líder
+        leader_id = None
+        for node in self.nodes:
+            if node.consensus.current_leader is not None:
+                leader_id = node.consensus.current_leader
+                break
+        
+        # Inicializar shards en el líder
+        if leader_id is not None and 0 <= leader_id < len(self.nodes):
+            leader_node = self.nodes[leader_id]
+            leader_node.data_balancer.shard_manager.initialize_shards(node_ids)
+            print(f"Shards inicializados en nodo lider {leader_id}")
+        
+        print(f"LISTO: {len(self.nodes)} nodos inicializados")
     
     async def demo_basic_operations(self):
         """Demuestra operaciones básicas."""
@@ -293,9 +306,12 @@ class Simulator:
         logger.info("\nCerrando simulador...")
         
         for node in self.nodes:
-            await node.shutdown()
+            try:
+                await node.shutdown()
+            except Exception as e:
+                logger.error(f"Error cerrando nodo {node.node_id}: {e}")
         
-        logger.info("✓ Simulador cerrado")
+        logger.info("OK Simulador cerrado")  # ← CAMBIAR ✓ por OK
 
 
 async def main():

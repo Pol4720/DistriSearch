@@ -19,11 +19,21 @@ async def quick_demo():
     
     # Mostrar estado inicial
     print("\n[2/5] Estado inicial de la red:")
-    leader_id = sim.nodes[0].election.current_leader
-    print(f"  ✓ Líder elegido: Nodo {leader_id}")
+    leader_id = sim.nodes[0].consensus.current_leader
+    print(f"  Lider elegido: Nodo {leader_id}")
+    
+    await asyncio.sleep(1.0)
+    
     for node in sim.nodes:
         status = node.get_status()
         print(f"  - Nodo {node.node_id}: {len(status['known_neighbors'])} vecinos")
+    
+    # Inicializar shards en líder (segunda vez para asegurar)
+    if leader_id is not None and 0 <= leader_id < len(sim.nodes):
+        leader_node = sim.nodes[leader_id]
+        leader_node.data_balancer.become_leader()
+        leader_node.data_balancer.shard_manager.initialize_shards(list(range(5)))
+        print(f"  Shards inicializados en nodo lider {leader_id}")
     
     # Indexar documentos
     print("\n[3/5] Indexando documentos en diferentes nodos...")
@@ -39,9 +49,9 @@ async def quick_demo():
     
     for node_idx, doc_id, content in docs:
         await sim.nodes[node_idx].add_document(doc_id, content)
-        print(f"  ✓ [{doc_id}] indexado en nodo {node_idx}")
+        print(f"  OK [{doc_id}] indexado en nodo {node_idx}")
     
-    await asyncio.sleep(0.5)  # Esperar propagación
+    await asyncio.sleep(0.5)
     
     # Realizar búsquedas
     print("\n[4/5] Realizando búsquedas distribuidas...")
@@ -52,51 +62,78 @@ async def quick_demo():
     ]
     
     for node_idx, query in queries:
-        print(f"\n  📍 Búsqueda desde nodo {node_idx}: '{query}'")
+        print(f"\n  Busqueda desde nodo {node_idx}: '{query}'")
         results = await sim.nodes[node_idx].search(query)
         
         if results['total_results'] > 0:
-            print(f"  ✓ Encontrados {results['total_results']} resultados:")
+            print(f"  OK Encontrados {results['total_results']} resultados:")
             for i, res in enumerate(results['results'][:3], 1):
                 snippet = res['snippet'][:50] + "..." if len(res['snippet']) > 50 else res['snippet']
                 print(f"     {i}. [{res['doc_id']}] Score: {res['score']:.1f}")
                 print(f"        {snippet}")
                 print(f"        (Nodo {res['node_id']})")
         else:
-            print(f"  ⚠ No se encontraron resultados")
+            print(f"  Advertencia: No se encontraron resultados")
     
     # Demo de tolerancia a fallos
     print("\n[5/5] Demostrando tolerancia a fallos...")
-    print(f"  ⚡ Simulando fallo del nodo líder ({leader_id})...")
+    print(f"  Simulando fallo del nodo lider ({leader_id})...")
     sim.network.simulate_node_failure(leader_id)
     
     await asyncio.sleep(0.3)
     
-    # Forzar nueva elección
-    other_node = sim.nodes[0] if leader_id != 0 else sim.nodes[1]
-    print(f"  🗳 Nodo {other_node.node_id} detecta fallo, iniciando elección...")
-    new_leader = await other_node.election.start_election()
+    # Identificar nodo activo para consultar
+    other_node = None
+    for node in sim.nodes:
+        if node.node_id != leader_id:
+            other_node = node
+            break
     
-    print(f"  ✓ Nuevo líder elegido: Nodo {new_leader}")
+    print(f"  Nodo {other_node.node_id} detecta fallo, iniciando eleccion...")
+    
+    # Esperar a que Raft elija nuevo líder (más tiempo)
+    await asyncio.sleep(4.0)  # ← AUMENTAR de 3.0 a 4.0
+    
+    # Obtener nuevo líder desde VARIOS nodos
+    new_leaders = {}
+    for node in sim.nodes:
+        if node.node_id != leader_id:
+            leader = node.consensus.current_leader
+            if leader is not None and leader != leader_id:
+                new_leaders[leader] = new_leaders.get(leader, 0) + 1
+    
+    # El nuevo líder es el que más nodos ven
+    if new_leaders:
+        new_leader = max(new_leaders, key=new_leaders.get)
+        print(f"  OK Nuevo lider elegido: Nodo {new_leader} (visto por {new_leaders[new_leader]} nodos)")
+    else:
+        new_leader = None
+        print(f"  Advertencia: Nuevo lider no elegido aun")
     
     # Actualizar data balancer
-    if 0 <= new_leader < len(sim.nodes):
+    if new_leader is not None and new_leader != leader_id and 0 <= new_leader < len(sim.nodes):
         sim.nodes[new_leader].data_balancer.become_leader()
+        sim.nodes[new_leader].data_balancer.shard_manager.initialize_shards(
+            [i for i in range(5) if i != leader_id]
+        )
     
     # Búsqueda después del fallo
-    print(f"\n  🔍 Búsqueda después de cambio de líder...")
-    results = await sim.nodes[other_node.node_id].search("python")
-    print(f"  ✓ Sistema sigue funcionando: {results['total_results']} resultados encontrados")
+    print(f"\n  Busqueda despues de cambio de lider...")
+    
+    # Buscar desde un nodo activo
+    search_node = sim.nodes[0] if leader_id != 0 else sim.nodes[2]
+    results = await search_node.search("python")
+    print(f"  OK Sistema sigue funcionando: {results['total_results']} resultados encontrados")
     
     # Resumen final
     print("\n" + "="*70)
     print(" RESUMEN")
     print("="*70)
-    print(f"  ✓ Nodos activos: {len(sim.nodes)}")
-    print(f"  ✓ Documentos indexados: {len(docs)}")
-    print(f"  ✓ Líder actual: Nodo {new_leader}")
-    print(f"  ✓ Sistema tolerante a fallos: SÍ")
-    print("\n  Para más opciones, ejecuta: python simulator.py")
+    print(f"  OK Nodos activos: {len(sim.nodes) - 1} (1 fallido)")  # ← CORREGIR
+    print(f"  OK Documentos indexados: {len(docs)}")
+    print(f"  OK Lider actual: Nodo {new_leader if new_leader is not None else 'N/A'}")
+    print(f"  OK Sistema tolerante a fallos: {'SI' if new_leader is not None else 'Parcial'}")
+    print("\n  Para mas opciones, ejecuta: python simulator.py")
     print("="*70)
     
     # Cleanup
@@ -107,5 +144,5 @@ if __name__ == "__main__":
     try:
         asyncio.run(quick_demo())
     except KeyboardInterrupt:
-        print("\n\n⚠ Demo interrumpida por usuario")
+        print("\n\nAdvertencia: Demo interrumpida por usuario")
         sys.exit(0)

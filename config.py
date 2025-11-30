@@ -45,12 +45,28 @@ ROUTING_STRATEGY = "bitflip"  # "bitflip" o "greedy"
 import logging
 import sys
 
-# Configurar el handler con codificación UTF-8
-handler = logging.StreamHandler(sys.stdout)
-handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-handler.stream.reconfigure(encoding='utf-8')  # Agregar esta línea
+# Configurar logging con UTF-8
+def setup_logging():
+    """Configura logging con soporte UTF-8."""
+    # Crear handler con encoding UTF-8
+    handler = logging.StreamHandler(sys.stdout)
+    
+    # Intentar configurar UTF-8, con fallback a ascii
+    try:
+        if hasattr(handler.stream, 'reconfigure'):
+            handler.stream.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        # Si falla, el handler usará encoding por defecto
+        pass
+    
+    handler.setFormatter(
+        logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    )
+    
+    # Configurar root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    root_logger.handlers.clear()
+    root_logger.addHandler(handler)
 
-logging.basicConfig(
-    level=logging.INFO,
-    handlers=[handler]
-)
+setup_logging()

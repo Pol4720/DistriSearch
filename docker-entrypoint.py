@@ -5,8 +5,15 @@ import asyncio
 import os
 import sys
 import logging
-from node import DistributedNode
-from network import create_network
+from node.node import DistributedNode
+from network.simulated_network import SimulatedNetwork
+from network.http_network import HTTPNetwork
+
+def create_network(mode='http'):
+    """Factory para crear red."""
+    if mode == 'http':
+        return HTTPNetwork()
+    return SimulatedNetwork(0)
 
 logging.basicConfig(
     level=logging.INFO,

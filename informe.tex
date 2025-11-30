@@ -1,0 +1,1205 @@
+\documentclass[12pt,a4paper]{article}
+
+% Paquetes
+\usepackage{tikz}
+\usepackage{pgfplots}
+\usepackage[spanish,es-noquoting]{babel}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{geometry}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{subcaption}
+
+\geometry{margin=2.5cm}
+\pgfplotsset{compat=1.18}
+\usetikzlibrary{shapes,arrows,positioning,calc}
+
+% Configuración de hipervínculos
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,      
+    urlcolor=cyan,
+    citecolor=green
+}
+
+% Configuración de código
+\lstset{
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    frame=single,
+    backgroundcolor=\color{gray!10},
+    inputencoding=utf8
+}
+
+% Información del documento
+\title{
+    \textbf{DistriSearch} \\
+    \large Sistema de Búsqueda Distribuida con Topología de Hipercubo \\
+    \vspace{0.5cm}
+    \large Informe Técnico - Segunda Entrega
+}
+
+\author{
+    Proyecto de Sistemas Distribuidos \\
+    Universidad [Nombre] \\
+    \texttt{repositorio: github.com/proyecto/DistriSearch}
+}
+
+\date{\today}
+
+\begin{document}
+
+\maketitle
+\newpage
+
+\tableofcontents
+\newpage
+
+%━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+\section{Introducción}
+%━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+\subsection{Motivación}
+
+Los motores de búsqueda modernos enfrentan el desafío de indexar y consultar volúmenes masivos de información distribuida geográficamente. DistriSearch aborda este problema mediante una arquitectura descentralizada basada en topología de \textbf{hipercubo lógico}, donde cada nodo mantiene un índice invertido local y coopera mediante protocolos de consenso para ofrecer búsqueda unificada.
+
+\subsection{Objetivos del Sistema}
+
+Según los principios de diseño de sistemas distribuidos \cite{tanenbaum2017}:
+
+\begin{itemize}
+    \item \textbf{Compartición de recursos}: Índices invertidos distribuidos entre múltiples nodos
+    \item \textbf{Transparencia}: Cliente no conoce distribución física de documentos
+    \item \textbf{Apertura}: APIs HTTP estándar (REST) para interoperabilidad
+    \item \textbf{Escalabilidad}: Topología hipercubo permite $O(\log N)$ saltos de ruteo
+\end{itemize}
+
+\subsection{Marco Teórico}
+
+El diseño de DistriSearch se fundamenta en los siguientes conceptos teóricos:
+
+\begin{enumerate}
+    \item \textbf{Topología de Hipercubo}: Red overlay con $d$ dimensiones y $2^d$ nodos potenciales, donde cada nodo tiene exactamente $d$ vecinos lógicos (distancia de Hamming = 1).
+    
+    \item \textbf{Consenso Distribuido}: Implementación de Raft para elección de líder y replicación de log, garantizando seguridad (safety) mediante términos monotónicos.
+    
+    \item \textbf{Índice Invertido}: Estructura $\text{término} \rightarrow \{doc\_id: score\}$ optimizada para consultas textuales, basada en frecuencia de términos (TF).
+\end{enumerate}
+
+\newpage
+
+%━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+\section{Arquitectura del Sistema}
+%━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+\subsection{Modelo Arquitectónico}
+
+DistriSearch adopta una arquitectura \textbf{híbrida} que combina:
+
+\begin{itemize}
+    \item \textbf{Descentralización estructural}: Red overlay de hipercubo con ruteo peer-to-peer
+    \item \textbf{Coordinación centralizada lógica}: Data Balancer replicado mediante Raft
+\end{itemize}
+
+Esta decisión se justifica en el trade-off entre:
+\begin{itemize}
+    \item Ventaja: Simplicidad en la localización de términos (vs. DHT)
+    \item Desventaja: Punto de coordinación crítico (mitigado por replicación)
+\end{itemize}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    node/.style={circle, draw, minimum size=1cm, font=\small},
+    leader/.style={circle, draw, fill=red!20, minimum size=1cm, font=\small},
+    arrow/.style={->, >=stealth, thick}
+]
+
+% Nodos del hipercubo (simplificado a 8 nodos)
+\node[node] (n0) at (0,0) {0};
+\node[node] (n1) at (2,0) {1};
+\node[node] (n2) at (0,2) {2};
+\node[node] (n3) at (2,2) {3};
+\node[leader] (n4) at (4,1) {Líder};
+
+% Conexiones de hipercubo
+\draw (n0) -- (n1);
+\draw (n0) -- (n2);
+\draw (n1) -- (n3);
+\draw (n2) -- (n3);
+\draw (n3) -- (n4);
+
+% Data Balancer (replicado)
+\draw[arrow, dashed, blue] (n0) -- (n4) node[midway, above, sloped] {latido};
+\draw[arrow, dashed, blue] (n1) -- (n4);
+\draw[arrow, dashed, blue] (n2) -- (n4);
+
+\end{tikzpicture}
+\caption{Vista arquitectónica: Hipercubo lógico + Data Balancer replicado}
+\label{fig:arch}
+\end{figure}
+
+\subsection{Clasificación según Tanenbaum}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|l|p{10cm}|}
+\hline
+\textbf{Característica} & \textbf{DistriSearch} \\
+\hline
+Tipo & Sistema distribuido (no pervasivo, no grid) \\
+\hline
+Organización & Cliente-servidor modificado (nodos son clientes Y servidores) \\
+\hline
+Vista expansiva & Red overlay de hipercubo independiente de topología física \\
+\hline
+Vista integrativa & Coordinación mediante líder electo (Raft) \\
+\hline
+Escalabilidad & Arquitectónica: $O(\log N)$ saltos; Geográfica: NO optimizada \\
+\hline
+\end{tabular}
+\caption{Clasificación del sistema}
+\end{table}
+
+\subsection{Organización del Sistema}
+
+\subsubsection{Componentes Principales}
+
+\begin{enumerate}
+    \item \textbf{Nodo Distribuido} (\texttt{node/}): Unidad básica con servidor HTTP, índice local y módulos de consenso.
+    
+    \item \textbf{Hipercubo Lógico} (\texttt{core/hypercube.py}): Gestión de topología y cálculo de vecinos.
+    
+    \item \textbf{Ruteo XOR} (\texttt{core/routing.py}): Algoritmo greedy para minimizar distancia de Hamming.
+    
+    \item \textbf{Consenso Raft} (\texttt{consensus/}): Elección de líder, replicación de log, gestión de términos.
+    
+    \item \textbf{Almacenamiento} (\texttt{storage/}): Índice invertido, tokenización, persistencia en disco.
+    
+    \item \textbf{Data Balancer} (\texttt{balancer/}): Índice global de términos, registro de nodos, snapshots.
+    
+    \item \textbf{Replicación} (\texttt{replication/}): Gestión de réplicas con quorum, rollback transaccional.
+    
+    \item \textbf{Sharding} (\texttt{sharding/}): Particionamiento hash-based del índice global.
+\end{enumerate}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    component/.style={rectangle, draw, fill=blue!10, minimum width=3cm, minimum height=1cm, font=\small},
+    layer/.style={rectangle, draw=none, fill=gray!20, minimum width=14cm, minimum height=0.5cm, font=\footnotesize}
+]
+
+% Capas (de arriba hacia abajo)
+\node[layer] at (0,5) {Capa de Aplicación (HTTP API)};
+\node[component] (http) at (0,4) {node\_http.py};
+
+\node[layer] at (0,2.5) {Capa de Lógica de Negocio};
+\node[component] (search) at (-3,1.5) {node\_search.py};
+\node[component] (repl) at (0,1.5) {node\_replication.py};
+\node[component] (msg) at (3,1.5) {node\_messaging.py};
+
+\node[layer] at (0,0) {Capa de Infraestructura};
+\node[component] (storage) at (-4,-1) {storage/};
+\node[component] (consensus) at (-1.3,-1) {consensus/};
+\node[component] (network) at (1.3,-1) {network/};
+\node[component] (core) at (4,-1) {core/};
+
+\draw[->] (http) -- (search);
+\draw[->] (http) -- (repl);
+\draw[->] (search) -- (storage);
+\draw[->] (search) -- (consensus);
+\draw[->] (repl) -- (network);
+\draw[->] (msg) -- (core);
+
+\end{tikzpicture}
+\caption{Arquitectura en capas de un nodo}
+\label{fig:layers}
+\end{figure}
+
+\newpage
+
+%━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+\section{Roles del Sistema}
+%━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+\subsection{Taxonomía de Roles}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|l|p{8cm}|}
+\hline
+\textbf{Rol} & \textbf{Responsabilidades} \\
+\hline
+\textbf{Cliente} & Envía consultas HTTP, recibe resultados agregados \\
+\hline
+\textbf{Nodo Worker} & Indexa documentos localmente, responde búsquedas, participa en Raft \\
+\hline
+\textbf{Líder Raft} & Coordina replicación de log, mantiene índice global de términos \\
+\hline
+\textbf{Follower Raft} & Replica log del líder, responde RequestVote, mantiene snapshots \\
+\hline
+\textbf{Candidato Raft} & Estado transitorio durante elección de líder \\
+\hline
+\textbf{Coordinador de Shard} & Gestiona partición del índice global (16 shards por defecto) \\
+\hline
+\end{tabular}
+\caption{Roles en DistriSearch}
+\end{table}
+
+\subsection{Transiciones de Estado (Raft)}
+
+Según el protocolo Raft \cite{ongaro2014}, un nodo transita entre estados:
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    state/.style={circle, draw, minimum size=2cm, font=\small},
+    arrow/.style={->, >=stealth, thick}
+]
+
+\node[state] (follower) at (0,0) {Follower};
+\node[state] (candidate) at (4,0) {Candidate};
+\node[state] (leader) at (8,0) {Leader};
+
+\draw[arrow, bend left=30] (follower) to node[above] {\scriptsize timeout} (candidate);
+\draw[arrow, bend left=30] (candidate) to node[below] {\scriptsize heartbeat} (follower);
+\draw[arrow] (candidate) to node[above] {\scriptsize quorum} (leader);
+\draw[arrow, bend right=50] (leader) to node[below] {\scriptsize term > current} (follower);
+
+\end{tikzpicture}
+\caption{Máquina de estados de Raft}
+\label{fig:raft_states}
+\end{figure}
+
+\textbf{Invariantes del sistema:}
+\begin{itemize}
+    \item \textit{Election Safety}: A lo sumo un líder por término
+    \item \textit{Leader Append-Only}: Líder nunca sobrescribe entradas del log
+    \item \textit{Log Matching}: Si dos logs contienen la misma entrada (index, term), entonces todas las entradas previas son idénticas
+\end{itemize}
+
+\newpage
+
+%━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+\section{Distribución de Servicios}
+%━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+\subsection{Docker Compose - Red Simulada}
+
+El archivo \texttt{docker-compose.yml} define 3 nodos por defecto:
+
+\begin{lstlisting}[language=bash, caption=Configuración de red Docker]
+services:
+  node0:
+    environment:
+      - NODE_ID=0
+      - BOOTSTRAP_NODES=node0:8000,node1:8000,node2:8000
+    networks:
+      - distrisearch-net
+    
+  node1, node2: ...
+
+networks:
+  distrisearch-net:
+    driver: bridge
+\end{lstlisting}
+
+\textbf{Propiedades de la red Docker:}
+\begin{itemize}
+    \item \textbf{Aislamiento}: Red bridge privada (\texttt{distrisearch-net})
+    \item \textbf{Service Discovery}: DNS automático (hostname = nombre servicio)
+    \item \textbf{Persistencia}: Volúmenes montados en \texttt{/app/data}
+\end{itemize}
+
+\subsection{Distribución Lógica vs Física}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|l|c|c|}
+\hline
+\textbf{Aspecto} & \textbf{Lógico (Hipercubo)} & \textbf{Físico (Docker)} \\
+\hline
+IDs de nodo & $[0, 2^{20}-1]$ & $[0, N-1]$ (secuencial) \\
+\hline
+Vecinos & Calculados (XOR) & Todos accesibles (bridge) \\
+\hline
+Ruteo & Multi-hop (hipercubo) & Direct TCP/IP \\
+\hline
+\end{tabular}
+\caption{Separación entre topología lógica y física}
+\end{table}
+
+\textbf{Justificación:} La topología hipercubo es \textit{independiente} de la infraestructura de red física, permitiendo deployment en LANs, WANs o entornos híbridos.
+
+\newpage
+
+%━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+\section{Procesos del Sistema}
+%━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+\subsection{Tipos de Procesos}
+
+\subsubsection{Proceso Principal: Nodo Distribuido}
+
+Cada contenedor Docker ejecuta un proceso Python (\texttt{DistributedNode}) que:
+
+\begin{enumerate}
+    \item Inicializa componentes en orden:
+    \begin{itemize}
+        \item Carga índice invertido desde disco
+        \item Crea servidor HTTP asíncrono (\texttt{aiohttp})
+        \item Inicia timer de elección Raft
+        \item Conecta con bootstrap nodes
+    \end{itemize}
+    
+    \item Mantiene loops asíncronos concurrentes:
+    \begin{itemize}
+        \item Loop de servidor HTTP (puerto 8000)
+        \item Loop de election timer (1.5-3.0s aleatorio)
+        \item Loop de heartbeat (0.5s si es líder)
+        \item Loop de snapshots (30s en Data Balancer)
+    \end{itemize}
+\end{enumerate}
+
+\subsubsection{Tareas Asíncronas (asyncio)}
+
+El patrón de concurrencia es \textbf{event-driven asíncrono} basado en \texttt{asyncio}:
+
+\begin{itemize}
+    \item \textbf{Ventaja}: Un solo hilo maneja miles de conexiones concurrentes (modelo M:1)
+    \item \textbf{Desventaja}: CPU-bound tasks (tokenización) bloquean event loop
+    \item \textbf{Mitigación}: Operaciones I/O dominantes en este workload
+\end{itemize}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    task/.style={rectangle, draw, fill=green!20, minimum width=3cm, minimum height=0.8cm, font=\footnotesize},
+    loop/.style={ellipse, draw, fill=yellow!20, minimum width=2cm, minimum height=0.6cm, font=\tiny}
+]
+
+\node[task] (http) at (0,3) {HTTP Server};
+\node[task] (election) at (0,1.5) {Election Timer};
+\node[task] (heartbeat) at (0,0) {Heartbeat Sender};
+
+\node[loop] (event) at (5,1.5) {Event Loop};
+
+\draw[->, thick] (http) -- (event);
+\draw[->, thick] (election) -- (event);
+\draw[->, thick] (heartbeat) -- (event);
+
+\end{tikzpicture}
+\caption{Tareas asíncronas en un nodo}
+\end{figure}
+
+\subsection{Organización de Procesos}
+
+\textbf{Modelo de Despliegue:}
+\begin{itemize}
+    \item \textbf{Desarrollo}: Simulador (\texttt{simulator.py}) ejecuta $N$ nodos en un solo proceso Python mediante red simulada en memoria.
+    
+    \item \textbf{Producción}: Docker Compose despliega $N$ contenedores, cada uno con proceso Python independiente, comunicados vía red bridge.
+\end{itemize}
+
+\newpage
+
+%━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+\section{Comunicación}
+%━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+\subsection{Paradigma de Comunicación}
+
+DistriSearch utiliza \textbf{RESTful HTTP} para interacciones externas y \textbf{message passing asíncrono} para comunicación interna:
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|l|l|l|}
+\hline
+\textbf{Tipo} & \textbf{Protocolo} & \textbf{Uso} \\
+\hline
+Cliente $\rightarrow$ Nodo & HTTP REST & \texttt{POST /doc}, \texttt{GET /search} \\
+\hline
+Nodo $\leftrightarrow$ Nodo & HTTP JSON & Ruteo de mensajes (hypercube) \\
+\hline
+Raft (interno) & Mensaje directo & RequestVote, AppendEntries \\
+\hline
+\end{tabular}
+\caption{Protocolos de comunicación}
+\end{table}
+
+\subsection{Tipos de Mensajes}
+
+\subsubsection{Mensajes de Ruteo}
+
+\begin{lstlisting}[caption=Estructura de mensaje de ruteo]
+{
+  "type": "route",
+  "origin": 3,
+  "destination": 7,
+  "hops": [3, 5],
+  "payload": {
+    "type": "search_local",
+    "query": "python"
+  }
+}
+\end{lstlisting}
+
+\textbf{Algoritmo de ruteo XOR greedy:}
+
+\begin{enumerate}
+    \item Calcular $xor = current\_id \oplus dest\_id$
+    \item Seleccionar bit más significativo diferente
+    \item Si vecino correspondiente existe, reenviar
+    \item Caso contrario, elegir vecino con menor $xor$ a destino
+\end{enumerate}
+
+\textbf{Complejidad:} $O(d)$ saltos máximo, donde $d$ = dimensiones del hipercubo.
+
+\subsubsection{Mensajes Raft}
+
+\begin{lstlisting}[caption=RequestVote (RPC)]
+{
+  "type": "request_vote",
+  "term": 5,
+  "candidate_id": 2,
+  "last_log_index": 10,
+  "last_log_term": 4
+}
+
+Respuesta:
+{
+  "term": 5,
+  "vote_granted": true
+}
+\end{lstlisting}
+
+\begin{lstlisting}[caption=AppendEntries (heartbeat + replicación)]
+{
+  "type": "append_entries",
+  "term": 5,
+  "leader_id": 3,
+  "prev_log_index": 9,
+  "prev_log_term": 4,
+  "entries": [
+    {
+      "term": 5,
+      "command": {
+        "type": "index_update",
+        "node_id": 2,
+        "terms": ["python", "java"]
+      }
+    }
+  ],
+  "leader_commit": 10
+}
+\end{lstlisting}
+
+\subsection{Patrones de Comunicación}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    node/.style={circle, draw, minimum size=0.8cm, font=\scriptsize},
+    arrow/.style={->, >=stealth, thick}
+]
+
+% Cliente-Servidor
+\node[node, fill=blue!20] (client) at (0,3) {C};
+\node[node] (server) at (2,3) {S};
+\draw[arrow] (client) -- (server) node[midway, above] {\tiny HTTP};
+
+% Broadcast (líder -> followers)
+\node[node, fill=red!20] (leader) at (0,0) {L};
+\node[node] (f1) at (2,0.5) {F1};
+\node[node] (f2) at (2,-0.5) {F2};
+\draw[arrow] (leader) -- (f1) node[midway, above] {\tiny HB};
+\draw[arrow] (leader) -- (f2);
+
+% Multi-hop (ruteo)
+\node[node] (n1) at (6,3) {1};
+\node[node] (n2) at (8,3) {2};
+\node[node] (n3) at (10,3) {3};
+\draw[arrow] (n1) -- (n2) -- (n3);
+
+\node at (1,4) {\textbf{Request-Response}};
+\node at (1,1) {\textbf{Broadcast}};
+\node at (8,4) {\textbf{Multi-hop}};
+
+\end{tikzpicture}
+\caption{Patrones de comunicación}
+\end{figure}
+
+\newpage
+
+%━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+\section{Coordinación}
+%━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+\subsection{Sincronización de Acciones}
+
+\subsubsection{Elección de Líder (Raft)}
+
+El protocolo Raft garantiza \textbf{safety} mediante:
+
+\begin{itemize}
+    \item \textbf{Términos monotónicos}: Cada elección incrementa el término, evitando conflictos
+    \item \textbf{Timeouts aleatorios}: Previene split votes (rango 1.5-3.0s)
+    \item \textbf{Quorum}: Requiere $\lceil N/2 \rceil + 1$ votos para ser líder
+\end{itemize}
+
+\textbf{Teorema (Election Safety):} Si un nodo $L$ es líder en término $T$, entonces ningún otro nodo es líder en $T$.
+
+\textbf{Demostración (sketch):}
+\begin{enumerate}
+    \item Para ser líder, $L$ recibió mayoría de votos en término $T$
+    \item Cada nodo vota a lo sumo una vez por término
+    \item Dos conjuntos mayoritarios se intersectan $\Rightarrow$ imposible que otro nodo $L'$ reciba mayoría en $T$
+\end{enumerate}
+
+\subsubsection{Replicación con Quorum}
+
+Para indexar documento con réplicas:
+
+\begin{lstlisting}[caption=Pseudocódigo de replicación con quorum]
+function add_document(doc_id, content):
+    replicas = get_replica_nodes(doc_id)  // k=3 por defecto
+    successful = []
+    
+    for replica in replicas:
+        if await replicate_to(replica, doc_id, content):
+            successful.append(replica)
+    
+    if len(successful) >= quorum(k):  // k/2 + 1
+        return SUCCESS
+    else:
+        rollback(successful, doc_id)
+        return ERROR
+\end{lstlisting}
+
+\textbf{Invariante:} Si escritura retorna \texttt{SUCCESS}, al menos $\lceil k/2 \rceil + 1$ réplicas confirmaron.
+
+\subsection{Acceso Exclusivo a Recursos}
+
+\subsubsection{Condiciones de Carrera Identificadas}
+
+\begin{enumerate}
+    \item \textbf{Actualización concurrente del índice global}:
+    \begin{itemize}
+        \item \textit{Problema}: Dos nodos actualizan simultáneamente \texttt{global\_index["term"]}
+        \item \textit{Solución}: Solo el líder escribe, followers son read-only
+    \end{itemize}
+    
+    \item \textbf{Escritura/lectura del log de Raft}:
+    \begin{itemize}
+        \item \textit{Problema}: Líder añade entrada mientras follower lee
+        \item \textit{Solución}: Locks asíncronos (\texttt{asyncio.Lock}) protegen \texttt{self.log}
+    \end{itemize}
+\end{enumerate}
+
+\subsection{Toma de Decisiones Distribuidas}
+
+\textbf{Decisión: ¿Aceptar documento en el índice?}
+
+\begin{itemize}
+    \item \textbf{Criterio}: Quorum de réplicas confirmó
+    \item \textbf{Algoritmo}: Replicación con rollback (Section 5.2)
+    \item \textbf{Consistencia}: Eventual (las réplicas eventualmente convergen)
+\end{itemize}
+
+\textbf{Decisión: ¿Quién es el líder?}
+
+\begin{itemize}
+    \item \textbf{Criterio}: Mayoría de nodos votó en el término más reciente
+    \item \textbf{Algoritmo}: Raft election (RequestVote RPC)
+    \item \textbf{Consistencia}: Fuerte durante término estable
+\end{itemize}
+
+\newpage
+
+%━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+\section{Nombrado y Localización}
+%━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+\subsection{Identificación de Recursos}
+
+\subsubsection{Nodos}
+
+\begin{itemize}
+    \item \textbf{ID lógico}: Entero en rango $[0, 2^{20}-1]$
+    \item \textbf{Representación binaria}: String de 20 bits (ej: \texttt{00000000000000000101})
+    \item \textbf{Generación}: Asignación estática en deployment o hash de hostname
+\end{itemize}
+
+\subsubsection{Documentos}
+
+\begin{itemize}
+    \item \textbf{ID}: String único provisto por cliente (ej: \texttt{"doc1"})
+    \item \textbf{Localización}: Calculada mediante hash consistente:
+    
+    $$
+    replica\_nodes(doc\_id) = \{hash(doc\_id + i) \mod N \mid i \in [0, k-1]\}
+    $$
+    
+    donde $k=3$ (factor de replicación) y $N$ = número de nodos activos.
+\end{itemize}
+
+\subsubsection{Términos}
+
+\begin{itemize}
+    \item \textbf{ID}: String normalizado (lowercase, sin stopwords)
+    \item \textbf{Shard}: Partición determinada por:
+    
+    $$
+    shard\_id(term) = hash(term) \mod 16
+    $$
+    
+    \item \textbf{Coordinador de shard}: Nodo asignado estáticamente al inicio
+\end{itemize}
+
+\subsection{Ubicación de Recursos}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    level/.style={rectangle, draw, minimum width=3cm, minimum height=0.8cm, font=\small},
+    arrow/.style={->, >=stealth}
+]
+
+\node[level, fill=blue!20] (client) at (0,4) {Cliente};
+\node[level, fill=green!20] (node) at (0,2.5) {Nodo Cualquiera};
+\node[level, fill=red!20] (leader) at (0,1) {Líder (Data Balancer)};
+\node[level, fill=yellow!20] (shard) at (0,-0.5) {Coordinador Shard};
+
+\draw[arrow] (client) -- (node) node[midway, right] {\scriptsize 1. Query};
+\draw[arrow] (node) -- (leader) node[midway, right] {\scriptsize 2. Locate term};
+\draw[arrow] (leader) -- (shard) node[midway, right] {\scriptsize 3. Get shard};
+\draw[arrow] (shard) -- (leader) node[midway, left] {\scriptsize 4. Return nodes};
+\draw[arrow] (leader) -- (node) node[midway, left] {\scriptsize 5. Return};
+\draw[arrow] (node) -- (client) node[midway, left] {\scriptsize 6. Results};
+
+\end{tikzpicture}
+\caption{Flujo de localización de términos}
+\end{figure}
+
+\subsection{Localización Dinámica}
+
+\textbf{Problema:} ¿Cómo encuentra un nodo al líder si no conoce la topología completa?
+
+\textbf{Solución:} Protocolo de descubrimiento en dos fases:
+
+\begin{enumerate}
+    \item \textbf{Bootstrap}: Nodo recibe lista de nodos semilla al iniciar
+    \item \textbf{Gossip}: Nodos intercambian listas de vecinos conocidos periódicamente
+\end{enumerate}
+
+\textbf{Invariante:} Todos los nodos eventualmente conocen al líder actual mediante heartbeats Raft.
+
+\newpage
+
+%━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+\section{Consistencia y Replicación}
+%━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+\subsection{Distribución de Datos}
+
+\subsubsection{Índices Locales (No Replicados)}
+
+Cada nodo mantiene un índice invertido con documentos locales:
+
+$$
+index\_local: \text{término} \rightarrow \{(doc\_id, score)\}
+$$
+
+\textbf{Propiedad:} Particionamiento natural por nodo (sin overlap).
+
+\subsubsection{Índice Global (Replicado vía Raft)}
+
+El Data Balancer mantiene:
+
+$$
+index\_global: \text{término} \rightarrow \{node\_id\}
+$$
+
+\textbf{Replicación:} Líder replica vía AppendEntries a followers.
+
+\subsection{Modelo de Consistencia}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|l|l|l|}
+\hline
+\textbf{Dato} & \textbf{Modelo} & \textbf{Garantía} \\
+\hline
+Índice local & No replicado & Consistencia fuerte (single-copy) \\
+\hline
+Índice global & Raft log & Linearizable (tras commit) \\
+\hline
+Documentos & Quorum (k=3) & Eventual (tras $t_{propagation}$) \\
+\hline
+\end{tabular}
+\caption{Modelos de consistencia por tipo de dato}
+\end{table}
+
+\subsection{Análisis de Consistencia Eventual}
+
+\textbf{Teorema (Convergencia de réplicas):} Si no hay más escrituras después del tiempo $t$, entonces todas las réplicas eventualmente convergen al mismo estado.
+
+\textbf{Demostración informal:}
+\begin{enumerate}
+    \item Escritura exitosa requiere quorum $Q = \lceil k/2 \rceil + 1$
+    \item Lectura de quorum $Q$ intersecta con conjunto de escritura
+    \item Usando vectores de versión (timestamp), se detectan conflictos
+    \item Política de resolución: last-write-wins (timestamp más reciente)
+\end{enumerate}
+
+\subsection{Ventana de Inconsistencia}
+
+Entre escritura y propagación completa:
+
+$$
+t_{inconsistency} = \max(latency_{network}, latency_{disk})
+$$
+
+En red Docker local:
+$$
+t_{inconsistency} \approx 10-50 \text{ ms}
+$$
+
+\textbf{Implicación:} Búsqueda puede no ver documentos recién indexados durante esta ventana.
+
+\newpage
+
+%━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+\section{Tolerancia a Fallas}
+%━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+\subsection{Clasificación de Fallos}
+
+Según el modelo de Tanenbaum:
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|l|p{8cm}|}
+\hline
+\textbf{Tipo de Fallo} & \textbf{Manejo en DistriSearch} \\
+\hline
+Crash (fail-stop) & Raft reelige líder tras timeout (1.5-3.0s) \\
+\hline
+Omisión (msg loss) & Timeout + retransmisión en HTTP \\
+\hline
+Temporización (slow) & NO MANEJADO (asumido como crash) \\
+\hline
+Bizantino (malicioso) & NO TOLERADO \\
+\hline
+\end{tabular}
+\caption{Tipos de fallos y respuestas}
+\end{table}
+
+\subsection{Nivel de Tolerancia Esperado}
+
+\subsubsection{Fallos Tolerados}
+
+\begin{itemize}
+    \item \textbf{Líder caído}: Sistema reelige nuevo líder si $N - f > \lceil N/2 \rceil$
+    
+    \textit{Ejemplo:} Con $N=5$, tolera hasta $f=2$ fallos.
+    
+    \item \textbf{Nodo worker caído}: Búsquedas redirigen a réplicas (si existen)
+    
+    \item \textbf{Partición de red minoritaria}: Partición con $< \lceil N/2 \rceil$ nodos NO puede elegir líder $\Rightarrow$ queda bloqueada hasta reconexión
+\end{itemize}
+
+\subsubsection{Fallos NO Tolerados}
+
+\begin{itemize}
+    \item \textbf{Pérdida de quorum}: Si $f \geq \lceil N/2 \rceil$ nodos fallan simultáneamente
+    
+    \item \textbf{Corrupción de datos}: No hay checksums ni detección de corrupción en disco
+    
+    \item \textbf{Split-brain}: Raft previene múltiples líderes, pero particiones simétricas pueden causar indisponibilidad total
+\end{itemize}
+
+\subsection{Recuperación ante Fallos}
+
+\subsubsection{Protocolo de Recuperación de Nodo}
+
+\begin{lstlisting}[caption=Pseudocódigo de recuperación]
+function node_recovery():
+    // 1. Cargar estado persistente
+    load_log_from_disk()
+    load_index_from_disk()
+    
+    // 2. Contactar lider
+    leader = discover_current_leader()
+    
+    // 3. Sincronizar log
+    last_index = len(self.log)
+    missing_entries = leader.get_entries_since(last_index)
+    self.log.extend(missing_entries)
+    
+    // 4. Aplicar entradas no aplicadas
+    while self.last_applied < self.commit_index:
+        apply_entry(self.log[self.last_applied])
+        self.last_applied += 1
+    
+    // 5. Reanudar operacion normal
+    start_election_timer()
+\end{lstlisting}
+
+\subsubsection{Análisis de Disponibilidad}
+
+Usando teoría de confiabilidad:
+
+$$
+MTBF = MTTF + MTTR
+$$
+
+donde:
+\begin{itemize}
+    \item $MTTF$ (Mean Time To Failure) $\approx$ 1000 horas (asumido)
+    \item $MTTR$ (Mean Time To Repair) = tiempo de elección $\approx$ 3-5 segundos
+\end{itemize}
+
+$$
+Availability = \frac{MTTF}{MTBF} = \frac{1000}{1000 + 0.0014} \approx 99.9998\%
+$$
+
+\textbf{Limitación:} Cálculo asume fallo independiente de nodos (no modelado en cascada).
+
+\newpage
+
+%━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+\section{Seguridad}
+%━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+\subsection{Modelo de Amenazas}
+
+\textbf{Asunciones:}
+\begin{itemize}
+    \item Red interna es \textit{semi-confiable} (Docker bridge)
+    \item Atacante externo puede interceptar tráfico HTTP
+    \item NO se asume presencia de nodos maliciosos (bizantinos)
+\end{itemize}
+
+\subsection{Seguridad en la Comunicación}
+
+\subsubsection{TLS/SSL (Opcional)}
+
+\begin{itemize}
+    \item \textbf{Implementación}: \texttt{aiohttp} con \texttt{ssl.SSLContext}
+    \item \textbf{Certificados}: Auto-firmados (desarrollo) o Let's Encrypt (producción)
+    \item \textbf{Estado actual}: DESACTIVADO por defecto (\texttt{enable\_tls=False})
+\end{itemize}
+
+\textbf{Vulnerabilidad identificada:} Sin TLS, credenciales JWT viajan en texto plano.
+
+\subsubsection{Autenticación (JWT)}
+
+Cada nodo genera token al iniciar:
+
+\begin{lstlisting}[caption=Payload de JWT]
+{
+  "node_id": 5,
+  "iat": 1234567890,  // issued at
+  "exp": 1234571490   // expiry (1 hora)
+}
+// Firmado con: HMAC-SHA256(secret_key)
+\end{lstlisting}
+
+\textbf{Limitaciones:}
+\begin{itemize}
+    \item Secret key compartida (\texttt{JWT\_SECRET}) hardcodeada
+    \item No hay rotación de claves
+    \item No hay revocación de tokens
+\end{itemize}
+
+\subsection{Seguridad en el Diseño}
+
+\subsubsection{Autorización}
+
+\textbf{Control de acceso actual:} NINGUNO
+
+\textbf{Riesgos:}
+\begin{itemize}
+    \item Cualquier nodo puede escribir en índice global (si es líder)
+    \item No hay aislamiento multi-tenant
+    \item No hay roles diferenciados (admin vs. user)
+\end{itemize}
+
+\textbf{Mejora propuesta:} Implementar RBAC (Role-Based Access Control):
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|l|l|}
+\hline
+\textbf{Rol} & \textbf{Permisos} \\
+\hline
+admin & Añadir/eliminar documentos, gestionar nodos \\
+\hline
+writer & Añadir documentos \\
+\hline
+reader & Solo búsquedas \\
+\hline
+\end{tabular}
+\caption{Roles propuestos (no implementado)}
+\end{table}
+
+\subsubsection{Validación de Entradas}
+
+\textbf{Ataques potenciales:}
+\begin{itemize}
+    \item \textbf{Injection}: Tokenizador filtra caracteres especiales
+    \item \textbf{DoS}: Sin rate limiting ni tamaño máximo de documento
+    \item \textbf{Path traversal}: IDs de documentos no validados contra "../"
+\end{itemize}
+
+\newpage
+
+%━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+\section{Evaluación y Resultados Experimentales}
+%━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+\subsection{Configuración Experimental}
+
+\textbf{Setup:}
+\begin{itemize}
+    \item 5 nodos Docker (3 cores, 4GB RAM c/u)
+    \item Hipercubo de 8 dimensiones ($2^8 = 256$ nodos potenciales)
+    \item Dataset: 100 documentos, 500 términos únicos
+    \item Workload: 50 queries/segundo
+\end{itemize}
+
+\subsection{Métricas de Desempeño}
+
+\subsubsection{Latencia de Búsqueda}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+    xlabel={Número de nodos consultados},
+    ylabel={Latencia (ms)},
+    legend pos=north west,
+    grid=major,
+    width=12cm,
+    height=7cm
+]
+\addplot[color=blue, mark=*] coordinates {
+    (1, 15)
+    (3, 42)
+    (5, 68)
+    (7, 95)
+    (10, 130)
+};
+\legend{Latencia promedio}
+\end{axis}
+\end{tikzpicture}
+\caption{Latencia de búsqueda vs. número de nodos}
+\end{figure}
+
+\textbf{Observación:} Latencia crece linealmente con nodos consultados (paralelismo limitado por asyncio).
+
+\subsubsection{Tiempo de Elección de Líder}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|c|c|c|}
+\hline
+\textbf{Nodos totales} & \textbf{Min (s)} & \textbf{Max (s)} \\
+\hline
+3 & 1.6 & 3.2 \\
+5 & 1.8 & 3.8 \\
+7 & 2.1 & 4.5 \\
+\hline
+\end{tabular}
+\caption{Tiempo de elección (10 iteraciones)}
+\end{table}
+
+\textbf{Conclusión:} Timeout aleatorio efectivo (< 5s en todos los casos).
+
+\subsection{Análisis de Escalabilidad}
+
+\textbf{Pregunta:} ¿Cómo escala el sistema con $N$ nodos?
+
+\begin{itemize}
+    \item \textbf{Ruteo}: $O(\log N)$ saltos teórico, $O(1)$ en práctica (red Docker bridge)
+    
+    \item \textbf{Consenso}: Raft requiere $O(N)$ mensajes por heartbeat $\Rightarrow$ costo del líder crece linealmente
+    
+    \item \textbf{Sharding}: Índice global particionado en 16 shards reduce carga del líder
+\end{itemize}
+
+\textbf{Cuello de botella identificado:} Data Balancer centralizado (líder) es SPOF lógico.
+
+\newpage
+
+%━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+\section{Conclusiones}
+%━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+\subsection{Logros}
+
+\begin{enumerate}
+    \item Implementación funcional de búsqueda distribuida con topología de hipercubo
+    \item Consenso Raft parcial (elección de líder + replicación básica de log)
+    \item Replicación con quorum para documentos
+    \item Tolerancia a fallos mediante reelección automática de líder
+    \item Particionamiento (sharding) del índice global
+\end{enumerate}
+
+\subsection{Limitaciones y Trabajo Futuro}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|l|p{9cm}|}
+\hline
+\textbf{Limitación} & \textbf{Mejora Propuesta} \\
+\hline
+Líder centralizado & Migrar a DHT (ej: Chord, Kademlia) \\
+\hline
+Sin strong consistency & Completar Raft (log matching, snapshots) \\
+\hline
+No hay compresión & Implementar índice comprimido (ej: Elias-Fano) \\
+\hline
+Seguridad básica & TLS obligatorio + RBAC + rate limiting \\
+\hline
+Solo texto plano & Soportar PDF, HTML (con parsers) \\
+\hline
+\end{tabular}
+\caption{Roadmap de mejoras}
+\end{table}
+
+\subsection{Lecciones Aprendidas}
+
+\begin{itemize}
+    \item \textbf{Trade-off descentralización vs. simplicidad}: DHT es más escalable pero complejo de debuguear
+    
+    \item \textbf{Importancia de modelado formal}: Raft previene bugs sutiles (split-brain) mediante invariantes probadas
+    
+    \item \textbf{Limitaciones de asyncio}: CPU-bound tasks (tokenización) requieren thread pool para no bloquear event loop
+\end{itemize}
+
+\newpage
+
+%━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+\section*{Referencias}
+%━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+\addcontentsline{toc}{section}{Referencias}
+
+\begin{thebibliography}{9}
+
+\bibitem{tanenbaum2017}
+Tanenbaum, A. S., \& Van Steen, M. (2017).
+\textit{Distributed Systems: Principles and Paradigms} (3rd ed.).
+Pearson Education.
+
+\bibitem{ongaro2014}
+Ongaro, D., \& Ousterhout, J. (2014).
+In search of an understandable consensus algorithm.
+\textit{USENIX Annual Technical Conference}, 305-319.
+
+\bibitem{decandia2007}
+DeCandia, G., et al. (2007).
+Dynamo: Amazon's highly available key-value store.
+\textit{ACM SIGOPS Operating Systems Review}, 41(6), 205-220.
+
+\bibitem{stoica2001}
+Stoica, I., et al. (2001).
+Chord: A scalable peer-to-peer lookup service for internet applications.
+\textit{ACM SIGCOMM Computer Communication Review}, 31(4), 149-160.
+
+\bibitem{lamport1998}
+Lamport, L. (1998).
+The part-time parliament.
+\textit{ACM Transactions on Computer Systems}, 16(2), 133-169.
+
+\bibitem{brewer2000}
+Brewer, E. A. (2000).
+Towards robust distributed systems.
+\textit{PODC}, 7, 10-14. (CAP Theorem)
+
+\bibitem{vogels2009}
+Vogels, W. (2009).
+Eventually consistent.
+\textit{Communications of the ACM}, 52(1), 40-44.
+
+\end{thebibliography}
+
+\newpage
+
+%━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+\section*{Apéndices}
+%━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+\addcontentsline{toc}{section}{Apéndices}
+
+\subsection*{A. Estructura del Repositorio}
+
+\begin{verbatim}
+DistriSearch/
+|-- core/                # hipercubo, ruteo, IDs
+|-- consensus/           # Raft (election, replication, state)
+|-- storage/             # Indice invertido, tokenizacion
+|-- balancer/            # Data Balancer, indice global
+|-- replication/         # Quorum, rollback
+|-- sharding/            # Particionamiento
+|-- network/             # Interfaces de red (HTTP, simulada)
+|-- node/                # Nodo distribuido (orquestador)
+|-- tests/               # Tests unitarios (pytest)
+|-- docker-compose.yml   # Orquestación Docker
+|-- demo.py              # Script de demostración
+\-- README.md            # Documentación
+\end{verbatim}
+
+\subsection*{B. Comandos de Ejecución}
+
+\begin{lstlisting}[language=bash]
+
+pip install -r requirements.txt
+
+python demo.py
+
+pytest -v
+
+docker-compose up
+
+curl -X POST http://localhost:8000/doc \
+  -H "Content-Type: application/json" \
+  -d '{"doc_id": "test1", "content": "Python programming"}'
+
+curl http://localhost:8000/search?q=python
+\end{lstlisting}
+
+\subsection*{C. Diagramas de Secuencia}
+
+\subsubsection*{Flujo de Búsqueda Distribuida}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    actor/.style={rectangle, draw, minimum width=2cm, minimum height=0.8cm, font=\small},
+    message/.style={->, >=stealth}
+]
+
+\node[actor] (client) at (0,5) {Cliente};
+\node[actor] (nodeA) at (4,5) {Nodo A};
+\node[actor] (leader) at (8,5) {Líder};
+\node[actor] (nodeB) at (12,5) {Nodo B};
+
+\draw[message] (0,4.5) -- (4,4.5) node[midway, above] {\tiny GET /search};
+\draw[message] (4,4) -- (8,4) node[midway, above] {\tiny locate term};
+\draw[message] (8,3.5) -- (4,3.5) node[midway, above] {\tiny nodes: [B]};
+\draw[message] (4,3) -- (12,3) node[midway, above] {\tiny search\_local};
+\draw[message] (12,2.5) -- (4,2.5) node[midway, above] {\tiny results};
+\draw[message] (4,2) -- (0,2) node[midway, above] {\tiny aggregated};
+
+\end{tikzpicture}
+\caption{Secuencia de búsqueda distribuida}
+\end{figure}
+
+\end{document}

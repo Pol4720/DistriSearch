@@ -3,7 +3,9 @@ Tests para el algoritmo de elección de líder (Bully).
 """
 import pytest
 import asyncio
-from election import BullyElection, ElectionMessage, MessageType
+# NOTA: Este test necesita ser reescrito para usar consensus/raft_election.py
+# El algoritmo Bully fue reemplazado por Raft
+pytest.skip("Test deprecado - Bully reemplazado por Raft", allow_module_level=True)
 
 
 @pytest.mark.asyncio

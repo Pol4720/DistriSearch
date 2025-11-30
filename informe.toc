@@ -1,0 +1,76 @@
+\babel@toc {spanish}{}\relax 
+\contentsline {section}{\numberline {1}Introducción}{4}{section.1}%
+\contentsline {subsection}{\numberline {1.1}Motivación}{4}{subsection.1.1}%
+\contentsline {subsection}{\numberline {1.2}Objetivos del Sistema}{4}{subsection.1.2}%
+\contentsline {subsection}{\numberline {1.3}Marco Teórico}{4}{subsection.1.3}%
+\contentsline {section}{\numberline {2}Arquitectura del Sistema}{5}{section.2}%
+\contentsline {subsection}{\numberline {2.1}Modelo Arquitectónico}{5}{subsection.2.1}%
+\contentsline {subsection}{\numberline {2.2}Clasificación según Tanenbaum}{5}{subsection.2.2}%
+\contentsline {subsection}{\numberline {2.3}Organización del Sistema}{5}{subsection.2.3}%
+\contentsline {subsubsection}{\numberline {2.3.1}Componentes Principales}{5}{subsubsection.2.3.1}%
+\contentsline {section}{\numberline {3}Roles del Sistema}{7}{section.3}%
+\contentsline {subsection}{\numberline {3.1}Taxonomía de Roles}{7}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}Transiciones de Estado (Raft)}{7}{subsection.3.2}%
+\contentsline {section}{\numberline {4}Distribución de Servicios}{8}{section.4}%
+\contentsline {subsection}{\numberline {4.1}Docker Compose - Red Simulada}{8}{subsection.4.1}%
+\contentsline {subsection}{\numberline {4.2}Distribución Lógica vs Física}{8}{subsection.4.2}%
+\contentsline {section}{\numberline {5}Procesos del Sistema}{9}{section.5}%
+\contentsline {subsection}{\numberline {5.1}Tipos de Procesos}{9}{subsection.5.1}%
+\contentsline {subsubsection}{\numberline {5.1.1}Proceso Principal: Nodo Distribuido}{9}{subsubsection.5.1.1}%
+\contentsline {subsubsection}{\numberline {5.1.2}Tareas Asíncronas (asyncio)}{9}{subsubsection.5.1.2}%
+\contentsline {subsection}{\numberline {5.2}Organización de Procesos}{9}{subsection.5.2}%
+\contentsline {section}{\numberline {6}Comunicación}{10}{section.6}%
+\contentsline {subsection}{\numberline {6.1}Paradigma de Comunicación}{10}{subsection.6.1}%
+\contentsline {subsection}{\numberline {6.2}Tipos de Mensajes}{10}{subsection.6.2}%
+\contentsline {subsubsection}{\numberline {6.2.1}Mensajes de Ruteo}{10}{subsubsection.6.2.1}%
+\contentsline {subsubsection}{\numberline {6.2.2}Mensajes Raft}{10}{subsubsection.6.2.2}%
+\contentsline {subsection}{\numberline {6.3}Patrones de Comunicación}{11}{subsection.6.3}%
+\contentsline {section}{\numberline {7}Coordinación}{12}{section.7}%
+\contentsline {subsection}{\numberline {7.1}Sincronización de Acciones}{12}{subsection.7.1}%
+\contentsline {subsubsection}{\numberline {7.1.1}Elección de Líder (Raft)}{12}{subsubsection.7.1.1}%
+\contentsline {subsubsection}{\numberline {7.1.2}Replicación con Quorum}{12}{subsubsection.7.1.2}%
+\contentsline {subsection}{\numberline {7.2}Acceso Exclusivo a Recursos}{12}{subsection.7.2}%
+\contentsline {subsubsection}{\numberline {7.2.1}Condiciones de Carrera Identificadas}{12}{subsubsection.7.2.1}%
+\contentsline {subsection}{\numberline {7.3}Toma de Decisiones Distribuidas}{13}{subsection.7.3}%
+\contentsline {section}{\numberline {8}Nombrado y Localización}{14}{section.8}%
+\contentsline {subsection}{\numberline {8.1}Identificación de Recursos}{14}{subsection.8.1}%
+\contentsline {subsubsection}{\numberline {8.1.1}Nodos}{14}{subsubsection.8.1.1}%
+\contentsline {subsubsection}{\numberline {8.1.2}Documentos}{14}{subsubsection.8.1.2}%
+\contentsline {subsubsection}{\numberline {8.1.3}Términos}{14}{subsubsection.8.1.3}%
+\contentsline {subsection}{\numberline {8.2}Ubicación de Recursos}{14}{subsection.8.2}%
+\contentsline {subsection}{\numberline {8.3}Localización Dinámica}{14}{subsection.8.3}%
+\contentsline {section}{\numberline {9}Consistencia y Replicación}{16}{section.9}%
+\contentsline {subsection}{\numberline {9.1}Distribución de Datos}{16}{subsection.9.1}%
+\contentsline {subsubsection}{\numberline {9.1.1}Índices Locales (No Replicados)}{16}{subsubsection.9.1.1}%
+\contentsline {subsubsection}{\numberline {9.1.2}Índice Global (Replicado vía Raft)}{16}{subsubsection.9.1.2}%
+\contentsline {subsection}{\numberline {9.2}Modelo de Consistencia}{16}{subsection.9.2}%
+\contentsline {subsection}{\numberline {9.3}Análisis de Consistencia Eventual}{16}{subsection.9.3}%
+\contentsline {subsection}{\numberline {9.4}Ventana de Inconsistencia}{16}{subsection.9.4}%
+\contentsline {section}{\numberline {10}Tolerancia a Fallas}{17}{section.10}%
+\contentsline {subsection}{\numberline {10.1}Clasificación de Fallos}{17}{subsection.10.1}%
+\contentsline {subsection}{\numberline {10.2}Nivel de Tolerancia Esperado}{17}{subsection.10.2}%
+\contentsline {subsubsection}{\numberline {10.2.1}Fallos Tolerados}{17}{subsubsection.10.2.1}%
+\contentsline {subsubsection}{\numberline {10.2.2}Fallos NO Tolerados}{17}{subsubsection.10.2.2}%
+\contentsline {subsection}{\numberline {10.3}Recuperación ante Fallos}{17}{subsection.10.3}%
+\contentsline {subsubsection}{\numberline {10.3.1}Protocolo de Recuperación de Nodo}{17}{subsubsection.10.3.1}%
+\contentsline {subsubsection}{\numberline {10.3.2}Análisis de Disponibilidad}{18}{subsubsection.10.3.2}%
+\contentsline {section}{\numberline {11}Seguridad}{19}{section.11}%
+\contentsline {subsection}{\numberline {11.1}Modelo de Amenazas}{19}{subsection.11.1}%
+\contentsline {subsection}{\numberline {11.2}Seguridad en la Comunicación}{19}{subsection.11.2}%
+\contentsline {subsubsection}{\numberline {11.2.1}TLS/SSL (Opcional)}{19}{subsubsection.11.2.1}%
+\contentsline {subsubsection}{\numberline {11.2.2}Autenticación (JWT)}{19}{subsubsection.11.2.2}%
+\contentsline {subsection}{\numberline {11.3}Seguridad en el Diseño}{19}{subsection.11.3}%
+\contentsline {subsubsection}{\numberline {11.3.1}Autorización}{19}{subsubsection.11.3.1}%
+\contentsline {subsubsection}{\numberline {11.3.2}Validación de Entradas}{20}{subsubsection.11.3.2}%
+\contentsline {section}{\numberline {12}Evaluación y Resultados Experimentales}{21}{section.12}%
+\contentsline {subsection}{\numberline {12.1}Configuración Experimental}{21}{subsection.12.1}%
+\contentsline {subsection}{\numberline {12.2}Métricas de Desempeño}{21}{subsection.12.2}%
+\contentsline {subsubsection}{\numberline {12.2.1}Latencia de Búsqueda}{21}{subsubsection.12.2.1}%
+\contentsline {subsubsection}{\numberline {12.2.2}Tiempo de Elección de Líder}{21}{subsubsection.12.2.2}%
+\contentsline {subsection}{\numberline {12.3}Análisis de Escalabilidad}{22}{subsection.12.3}%
+\contentsline {section}{\numberline {13}Conclusiones}{23}{section.13}%
+\contentsline {subsection}{\numberline {13.1}Logros}{23}{subsection.13.1}%
+\contentsline {subsection}{\numberline {13.2}Limitaciones y Trabajo Futuro}{23}{subsection.13.2}%
+\contentsline {subsection}{\numberline {13.3}Lecciones Aprendidas}{23}{subsection.13.3}%
+\contentsline {section}{Referencias}{24}{section*.18}%
+\contentsline {section}{Apéndices}{25}{section*.20}%

@@ -6,13 +6,20 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiar código fuente
-COPY hypercube.py .
-COPY election.py .
-COPY storage.py .
-COPY network.py .
-COPY databalancer.py .
-COPY node.py .
+# Copiar código fuente modular
+COPY core/ ./core/
+COPY node/ ./node/
+COPY storage/ ./storage/
+COPY network/ ./network/
+COPY consensus/ ./consensus/
+COPY replication/ ./replication/
+COPY balancer/ ./balancer/
+COPY sharding/ ./sharding/
+
+# Copiar archivos raíz necesarios
+COPY config.py .
+COPY utils.py .
+COPY docker-entrypoint.py .
 
 # Crear directorio para datos
 RUN mkdir -p /app/data

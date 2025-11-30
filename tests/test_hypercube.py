@@ -2,9 +2,9 @@
 Tests para el módulo hypercube (topología y ruteo).
 """
 import pytest
-from hypercube import (
-    HypercubeNode, route_next_hop, calculate_route_path, generate_node_id
-)
+from core.hypercube import HypercubeNode, HypercubeTopology
+from core.routing import HypercubeRouter
+from core.node_id import generate_node_id
 
 
 def test_hypercube_node_creation():
@@ -54,7 +54,8 @@ def test_route_next_hop_direct_neighbor():
     dest = 7     # 0111
     neighbors = {4, 7, 1, 13}
     
-    next_hop = route_next_hop(current, dest, neighbors, dimensions=4)
+    router = HypercubeRouter(dimensions=4)
+    next_hop = router.route_next_hop(current, dest, neighbors)
     
     # Debe seleccionar el vecino 7 directamente
     assert next_hop == 7
@@ -66,7 +67,8 @@ def test_route_next_hop_greedy():
     dest = 15     # 1111
     neighbors = {1, 2, 4, 8}  # Solo un bit cambiado cada uno
     
-    next_hop = route_next_hop(current, dest, neighbors, dimensions=4)
+    router = HypercubeRouter(dimensions=4)
+    next_hop = router.route_next_hop(current, dest, neighbors)
     
     # Debe elegir un vecino que reduzca la distancia XOR
     assert next_hop in neighbors
@@ -78,7 +80,8 @@ def test_route_next_hop_destination_reached():
     dest = 5
     neighbors = {4, 7, 1, 13}
     
-    next_hop = route_next_hop(current, dest, neighbors, dimensions=4)
+    router = HypercubeRouter(dimensions=4)
+    next_hop = router.route_next_hop(current, dest, neighbors)
     
     assert next_hop is None
 
@@ -89,7 +92,8 @@ def test_calculate_route_path():
     dest = 15  # 1111
     active_nodes = set(range(16))  # Todos los nodos activos
     
-    path = calculate_route_path(start, dest, active_nodes, dimensions=4)
+    router = HypercubeRouter(dimensions=4)
+    path = router.calculate_route_path(start, dest, active_nodes)
     
     # Verificar que la ruta existe
     assert len(path) > 0
@@ -110,7 +114,8 @@ def test_calculate_route_path_missing_nodes():
     # Solo algunos nodos activos
     active_nodes = {0, 1, 3, 7}
     
-    path = calculate_route_path(start, dest, active_nodes, dimensions=4)
+    router = HypercubeRouter(dimensions=4)
+    path = router.calculate_route_path(start, dest, active_nodes)
     
     # Debe encontrar ruta usando nodos disponibles
     assert path[0] == start
