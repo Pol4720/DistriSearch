@@ -1,23 +1,84 @@
 ﻿"""
-DistriSearch - Modern Distributed Search System
+DistriSearch - Distributed Search System
 Home page with navigation and feature overview
 """
 import streamlit as st
 import os
+import pandas as pd
 from utils.helpers import setup_page_config, init_session_state, get_api_client
-from components.styles import apply_theme, get_animated_header, create_feature_card, create_metric_card
+from components.styles import apply_theme, get_animated_header
 
-# Page config with sidebar always expanded initially
 setup_page_config("DistriSearch - Home", "🔍", "wide", "expanded")
 
-# Initialize
 init_session_state()
 api = get_api_client()
+
+# Check authentication
+if "token" not in st.session_state or not st.session_state.token:
+    tab1, tab2 = st.tabs(["🔐 Iniciar Sesión", "📝 Registrarse"])
+    
+    with tab1:
+        st.markdown("""
+        <div style="text-align: center; margin-bottom: 2rem;">
+            <h1>🔐 Iniciar Sesión</h1>
+            <p style="color: #666;">Accede a tu cuenta de DistriSearch</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        with st.form("login_form_main"):
+            username = st.text_input("Usuario", placeholder="Ingresa tu usuario")
+            password = st.text_input("Contraseña", type="password", placeholder="Ingresa tu contraseña")
+            submitted = st.form_submit_button("Iniciar Sesión", use_container_width=True)
+            
+            if submitted:
+                if username and password:
+                    try:
+                        result = api.login(username, password)
+                        st.session_state.token = result["access_token"]
+                        st.session_state.username = username
+                        st.success("✅ Inicio de sesión exitoso")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ Error: {e}")
+                else:
+                    st.warning("⚠️ Por favor completa todos los campos")
+
+    with tab2:
+        st.markdown("""
+        <div style="text-align: center; margin-bottom: 2rem;">
+            <h1>📝 Registrarse</h1>
+            <p style="color: #666;">Crea tu cuenta para acceder al sistema</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        with st.form("register_form_main"):
+            email = st.text_input("Email", placeholder="tu@email.com")
+            username = st.text_input("Usuario", placeholder="Elige un nombre de usuario")
+            password = st.text_input("Contraseña", type="password", placeholder="Mínimo 6 caracteres")
+            password_confirm = st.text_input("Confirmar Contraseña", type="password")
+            submitted = st.form_submit_button("Registrarse", use_container_width=True)
+            
+            if submitted:
+                if email and username and password and password_confirm:
+                    if password != password_confirm:
+                        st.error("❌ Las contraseñas no coinciden")
+                    elif len(password) < 6:
+                        st.error("❌ La contraseña debe tener al menos 6 caracteres")
+                    else:
+                        try:
+                            api.register(email, username, password)
+                            st.success("✅ Registro exitoso! Ahora puedes iniciar sesión")
+                        except Exception as e:
+                            st.error(f"❌ Error: {e}")
+                else:
+                    st.warning("⚠️ Por favor completa todos los campos")
+
+    st.stop()
 
 # Apply modern theme
 apply_theme(st.session_state.theme)
 
-# Sidebar with improved UX
+# Sidebar
 with st.sidebar:
     logo_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'assets', 'logo.png'))
     if os.path.isfile(logo_path):
@@ -27,19 +88,18 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # Theme toggle with better UI
+    # Theme toggle
     st.markdown("### 🎨 Tema de interfaz")
-    
     col1, col2 = st.columns(2)
     with col1:
-        if st.button('🌙 Oscuro' if st.session_state.theme == 'light' else '🌙 Oscuro', 
+        if st.button('🌙 Oscuro', 
                     key='dark_theme',
                     disabled=st.session_state.theme == 'dark',
                     use_container_width=True):
             st.session_state.theme = 'dark'
             st.rerun()
     with col2:
-        if st.button('☀️ Claro' if st.session_state.theme == 'dark' else '☀️ Claro', 
+        if st.button('☀️ Claro', 
                     key='light_theme',
                     disabled=st.session_state.theme == 'light',
                     use_container_width=True):
@@ -48,27 +108,16 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # Mode selector with better contrast
-    st.markdown("### 🌐 Modo de operación")
-    mode_options = ["🌐 Distribuido", "🏢 Centralizado"]
-    current_idx = 0 if st.session_state.ui_mode == 'Distribuido' else 1
-    
-    selected_mode = st.radio(
-        "Selecciona el modo:",
-        mode_options,
-        index=current_idx,
-        label_visibility="collapsed",
-        key="mode_selector"
-    )
-    
-    if "Distribuido" in selected_mode:
-        st.session_state.ui_mode = 'Distribuido'
-    else:
-        st.session_state.ui_mode = 'Centralizado'
+    # User info
+    if "username" in st.session_state:
+        st.markdown(f"### 👤 {st.session_state.username}")
+        if st.button("🚪 Cerrar Sesión", use_container_width=True):
+            st.session_state.clear()
+            st.rerun()
     
     st.markdown("---")
     
-    # System status with improved styling
+    # System status
     st.markdown("### 📊 Estado del Sistema")
     try:
         nodes = api.get_nodes()
@@ -85,17 +134,11 @@ with st.sidebar:
     **Usa las páginas del menú** para navegar:
     - 🔍 **Buscar** archivos
     - 🌐 **Nodos** - Gestión
-    - 🏢 **Central** - Panel
     - 📊 **Estadísticas**
     """)
-    
-    st.markdown("---")
-    st.caption("💡 **Tip**: Puedes ocultar/mostrar este menú con el botón superior izquierdo")
-
 
 # Main content
-# Main content with animated header
-st.markdown(get_animated_header("🔍 DistriSearch", "Sistema de Búsqueda Distribuida de Nueva Generación"), unsafe_allow_html=True)
+st.markdown(get_animated_header("🔍 DistriSearch", "Sistema de Búsqueda Distribuida"), unsafe_allow_html=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
@@ -108,7 +151,7 @@ with col1:
             Bienvenido a DistriSearch 
         </h2>
         <p style="font-size: 1.1rem; line-height: 1.8; opacity: 0.9;">
-            Experimenta la búsqueda distribuida de archivos con una interfaz moderna y potente.
+            Sistema de búsqueda distribuida P2P con arquitectura escalable.
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -116,22 +159,22 @@ with col1:
     st.markdown("""
     <div class="features-grid">
         <div class="feature-card">
-            <div class="feature-icon"></div>
+            <div class="feature-icon">🚀</div>
             <h3>Búsqueda Ultra-Rápida</h3>
             <p>Algoritmo BM25 optimizado</p>
         </div>
         <div class="feature-card">
-            <div class="feature-icon"></div>
-            <h3>Arquitectura Distribuida</h3>
-            <p>Escalabilidad horizontal</p>
+            <div class="feature-icon">🌐</div>
+            <h3>Arquitectura P2P</h3>
+            <p>Distribución real sin puntos centrales</p>
         </div>
         <div class="feature-card">
-            <div class="feature-icon"></div>
+            <div class="feature-icon">🔒</div>
             <h3>Seguro & Confiable</h3>
             <p>Autenticación robusta</p>
         </div>
         <div class="feature-card">
-            <div class="feature-icon"></div>
+            <div class="feature-icon">📊</div>
             <h3>Monitoreo en Tiempo Real</h3>
             <p>Métricas detalladas</p>
         </div>
@@ -141,21 +184,21 @@ with col1:
 with col2:
     st.markdown("""
     <div class="glass-panel" style="padding: 1.5rem;">
-        <h3 style="margin-top: 0; color: #667eea;"> Acciones Rápidas</h3>
+        <h3 style="margin-top: 0; color: #667eea;">⚡ Acciones Rápidas</h3>
     </div>
     """, unsafe_allow_html=True)
     
     st.markdown("<br>", unsafe_allow_html=True)
-    st.info(" Usa el menú lateral para navegar")
-    mode_emoji = "" if st.session_state.ui_mode == "Distribuido" else ""
-    st.success(f"**Modo actual:** {mode_emoji} {st.session_state.ui_mode}")
+    st.info("💡 Usa el menú lateral para navegar")
+    st.success("**Modo:** 🌐 Distribuido")
 
 st.markdown("<br><br>", unsafe_allow_html=True)
 st.markdown("""
 <div class="glass-panel" style="padding: 1.5rem; text-align: center;">
-    <h3> Cómo funciona?</h3>
+    <h3>❓ ¿Cómo funciona?</h3>
     <p style="font-size: 1rem; opacity: 0.85; line-height: 1.7;">
-        DistriSearch utiliza una arquitectura P2P donde cada nodo mantiene su propio índice de archivos.
+        DistriSearch utiliza una arquitectura P2P donde cada nodo mantiene su propio índice de archivos
+        y puede servir contenido directamente a otros nodos de la red.
     </p>
 </div>
 """, unsafe_allow_html=True)
@@ -168,19 +211,19 @@ try:
         st.markdown(f"""
         <div class="features-grid">
             <div class="metric-card">
-                <div class="metric-label"> ARCHIVOS TOTALES</div>
+                <div class="metric-label">📁 ARCHIVOS TOTALES</div>
                 <div class="metric-value">{stats.get('total_files', 0)}</div>
             </div>
             <div class="metric-card">
-                <div class="metric-label"> NODOS TOTALES</div>
+                <div class="metric-label">🖥️ NODOS TOTALES</div>
                 <div class="metric-value">{stats.get('total_nodes', 0)}</div>
             </div>
             <div class="metric-card">
-                <div class="metric-label"> NODOS ACTIVOS</div>
+                <div class="metric-label">✅ NODOS ACTIVOS</div>
                 <div class="metric-value">{stats.get('active_nodes', 0)}</div>
             </div>
             <div class="metric-card">
-                <div class="metric-label"> DUPLICADOS</div>
+                <div class="metric-label">🔄 DUPLICADOS</div>
                 <div class="metric-value">{stats.get('duplicates_count', 0)}</div>
             </div>
         </div>
@@ -190,6 +233,6 @@ except Exception:
 
 st.markdown(f"""
 <div style="text-align: center; opacity: 0.6; font-size: 0.85rem; padding: 2rem 0;">
-    DistriSearch v2.0 | Modo: <span style="color: #667eea;">{st.session_state.ui_mode}</span>
+    DistriSearch v2.0 - Modo Distribuido P2P
 </div>
 """, unsafe_allow_html=True)

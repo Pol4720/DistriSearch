@@ -2,6 +2,8 @@ from typing import List, Dict, Optional
 from models import FileMeta, SearchQuery, SearchResult, NodeInfo
 import database
 from services import node_service
+from pymongo import MongoClient
+import os
 
 def register_files(files: List[FileMeta]) -> int:
     """
@@ -49,7 +51,6 @@ def search_files(query: SearchQuery) -> SearchResult:
             type=file_data["type"],
             node_id=file_data["node_id"],
             last_updated=file_data["last_updated"],
-            # No devolvemos el contenido completo por seguridad/eficiencia.
             content=None,
             content_hash=file_data.get("content_hash") if isinstance(file_data, dict) else None
         ))
@@ -77,73 +78,99 @@ def search_files(query: SearchQuery) -> SearchResult:
 
 def get_file_by_id(file_id: str) -> Optional[Dict]:
     """
-    Obtiene un archivo por su ID
+    Obtiene un archivo por su ID usando MongoDB
     """
-    with database.get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM files WHERE file_id = ?", (file_id,))
-        file = cursor.fetchone()
-        return dict(file) if file else None
+    client = MongoClient(os.getenv("MONGO_URI", "mongodb://localhost:27017"))
+    db = client[os.getenv("MONGO_DBNAME", "distrisearch")]
+    
+    file_doc = db.files.find_one({"file_id": file_id})
+    
+    if file_doc:
+        # Convertir ObjectId a string
+        file_doc["_id"] = str(file_doc["_id"])
+    
+    return file_doc
 
 def get_nodes_with_file(file_id: str) -> List[Dict]:
     """
     Obtiene todos los nodos que tienen un archivo específico
     """
-    with database.get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT n.* FROM nodes n
-            JOIN files f ON n.node_id = f.node_id
-            WHERE f.file_id = ?
-        """, (file_id,))
-        return [dict(row) for row in cursor.fetchall()]
+    client = MongoClient(os.getenv("MONGO_URI", "mongodb://localhost:27017"))
+    db = client[os.getenv("MONGO_DBNAME", "distrisearch")]
+    
+    # Buscar archivos con ese file_id
+    files = list(db.files.find({"file_id": file_id}))
+    
+    # Obtener nodos únicos
+    node_ids = list(set(f["node_id"] for f in files))
+    
+    # Buscar información de nodos
+    nodes = []
+    for node_id in node_ids:
+        node = database.get_node(node_id)
+        if node:
+            nodes.append(node)
+    
+    return nodes
 
 def get_index_stats() -> Dict:
     """
-    Obtiene estadísticas del índice
+    ✅ CORREGIDO: Obtiene estadísticas usando MongoDB
     """
-    with database.get_connection() as conn:
-        cursor = conn.cursor()
-        
-        # Total de archivos
-        cursor.execute("SELECT COUNT(*) as total FROM files")
-        total_files = cursor.fetchone()["total"]
-        
-        # Total de nodos
-        cursor.execute("SELECT COUNT(*) as total FROM nodes")
-        total_nodes = cursor.fetchone()["total"]
-        
-        # Nodos activos
-        cursor.execute("SELECT COUNT(*) as total FROM nodes WHERE status = 'online'")
-        active_nodes = cursor.fetchone()["total"]
-        
-        # Archivos por tipo
-        cursor.execute("""
-            SELECT type, COUNT(*) as count 
-            FROM files 
-            GROUP BY type
-        """)
-        files_by_type = {row["type"]: row["count"] for row in cursor.fetchall()}
-        
-        # Tamaño total de archivos
-        cursor.execute("SELECT SUM(size) as total_size FROM files")
-        total_size = cursor.fetchone()["total_size"] or 0
-        
-        # Duplicados (archivos con mismo file_id en diferentes nodos)
-        cursor.execute("""
-            SELECT file_id, COUNT(*) as copies
-            FROM files
-            GROUP BY file_id
-            HAVING COUNT(*) > 1
-        """)
-        duplicates = cursor.fetchall()
-        duplicates_count = len(duplicates)
-        
-        return {
-            "total_files": total_files,
-            "total_nodes": total_nodes,
-            "active_nodes": active_nodes,
-            "files_by_type": files_by_type,
-            "total_size_bytes": total_size,
-            "duplicates_count": duplicates_count
-        }
+    client = MongoClient(os.getenv("MONGO_URI", "mongodb://localhost:27017"))
+    db = client[os.getenv("MONGO_DBNAME", "distrisearch")]
+    
+    # Total de archivos
+    total_files = db.files.count_documents({})
+    
+    # Total de nodos
+    total_nodes = db.nodes.count_documents({})
+    
+    # Nodos activos
+    active_nodes = db.nodes.count_documents({"status": "online"})
+    
+    # Archivos por tipo usando aggregation
+    pipeline = [
+        {"$group": {
+            "_id": "$type",
+            "count": {"$sum": 1}
+        }}
+    ]
+    
+    files_by_type_cursor = db.files.aggregate(pipeline)
+    files_by_type = {doc["_id"]: doc["count"] for doc in files_by_type_cursor}
+    
+    # Tamaño total de archivos
+    size_pipeline = [
+        {"$group": {
+            "_id": None,
+            "total_size": {"$sum": "$size"}
+        }}
+    ]
+    
+    size_result = list(db.files.aggregate(size_pipeline))
+    total_size = size_result[0]["total_size"] if size_result else 0
+    
+    # Duplicados (archivos con mismo file_id en diferentes nodos)
+    duplicates_pipeline = [
+        {"$group": {
+            "_id": "$file_id",
+            "count": {"$sum": 1}
+        }},
+        {"$match": {
+            "count": {"$gt": 1}
+        }},
+        {"$count": "duplicates"}
+    ]
+    
+    duplicates_result = list(db.files.aggregate(duplicates_pipeline))
+    duplicates_count = duplicates_result[0]["duplicates"] if duplicates_result else 0
+    
+    return {
+        "total_files": total_files,
+        "total_nodes": total_nodes,
+        "active_nodes": active_nodes,
+        "files_by_type": files_by_type,
+        "total_size_bytes": total_size,
+        "duplicates_count": duplicates_count
+    }

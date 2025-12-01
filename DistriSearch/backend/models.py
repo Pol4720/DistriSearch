@@ -49,6 +49,44 @@ class SearchResult(BaseModel):
     total_count: int
     nodes_available: List[NodeInfo]
 
+class UserCreate(BaseModel):
+    email: str
+    username: str
+    password: str
+
+class UserLogin(BaseModel):
+    username: str
+    password: str
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+class TokenData(BaseModel):
+    username: Optional[str] = None
+
 class DownloadRequest(BaseModel):
     file_id: str
     preferred_node_id: Optional[str] = None
+
+class NodeRegistration(BaseModel):
+    """Modelo simplificado para registro dinámico de nodos"""
+    node_id: str
+    name: Optional[str] = None
+    ip_address: Optional[str] = None
+    port: int = 8080
+    shared_folder: Optional[str] = None
+    auto_scan: bool = False
+    
+    class Config:
+        # ✅ CORREGIDO para Pydantic v2
+        json_schema_extra = {
+            "example": {
+                "node_id": "agent_dynamic_01",
+                "name": "Agente Dynamico 1",
+                "port": 8081,
+                "shared_folder": "/app/shared",
+                "auto_scan": True
+            }
+        }
+
