@@ -1,27 +1,114 @@
 # API Reference
 
-Documentación completa de los endpoints REST de DistriSearch.
+<div style="padding: 1.5rem; background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%); border-radius: 16px; margin-bottom: 2rem;">
+  <h3 style="margin-top: 0;">📚 Documentación de Endpoints REST</h3>
+  <p>Todos los nodos exponen la misma API. El Master tiene endpoints adicionales de coordinación.</p>
+</div>
 
 ---
 
-## 🌐 URL Base
+## 🌐 URLs Base
 
-```
-http://localhost:8000
+=== "Cluster (Docker Compose)"
+
+    | Nodo | API URL | Swagger |
+    |------|---------|---------|
+    | Node 1 | `http://localhost:8001` | `/docs` |
+    | Node 2 | `http://localhost:8002` | `/docs` |
+    | Node 3 | `http://localhost:8003` | `/docs` |
+
+=== "Desarrollo Local"
+
+    ```
+    http://localhost:8000
+    ```
+
+---
+
+## ❤️ Health Checks
+
+!!! tip "Kubernetes Ready"
+    Estos endpoints están diseñados para probes de Kubernetes/Docker.
+
+### Health Básico
+
+```http
+GET /health
 ```
 
-Todas las rutas son relativas a esta URL base.
+**Respuesta:**
+```json
+{
+  "status": "healthy",
+  "node_id": "node_1",
+  "timestamp": "2025-12-05T10:30:00Z"
+}
+```
+
+### Health Detallado
+
+```http
+GET /health/detailed
+```
+
+**Respuesta:**
+```json
+{
+  "status": "healthy",
+  "node_id": "node_1",
+  "role": "master",
+  "uptime_seconds": 3600,
+  "system": {
+    "cpu_percent": 25.5,
+    "memory_percent": 45.2,
+    "disk_percent": 60.0
+  }
+}
+```
+
+### Estado del Cluster
+
+```http
+GET /health/cluster
+```
+
+**Respuesta:**
+```json
+{
+  "cluster_healthy": true,
+  "master_id": "node_1",
+  "nodes_online": 3,
+  "nodes_total": 3,
+  "metrics": {
+    "mttr": 12.5,
+    "mtbf": 86400.0,
+    "availability": 99.98
+  }
+}
+```
+
+### Readiness Probe
+
+```http
+GET /health/ready
+```
+
+### Liveness Probe
+
+```http
+GET /health/live
+```
 
 ---
 
 ## 🔍 Búsqueda
 
-### Buscar Archivos
+### Buscar Archivos (Distribuida)
 
-Realiza una búsqueda distribuida en todos los nodos activos.
+Realiza una búsqueda distribuida en todos los Slaves activos.
 
 ```http
-GET /search/
+GET /search/?q={query}
 ```
 
 #### Parámetros
@@ -31,15 +118,38 @@ GET /search/
 | `q` | string | ✅ | Término de búsqueda |
 | `max_results` | integer | ❌ | Máximo de resultados (default: 50) |
 | `file_type` | string | ❌ | Filtrar por tipo (.pdf, .docx, etc.) |
-| `node_id` | string | ❌ | Buscar solo en un nodo específico |
+| `node_id` | string | ❌ | Buscar solo en un Slave específico |
 
-#### Ejemplo de Petición
+#### Ejemplo
 
-```bash
-curl "http://localhost:8000/search/?q=proyecto&max_results=10"
-```
+=== "cURL"
 
-#### Ejemplo de Respuesta
+    ```bash
+    curl "http://localhost:8001/search/?q=proyecto&max_results=10"
+    ```
+
+=== "Python"
+
+    ```python
+    import requests
+    
+    response = requests.get(
+        "http://localhost:8001/search/",
+        params={"q": "proyecto", "max_results": 10}
+    )
+    results = response.json()
+    ```
+
+=== "JavaScript"
+
+    ```javascript
+    const response = await fetch(
+      'http://localhost:8001/search/?q=proyecto&max_results=10'
+    );
+    const results = await response.json();
+    ```
+
+#### Respuesta
 
 ```json
 {
@@ -51,39 +161,18 @@ curl "http://localhost:8000/search/?q=proyecto&max_results=10"
       "size": 2048576,
       "file_type": "pdf",
       "score": 9.2,
-      "node_id": "node-001",
-      "node_name": "Oficina Principal",
-      "indexed_at": "2024-01-15T10:30:00Z",
-      "modified_at": "2024-01-14T15:20:00Z"
-    },
-    {
-      "file_id": "xyz789abc123",
-      "name": "proyecto_diseño.docx",
-      "path": "/shared/proyecto_diseño.docx",
-      "size": 524288,
-      "file_type": "docx",
-      "score": 8.7,
-      "node_id": "node-002",
-      "node_name": "Oficina Secundaria",
-      "indexed_at": "2024-01-15T09:15:00Z",
-      "modified_at": "2024-01-13T11:45:00Z"
+      "node_id": "node_1",
+      "node_name": "Nodo Principal",
+      "indexed_at": "2025-01-15T10:30:00Z"
     }
   ],
-  "total": 2,
+  "total": 1,
   "query": "proyecto",
-  "query_time_ms": 245,
-  "nodes_searched": 2,
-  "nodes_responded": 2
+  "query_time_ms": 145,
+  "nodes_searched": 3,
+  "nodes_responded": 3
 }
 ```
-
-#### Códigos de Estado
-
-| Código | Descripción |
-|--------|-------------|
-| `200` | Búsqueda exitosa |
-| `400` | Parámetros inválidos |
-| `500` | Error del servidor |
 
 ---
 
@@ -772,4 +861,4 @@ print(f"Encontrados {len(results['files'])} archivos")
 ---
 
 [:octicons-arrow-left-24: Volver a Introducción](../introduccion.md){ .md-button }
-[:octicons-arrow-right-24: Ver Ejemplos](../tutorials/index.md){ .md-button .md-button--primary }
+[:octicons-arrow-right-24: Ver Arquitectura](../arquitectura.md){ .md-button .md-button--primary }

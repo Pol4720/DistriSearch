@@ -151,7 +151,7 @@ with col1:
             Bienvenido a DistriSearch 
         </h2>
         <p style="font-size: 1.1rem; line-height: 1.8; opacity: 0.9;">
-            Sistema de búsqueda distribuida P2P con arquitectura escalable.
+            Sistema de búsqueda distribuida con arquitectura Master-Slave y vectorización semántica.
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -165,8 +165,8 @@ with col1:
         </div>
         <div class="feature-card">
             <div class="feature-icon">🌐</div>
-            <h3>Arquitectura P2P</h3>
-            <p>Distribución real sin puntos centrales</p>
+            <h3>Arquitectura Master-Slave</h3>
+            <p>Distribución con vectorización semántica</p>
         </div>
         <div class="feature-card">
             <div class="feature-icon">🔒</div>
@@ -197,8 +197,8 @@ st.markdown("""
 <div class="glass-panel" style="padding: 1.5rem; text-align: center;">
     <h3>❓ ¿Cómo funciona?</h3>
     <p style="font-size: 1rem; opacity: 0.85; line-height: 1.7;">
-        DistriSearch utiliza una arquitectura P2P donde cada nodo mantiene su propio índice de archivos
-        y puede servir contenido directamente a otros nodos de la red.
+        DistriSearch utiliza una arquitectura Master-Slave donde el Master coordina búsquedas mediante
+        vectorización semántica y los Slaves almacenan y sirven los archivos de forma distribuida.
     </p>
 </div>
 """, unsafe_allow_html=True)
@@ -233,6 +233,6 @@ except Exception:
 
 st.markdown(f"""
 <div style="text-align: center; opacity: 0.6; font-size: 0.85rem; padding: 2rem 0;">
-    DistriSearch v2.0 - Modo Distribuido P2P
+    DistriSearch v2.0 - Arquitectura Master-Slave
 </div>
 """, unsafe_allow_html=True)

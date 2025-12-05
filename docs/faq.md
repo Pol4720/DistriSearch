@@ -8,7 +8,7 @@ Respuestas a las preguntas más comunes sobre DistriSearch.
 
 ### ¿Qué es DistriSearch?
 
-DistriSearch es un sistema de búsqueda distribuida que permite indexar y buscar archivos en múltiples nodos sin necesidad de centralizar los datos. Cada nodo mantiene sus archivos localmente mientras participa en un índice global de búsqueda.
+DistriSearch es un sistema de búsqueda distribuida basado en arquitectura **Master-Slave** que permite indexar y buscar archivos en múltiples nodos. Utiliza **ubicación semántica** para localizar contenido similar y ofrece **elección dinámica de líder** para alta disponibilidad.
 
 ### ¿Para qué casos de uso es ideal DistriSearch?
 
@@ -23,10 +23,11 @@ DistriSearch es un sistema de búsqueda distribuida que permite indexar y buscar
 | Característica | DistriSearch | Google Drive/Dropbox |
 |----------------|--------------|----------------------|
 | **Almacenamiento** | Distribuido, datos en origen | Centralizado en la nube |
+| **Arquitectura** | Master-Slave con failover | Centralizada |
 | **Privacidad** | Total, datos nunca salen | Datos en servidores terceros |
 | **Coste** | Gratis, open source | Planes de pago por espacio |
-| **Control** | Total sobre infraestructura | Limitado |
-| **Búsqueda** | BM25 distribuida | Búsqueda centralizada |
+| **Tolerancia a fallos** | Elección automática de líder | Depende del proveedor |
+| **Búsqueda** | Semántica + BM25 distribuida | Búsqueda centralizada |
 | **Offline** | Cada nodo independiente | Requiere internet |
 
 ---
@@ -97,16 +98,41 @@ agent:
 
 ## 🌐 Nodos y Arquitectura
 
+### ¿Qué arquitectura utiliza DistriSearch?
+
+DistriSearch usa arquitectura **Master-Slave distribuida**:
+
+- **Cualquier nodo puede ser Master** (mediante algoritmo Bully)
+- **Todos los nodos son Slaves** por defecto
+- **El Master coordina** búsquedas, replicación y ubicación
+- **Los Slaves almacenan** documentos y responden queries
+
+### ¿Cómo se elige al Master?
+
+Mediante el **algoritmo Bully**:
+
+1. Si el Master no responde a 3 heartbeats consecutivos, se inicia elección
+2. Los nodos con ID menor envían `ELECTION` a nodos con ID mayor
+3. El nodo con mayor ID se proclama `COORDINATOR`
+4. Todos los nodos reconocen al nuevo Master
+
+```bash
+# Tiempo de elección típico: 10-15 segundos
+HEARTBEAT_INTERVAL=5      # segundos
+HEARTBEAT_TIMEOUT=15      # 3 beats fallidos
+```
+
 ### ¿Cuántos nodos puedo tener?
 
-No hay límite teórico. En pruebas hemos validado hasta **100 nodos** sin problemas. El límite práctico depende de tu infraestructura de red y el hardware del backend.
+No hay límite teórico. En pruebas hemos validado hasta **100 nodos** sin problemas. El límite práctico depende de tu infraestructura de red y el hardware.
 
 ### ¿Qué pasa si un nodo está offline?
 
 - ✅ La búsqueda continúa en los nodos activos
 - ✅ Los resultados del nodo offline no aparecen
 - ✅ El nodo se reintegra automáticamente al volver online
-- ✅ Si usas **modo central**, los archivos replicados siguen disponibles
+- ✅ Si era el Master, se elige un nuevo Master automáticamente
+- ✅ Los archivos replicados siguen disponibles en otros nodos
 
 ### ¿Los nodos deben estar en la misma red?
 
@@ -115,18 +141,20 @@ No necesariamente:
 - **Red local**: Configuración más simple, menor latencia
 - **Internet**: Posible con IPs públicas o VPN
 - **VPN**: Recomendado para seguridad en internet
-- **Docker Swarm**: Para múltiples hosts en producción
+- **Docker Compose Cluster**: 3 nodos pre-configurados en subnet 172.20.0.0/24
 
 ### ¿Cómo funciona el heartbeat?
 
-Cada agente envía un "heartbeat" al backend cada 30 segundos (configurable):
+Cada nodo envía heartbeats **UDP** al puerto 5000:
 
 ```yaml
-backend:
-  heartbeat_interval: 30  # segundos
+HEARTBEAT_INTERVAL: 5      # segundos entre heartbeats
+HEARTBEAT_TIMEOUT: 15      # 3 beats fallidos = offline
+HEARTBEAT_PORT: 5000       # puerto UDP
+ELECTION_PORT: 5001        # puerto UDP para elección
 ```
 
-Si el backend no recibe heartbeat en 60 segundos, marca el nodo como `offline`.
+Si un nodo no recibe heartbeats en 15 segundos, lo marca como `offline`.
 
 ---
 
@@ -260,35 +288,26 @@ scan:
 
 ### ¿Dónde se almacenan los datos?
 
-**Backend**: Base de datos SQLite en `backend/distrisearch.db`
+**Backend (cada nodo)**: Base de datos **MongoDB** local
 
-**Agentes**: Caché local opcional para metadatos
+**Índice semántico**: En memoria con respaldo en MongoDB
 
 **Archivos**: Siempre en su ubicación original
 
-### ¿Puedo usar PostgreSQL o MySQL?
+### ¿Por qué MongoDB en lugar de SQLite?
 
-Sí, cambiando la configuración:
+MongoDB ofrece:
 
-```python
-# backend/config.py
-DATABASE_URL = "postgresql://user:pass@localhost/distrisearch"
-# o
-DATABASE_URL = "mysql://user:pass@localhost/distrisearch"
-```
-
-Requiere instalar el driver correspondiente:
-
-```bash
-pip install psycopg2-binary  # PostgreSQL
-pip install pymysql          # MySQL
-```
+- ✅ Mejor soporte para documentos JSON
+- ✅ Escalabilidad horizontal
+- ✅ Replicación nativa
+- ✅ Consultas más flexibles para metadatos
 
 ### ¿Qué tan grande puede ser la base de datos?
 
-SQLite soporta hasta **281 TB**, más que suficiente para millones de archivos.
+MongoDB soporta documentos de hasta **16 MB** y colecciones de tamaño ilimitado.
 
-**Referencia**: 1 millón de archivos ≈ 500 MB de base de datos
+**Referencia**: 1 millón de archivos ≈ 200-500 MB en MongoDB
 
 ---
 
@@ -360,11 +379,11 @@ docker-compose up -d
 
 ### ¿Puedo usar Kubernetes?
 
-Sí, ver [Guía de Kubernetes](deployment/kubernetes.md).
+Sí, DistriSearch puede desplegarse en Kubernetes. Consulta la documentación de despliegue.
 
 ### ¿Soporta Docker Swarm?
 
-Sí, ver [Guía de Docker Swarm](deployment/docker-swarm.md).
+Sí, DistriSearch soporta Docker Swarm para clusters multi-host.
 
 ### ¿Cómo escalo el backend?
 
@@ -473,20 +492,30 @@ Aumentar si los nodos son lentos o la red es lenta.
 
 ## 🔮 Roadmap y Futuro
 
+### ¿Qué funcionalidades ya están implementadas?
+
+- ✅ Arquitectura Master-Slave con elección dinámica
+- ✅ Sistema de heartbeats UDP
+- ✅ Algoritmo Bully para elección de líder
+- ✅ Búsqueda semántica con embeddings
+- ✅ Replicación por afinidad semántica
+- ✅ Health checks (liveness/readiness)
+- ✅ CoreDNS para failover
+- ✅ Métricas MTTR/MTBF
+
 ### ¿Qué nuevas funcionalidades están planeadas?
 
-Ver [Roadmap completo](caracteristicas.md#roadmap), highlights:
+Ver [Roadmap completo](caracteristicas.md#funcionalidades-actuales-e-implementadas), highlights:
 
-- 🔍 Búsqueda semántica con embeddings
-- 🤖 Interfaz de chat con LLM
-- 🔐 Autenticación OAuth2/OIDC
+- 📄 Previsualización de archivos
+- 🤖 Chat con archivos (RAG)
+- 🔐 Cifrado end-to-end
 - 📊 Dashboard analytics avanzado
-- 🌐 Replicación automática inteligente
 - 📱 App móvil
 
 ### ¿Puedo contribuir?
 
-¡Por supuesto! Ver [Guía de Contribución](development/contribucion.md).
+¡Por supuesto! El proyecto es open source.
 
 ---
 

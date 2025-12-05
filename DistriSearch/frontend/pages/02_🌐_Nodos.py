@@ -229,7 +229,7 @@ with tab3:
             "🗑️ Eliminar archivos del índice",
             value=True,
             key="delete_files_checkbox",
-            help="Si está marcado, también se eliminarán los archivos del nodo del índice central"
+            help="Si está marcado, también se eliminarán los archivos del nodo del índice distribuido"
         )
     
     st.markdown("<br>", unsafe_allow_html=True)

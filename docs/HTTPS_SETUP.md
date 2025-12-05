@@ -6,13 +6,13 @@ Esta guía explica cómo configurar DistriSearch con **HTTPS** (SSL/TLS) y habil
 
 1. [Requisitos Previos](#requisitos-previos)
 2. [Generar Certificados SSL](#generar-certificados-ssl)
-3. [Configuración del Backend](#configuración-del-backend)
-4. [Configuración de Agentes](#configuración-de-agentes)
-5. [Configuración del Frontend](#configuración-del-frontend)
-6. [Configuración con Docker](#configuración-con-docker)
+3. [Configuración del Backend](#configuracion-del-backend)
+4. [Configuración de Agentes](#configuracion-de-agentes)
+5. [Configuración del Frontend](#configuracion-del-frontend)
+6. [Configuración con Docker](#configuracion-con-docker)
 7. [Acceso desde Red Externa](#acceso-desde-red-externa)
-8. [Solución de Problemas](#solución-de-problemas)
-9. [Certificados en Producción](#certificados-en-producción)
+8. [Solución de Problemas](#solucion-de-problemas)
+9. [Certificados en Producción](#certificados-en-produccion)
 
 ---
 
@@ -85,7 +85,7 @@ DistriSearch/
 
 ---
 
-## ⚙️ Configuración del Backend
+## ⚙️ Configuración del Backend {#configuracion-del-backend}
 
 ### Paso 1: Crear Archivo .env
 
@@ -155,7 +155,7 @@ Documentación: https://localhost:8000/docs
 
 ---
 
-## 🤖 Configuración de Agentes
+## 🤖 Configuración de Agentes {#configuracion-de-agentes}
 
 ### Paso 1: Crear Archivo .env
 
@@ -196,7 +196,7 @@ python agent.py
 
 ---
 
-## 🖥️ Configuración del Frontend
+## 🖥️ Configuración del Frontend {#configuracion-del-frontend}
 
 ### Paso 1: Crear Archivo .env
 
@@ -230,7 +230,7 @@ streamlit run app.py
 
 ---
 
-## 🐳 Configuración con Docker
+## 🐳 Configuración con Docker {#configuracion-con-docker}
 
 ### Paso 1: Preparar Certificados
 
@@ -328,7 +328,7 @@ Invoke-WebRequest -Uri "https://192.168.1.100:8000/health" -SkipCertificateCheck
 
 ---
 
-## 🔍 Solución de Problemas
+## 🔍 Solución de Problemas {#solucion-de-problemas}
 
 ### Problema: Certificado no válido
 
@@ -415,7 +415,7 @@ taskkill /PID <PID> /F
 
 ---
 
-## 🏆 Certificados en Producción
+## 🏆 Certificados en Producción {#certificados-en-produccion}
 
 Para **entornos de producción**, **NO uses certificados autofirmados**. Usa certificados válidos:
 

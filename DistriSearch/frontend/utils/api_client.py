@@ -1,6 +1,7 @@
 import requests
 from typing import Dict, List, Optional
 import streamlit as st
+import os
 
 class ApiClient:
     """Cliente para interactuar con la API del backend"""
@@ -12,6 +13,8 @@ class ApiClient:
             self.headers["X-API-KEY"] = api_key
         if token:
             self.headers["Authorization"] = f"Bearer {token}"
+        # Obtener NODE_ID del entorno (cada Slave tiene su propio ID)
+        self.local_node_id = os.getenv("NODE_ID", "slave-001")
     
     def set_token(self, token: str):
         """Actualiza el token de autenticación"""
@@ -199,8 +202,11 @@ class ApiClient:
         )
         return self._handle_response(response)
 
-    def upload_file(self, file_content: bytes, filename: str, node_id: str = "central") -> Dict:
+    def upload_file(self, file_content: bytes, filename: str, node_id: str = None) -> Dict:
         """Sube un archivo al sistema"""
+        # Usar nodo local si no se especifica otro
+        if node_id is None:
+            node_id = self.local_node_id
         files = {
             'file': (filename, file_content)
         }
@@ -217,11 +223,14 @@ class ApiClient:
         )
         return self._handle_response(response)
 
-    def upload_multiple_files(self, files_data: List[tuple], node_id: str = "central") -> Dict:
+    def upload_multiple_files(self, files_data: List[tuple], node_id: str = None) -> Dict:
         """
         Sube múltiples archivos
         files_data: Lista de tuplas (filename, content_bytes)
         """
+        # Usar nodo local si no se especifica otro
+        if node_id is None:
+            node_id = self.local_node_id
         files = [
             ('files', (filename, content))
             for filename, content in files_data

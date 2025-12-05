@@ -82,7 +82,7 @@ with tab1:
             
             if not node_options:
                 st.warning("⚠️ No hay nodos online")
-                target_node = "central"
+                target_node = api.local_node_id  # Usar nodo local
             else:
                 selected_node = st.selectbox(
                     "Nodo destino",
@@ -92,7 +92,7 @@ with tab1:
                 )
                 target_node = node_options[selected_node]
         except:
-            target_node = "central"
+            target_node = api.local_node_id  # Usar nodo local
     
     if uploaded_file:
         # Show file info
@@ -155,7 +155,7 @@ with tab2:
             node_options = {n['name']: n['node_id'] for n in nodes if n.get('status') == 'online'}
             
             if not node_options:
-                target_node_multi = "central"
+                target_node_multi = api.local_node_id  # Usar nodo local
             else:
                 selected_node_multi = st.selectbox(
                     "Nodo destino",
@@ -165,7 +165,7 @@ with tab2:
                 )
                 target_node_multi = node_options[selected_node_multi]
         except:
-            target_node_multi = "central"
+            target_node_multi = api.local_node_id  # Usar nodo local
     
     if uploaded_files:
         total_size = sum(f.size for f in uploaded_files)
@@ -258,7 +258,7 @@ with tab3:
             node_options = {n['name']: n['node_id'] for n in nodes if n.get('status') == 'online'}
             
             if not node_options:
-                target_node_doc = "central"
+                target_node_doc = api.local_node_id  # Usar nodo local
             else:
                 selected_node_doc = st.selectbox(
                     "Nodo destino",
@@ -268,7 +268,7 @@ with tab3:
                 )
                 target_node_doc = node_options[selected_node_doc]
         except:
-            target_node_doc = "central"
+            target_node_doc = api.local_node_id  # Usar nodo local
     
     col_btn1, col_btn2, col_btn3 = st.columns([2, 1, 2])
     with col_btn2:

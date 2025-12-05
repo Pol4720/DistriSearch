@@ -1,95 +1,117 @@
 # Comenzar con DistriSearch
 
-¡Bienvenido a DistriSearch! Esta guía te ayudará a poner en marcha el sistema de búsqueda distribuida en minutos.
+<div style="padding: 2rem; background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(5, 150, 105, 0.1) 100%); border-radius: 16px; margin-bottom: 2rem; border-left: 4px solid #10b981;">
+  <h2 style="margin-top: 0;">🚀 Guía de Inicio Rápido</h2>
+  <p>Despliega un cluster Master-Slave de 3 nodos en <strong>menos de 5 minutos</strong>.</p>
+</div>
 
 ---
 
-## 🚀 Inicio Rápido
+## 🐳 Inicio Rápido con Docker Compose
 
-### Opción 1: Docker Compose (Recomendado)
-
-La forma más rápida de probar DistriSearch:
+### Opción 1: Cluster Completo (3 Nodos) - Recomendado
 
 ```bash
 # 1. Clonar repositorio
 git clone https://github.com/Pol4720/DS-Project.git
-cd DistriSearch
+cd DS-Project/DistriSearch/deploy
 
-# 2. Iniciar servicios
-cd deploy
-docker-compose up -d
+# 2. Iniciar cluster
+docker-compose -f docker-compose.cluster.yml up -d
 
-# 3. Acceder a la interfaz
-# Frontend: http://localhost:8501
-# Backend API: http://localhost:8000
-# Docs API: http://localhost:8000/docs
+# 3. Verificar estado
+docker-compose -f docker-compose.cluster.yml ps
 ```
 
-### Opción 2: Instalación Local
+!!! success "URLs de Acceso"
+    | Componente | URL |
+    |------------|-----|
+    | 🎨 Frontend Node 1 | http://localhost:8511 |
+    | 🎨 Frontend Node 2 | http://localhost:8512 |
+    | 🎨 Frontend Node 3 | http://localhost:8513 |
+    | 📚 API Node 1 (Swagger) | http://localhost:8001/docs |
+    | 📚 API Node 2 | http://localhost:8002/docs |
+    | 📚 API Node 3 | http://localhost:8003/docs |
+
+### Opción 2: Nodo Único (Desarrollo)
+
+```bash
+cd DS-Project/DistriSearch/deploy
+docker-compose up -d
+```
+
+---
+
+## 💻 Instalación Local (Sin Docker)
 
 Para desarrollo o personalización:
 
-```bash
-# 1. Clonar repositorio
-git clone https://github.com/Pol4720/DS-Project.git
-cd DistriSearch
+=== "1️⃣ Backend"
 
-# 2. Backend
-cd backend
-pip install -r requirements.txt
-uvicorn main:app --reload
+    ```bash
+    cd DS-Project/DistriSearch/backend
+    pip install -r requirements.txt
+    
+    # Configurar variables de entorno
+    export NODE_ID=node_1
+    export NODE_ROLE=master
+    export MONGO_URI=mongodb://localhost:27017
+    
+    # Iniciar
+    python main.py
+    ```
 
-# 3. Frontend (nueva terminal)
-cd frontend
-pip install -r requirements.txt
-streamlit run app.py
+=== "2️⃣ Frontend"
 
-# 4. Agente (nueva terminal)
-cd agent
-pip install -r requirements.txt
-python agent.py
-```
+    ```bash
+    cd DS-Project/DistriSearch/frontend
+    pip install -r requirements.txt
+    
+    # Configurar
+    export BACKEND_URL=http://localhost:8000
+    
+    # Iniciar
+    streamlit run app.py
+    ```
+
+=== "3️⃣ MongoDB"
+
+    ```bash
+    # Con Docker
+    docker run -d -p 27017:27017 --name mongo mongo:6
+    
+    # O instalar localmente
+    # https://www.mongodb.com/try/download/community
+    ```
 
 ---
 
-## 📋 Requisitos Previos
+## 📋 Requisitos del Sistema
 
-### Hardware Mínimo
+### Hardware Mínimo por Nodo
 
-| Componente | Backend | Agente | Frontend |
-|------------|---------|--------|----------|
-| **CPU** | 2 cores | 1 core | 1 core |
-| **RAM** | 2 GB | 512 MB | 1 GB |
-| **Disco** | 10 GB | Según datos | 1 GB |
-| **Red** | 1 Mbps | 1 Mbps | 100 Kbps |
+| Componente | Mínimo | Recomendado |
+|------------|--------|-------------|
+| **CPU** | 2 cores | 4+ cores |
+| **RAM** | 4 GB | 8 GB |
+| **Disco** | 20 GB HDD | 50 GB SSD |
+| **Red** | 10 Mbps | 100 Mbps |
 
-### Hardware Recomendado
+!!! warning "Modelo de Embeddings"
+    El modelo `all-MiniLM-L6-v2` requiere ~500 MB de RAM adicional la primera vez que se carga.
 
-| Componente | Backend | Agente | Frontend |
-|------------|---------|--------|----------|
-| **CPU** | 4+ cores | 2 cores | 2 cores |
-| **RAM** | 8 GB | 2 GB | 2 GB |
-| **Disco** | SSD 50 GB | SSD según datos | SSD 10 GB |
-| **Red** | 100 Mbps | 10 Mbps | 10 Mbps |
-
-### Software
+### Software Requerido
 
 === "Linux"
 
     ```bash
     # Ubuntu/Debian
-    - Python 3.8+
-    - pip
-    - Docker (opcional)
-    - Docker Compose (opcional)
-    
-    # Instalar Python y pip
     sudo apt update
-    sudo apt install python3 python3-pip
+    sudo apt install python3 python3-pip docker.io docker-compose
     
-    # Instalar Docker
-    curl -fsSL https://get.docker.com -o get-docker.sh
-    sudo sh get-docker.sh
+    # Verificar
+    python3 --version  # 3.8+
+    docker --version
     ```
 
 === "Windows"
@@ -97,7 +119,23 @@ python agent.py
     ```powershell
     # Requerido
     - Python 3.8+ (python.org)
-    - pip (incluido con Python)
+    - Docker Desktop (docker.com)
+    
+    # Verificar
+    python --version
+    docker --version
+    ```
+
+=== "macOS"
+
+    ```bash
+    # Con Homebrew
+    brew install python@3.11 docker docker-compose
+    
+    # Verificar
+    python3 --version
+    docker --version
+    ```
     - Docker Desktop (opcional)
     
     # Verificar instalación
@@ -278,8 +316,7 @@ graph LR
 
 1. [Instalación](instalacion.md) - Instalar DistriSearch
 2. [Configuración](configuracion.md) - Configurar parámetros
-3. [Primer Uso](primer-uso.md) - Tutorial guiado
-4. [Casos de Uso](../casos-de-uso.md) - Ejemplos reales
+3. [Casos de Uso](../casos-de-uso.md) - Ejemplos reales
 
 ### Para Desarrolladores
 
@@ -294,28 +331,25 @@ graph LR
     style E fill:#10b981
 ```
 
-1. [Estructura del Código](../development/estructura.md)
+1. [Arquitectura](../arquitectura.md)
 2. [API Reference](../api/index.md)
-3. [Testing](../development/testing.md)
-4. [Contribución](../development/contribucion.md)
+3. [Características](../caracteristicas.md)
 
 ### Para DevOps
 
 ```mermaid
 graph LR
     A[Docker Setup] --> B[Compose]
-    B --> C[Swarm]
-    C --> D[Kubernetes]
-    D --> E[Producción]
+    B --> C[Cluster]
+    C --> D[Producción]
     
     style A fill:#667eea
-    style E fill:#10b981
+    style D fill:#10b981
 ```
 
-1. [Docker Compose](../deployment/docker-compose.md)
-2. [Docker Swarm](../deployment/docker-swarm.md)
-3. [Kubernetes](../deployment/kubernetes.md)
-4. [Producción](../deployment/produccion.md)
+1. [Guía de Inicio](index.md)
+2. [Instalación](instalacion.md)
+3. [Configuración](configuracion.md)
 
 ---
 
@@ -401,13 +435,13 @@ ls -la /ruta/shared_folder
 
     [:octicons-arrow-right-24: Ir a Configuración](configuracion.md)
 
--   :material-play:{ .lg .middle } __Primer Uso__
+-   :material-api:{ .lg .middle } __API Reference__
 
     ---
 
-    Tutorial interactivo para tu primera búsqueda
+    Explora los endpoints disponibles
 
-    [:octicons-arrow-right-24: Ir a Tutorial](primer-uso.md)
+    [:octicons-arrow-right-24: Ver API](../api/index.md)
 
 -   :material-school:{ .lg .middle } __Casos de Uso__
 

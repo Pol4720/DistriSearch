@@ -1,0 +1,278 @@
+# =============================================================================
+# DistriSearch - Docker Compose para Arquitectura Master-Slave
+# =============================================================================
+# Configuración de cluster con:
+# - N Slaves (Backend + Frontend + MongoDB local)
+# - Elección de líder automática (cualquier Slave puede ser Master)
+# - DNS con CoreDNS para failover
+# - Heartbeats UDP entre nodos
+# =============================================================================
+
+version: '3.8'
+
+# Red del cluster con subnet fija para IPs predecibles
+networks:
+  distrisearch_cluster:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
+
+volumes:
+  # Volúmenes para MongoDB de cada Slave
+  mongo_node1_data:
+  mongo_node2_data:
+  mongo_node3_data:
+  # Volumen compartido para DNS
+  dns_data:
+
+services:
+  # ===========================================================================
+  # CoreDNS - Resolución DNS con failover
+  # ===========================================================================
+  dns:
+    image: coredns/coredns:1.11.1
+    container_name: distrisearch-dns
+    command: -conf /etc/coredns/Corefile
+    volumes:
+      - ../dns/Corefile:/etc/coredns/Corefile:ro
+      - ../dns/hosts:/etc/coredns/hosts:rw
+    ports:
+      - "53:53/udp"
+      - "53:53/tcp"
+      - "9153:9153"  # Métricas Prometheus
+    networks:
+      distrisearch_cluster:
+        ipv4_address: 172.20.0.2
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # ===========================================================================
+  # SLAVE 1 (NODE_1) - Puede ser Master
+  # ===========================================================================
+  mongo_node1:
+    image: mongo:6.0
+    container_name: mongo-node1
+    command: ["mongod", "--bind_ip_all"]
+    volumes:
+      - mongo_node1_data:/data/db
+    networks:
+      distrisearch_cluster:
+        ipv4_address: 172.20.0.10
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  backend_node1:
+    build:
+      context: ..
+      dockerfile: ./backend/Dockerfile
+    image: distrisearch-backend:latest
+    container_name: backend-node1
+    platform: linux/amd64
+    ports:
+      - "8001:8000"
+      - "8444:8443"
+    environment:
+      # Identificación del nodo
+      - NODE_ID=node_1
+      - NODE_ROLE=slave
+      - MASTER_CANDIDATE=true
+      # Peers del cluster (otros nodos)
+      - CLUSTER_PEERS=node_2:172.20.0.21:8000:5000:5001,node_3:172.20.0.31:8000:5000:5001
+      # Heartbeat y elección
+      - HEARTBEAT_INTERVAL=5
+      - HEARTBEAT_TIMEOUT=15
+      - HEARTBEAT_PORT=5000
+      - ELECTION_PORT=5001
+      # MongoDB local
+      - MONGO_URI=mongodb://mongo_node1:27017
+      - MONGO_DBNAME=distrisearch
+      # Replicación
+      - REPLICATION_FACTOR=2
+      # Embeddings
+      - EMBEDDING_MODEL=all-MiniLM-L6-v2
+      # General
+      - ENVIRONMENT=development
+      - PYTHONPATH=/app
+    depends_on:
+      mongo_node1:
+        condition: service_healthy
+      dns:
+        condition: service_healthy
+    networks:
+      distrisearch_cluster:
+        ipv4_address: 172.20.0.11
+    dns:
+      - 172.20.0.2
+    restart: unless-stopped
+
+  frontend_node1:
+    build:
+      context: ../frontend
+    container_name: frontend-node1
+    ports:
+      - "8511:8501"
+    environment:
+      - NODE_ID=node_1
+      - DISTRISEARCH_BACKEND_URL=http://backend_node1:8000
+      - DISTRISEARCH_BACKEND_PUBLIC_URL=http://localhost:8001
+    depends_on:
+      - backend_node1
+    networks:
+      distrisearch_cluster:
+        ipv4_address: 172.20.0.12
+    restart: unless-stopped
+
+  # ===========================================================================
+  # SLAVE 2 (NODE_2) - Puede ser Master
+  # ===========================================================================
+  mongo_node2:
+    image: mongo:6.0
+    container_name: mongo-node2
+    command: ["mongod", "--bind_ip_all"]
+    volumes:
+      - mongo_node2_data:/data/db
+    networks:
+      distrisearch_cluster:
+        ipv4_address: 172.20.0.20
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  backend_node2:
+    build:
+      context: ..
+      dockerfile: ./backend/Dockerfile
+    image: distrisearch-backend:latest
+    container_name: backend-node2
+    platform: linux/amd64
+    ports:
+      - "8002:8000"
+      - "8445:8443"
+    environment:
+      - NODE_ID=node_2
+      - NODE_ROLE=slave
+      - MASTER_CANDIDATE=true
+      - CLUSTER_PEERS=node_1:172.20.0.11:8000:5000:5001,node_3:172.20.0.31:8000:5000:5001
+      - HEARTBEAT_INTERVAL=5
+      - HEARTBEAT_TIMEOUT=15
+      - HEARTBEAT_PORT=5000
+      - ELECTION_PORT=5001
+      - MONGO_URI=mongodb://mongo_node2:27017
+      - MONGO_DBNAME=distrisearch
+      - REPLICATION_FACTOR=2
+      - EMBEDDING_MODEL=all-MiniLM-L6-v2
+      - ENVIRONMENT=development
+      - PYTHONPATH=/app
+    depends_on:
+      mongo_node2:
+        condition: service_healthy
+      dns:
+        condition: service_healthy
+    networks:
+      distrisearch_cluster:
+        ipv4_address: 172.20.0.21
+    dns:
+      - 172.20.0.2
+    restart: unless-stopped
+
+  frontend_node2:
+    build:
+      context: ../frontend
+    container_name: frontend-node2
+    ports:
+      - "8512:8501"
+    environment:
+      - NODE_ID=node_2
+      - DISTRISEARCH_BACKEND_URL=http://backend_node2:8000
+      - DISTRISEARCH_BACKEND_PUBLIC_URL=http://localhost:8002
+    depends_on:
+      - backend_node2
+    networks:
+      distrisearch_cluster:
+        ipv4_address: 172.20.0.22
+    restart: unless-stopped
+
+  # ===========================================================================
+  # SLAVE 3 (NODE_3) - Puede ser Master
+  # ===========================================================================
+  mongo_node3:
+    image: mongo:6.0
+    container_name: mongo-node3
+    command: ["mongod", "--bind_ip_all"]
+    volumes:
+      - mongo_node3_data:/data/db
+    networks:
+      distrisearch_cluster:
+        ipv4_address: 172.20.0.30
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  backend_node3:
+    build:
+      context: ..
+      dockerfile: ./backend/Dockerfile
+    image: distrisearch-backend:latest
+    container_name: backend-node3
+    platform: linux/amd64
+    ports:
+      - "8003:8000"
+      - "8446:8443"
+    environment:
+      - NODE_ID=node_3
+      - NODE_ROLE=slave
+      - MASTER_CANDIDATE=true
+      - CLUSTER_PEERS=node_1:172.20.0.11:8000:5000:5001,node_2:172.20.0.21:8000:5000:5001
+      - HEARTBEAT_INTERVAL=5
+      - HEARTBEAT_TIMEOUT=15
+      - HEARTBEAT_PORT=5000
+      - ELECTION_PORT=5001
+      - MONGO_URI=mongodb://mongo_node3:27017
+      - MONGO_DBNAME=distrisearch
+      - REPLICATION_FACTOR=2
+      - EMBEDDING_MODEL=all-MiniLM-L6-v2
+      - ENVIRONMENT=development
+      - PYTHONPATH=/app
+    depends_on:
+      mongo_node3:
+        condition: service_healthy
+      dns:
+        condition: service_healthy
+    networks:
+      distrisearch_cluster:
+        ipv4_address: 172.20.0.31
+    dns:
+      - 172.20.0.2
+    restart: unless-stopped
+
+  frontend_node3:
+    build:
+      context: ../frontend
+    container_name: frontend-node3
+    ports:
+      - "8513:8501"
+    environment:
+      - NODE_ID=node_3
+      - DISTRISEARCH_BACKEND_URL=http://backend_node3:8000
+      - DISTRISEARCH_BACKEND_PUBLIC_URL=http://localhost:8003
+    depends_on:
+      - backend_node3
+    networks:
+      distrisearch_cluster:
+        ipv4_address: 172.20.0.32
+    restart: unless-stopped

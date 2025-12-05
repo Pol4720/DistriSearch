@@ -17,7 +17,7 @@
 \usepackage{tabularx}
 \usetikzlibrary{shapes,arrows,positioning,calc,backgrounds,fit}
 \pgfplotsset{compat=1.18}
-\title{Sistema Distribuido P2P con Topología Hipercubo}
+\title{Sistema Distribuido Master-Slave con Ubicación Semántica}
 \author{Abel Ponce González C411\\Richard Alejandro Matos Arderí C411}
 \date{\today}
 
@@ -26,7 +26,7 @@
 \maketitle
 
 \begin{abstract}
-Este documento presenta la especificación arquitectónica de un sistema distribuido peer-to-peer descentralizado basado en topología hipercubo. Se detalla la arquitectura del sistema, la organización y roles de sus componentes, los procesos y patrones de diseño implementados, los mecanismos de comunicación y coordinación, el sistema de nombrado y localización de recursos, las estrategias de consistencia y replicación, los mecanismos de tolerancia a fallos y los aspectos de seguridad del diseño.
+Este documento presenta la especificación arquitectónica de un sistema distribuido de búsqueda de documentos basado en arquitectura Master-Slave con elección dinámica de líder. Se detalla la arquitectura del sistema, la organización y roles de sus componentes, los mecanismos de ubicación de recursos mediante vectorización semántica, las estrategias de tolerancia a fallos con algoritmo Bully para elección de líder, el sistema de replicación por afinidad semántica, y los aspectos de seguridad y comunicación del diseño.
 \end{abstract}
 
 \tableofcontents
@@ -36,15 +36,16 @@ Este documento presenta la especificación arquitectónica de un sistema distrib
 \section{Introducción}
 
 \subsection{Descripción del sistema}
-El sistema propuesto es una plataforma distribuida peer-to-peer para almacenamiento y consulta de información de forma descentralizada. Utiliza una topología de red overlay tipo hipercubo que estructura la organización lógica de los nodos, proporcionando rutas eficientes de comunicación, redundancia y tolerancia a fallos.
+El sistema propuesto es una plataforma distribuida para almacenamiento y búsqueda de documentos utilizando una arquitectura Master-Slave con elección dinámica de líder. El sistema emplea vectorización semántica para ubicación de recursos, lo que permite localizar documentos basándose en similitud de contenido en lugar de funciones hash. Esta aproximación proporciona búsquedas más relevantes y una distribución de datos más inteligente basada en afinidad de contenido.
 
 \subsection{Objetivos del diseño}
 \begin{itemize}
-  \item Eliminar puntos únicos de fallo mediante una arquitectura completamente descentralizada
-  \item Garantizar alta disponibilidad de datos mediante replicación estratégica
-  \item Proporcionar mecanismos eficientes de localización de recursos sin índices centralizados
-  \item Implementar tolerancia a fallos con recuperación automática
-  \item Asegurar comunicaciones mediante protocolos de seguridad robustos
+  \item Proporcionar alta disponibilidad mediante elección automática de líder ante fallos del Master
+  \item Garantizar redundancia de datos mediante replicación basada en afinidad semántica
+  \item Proporcionar mecanismos eficientes de localización de recursos mediante vectorización semántica
+  \item Implementar tolerancia a fallos con detección mediante heartbeats y recuperación automática
+  \item Distribuir carga entre Slaves mediante balanceo basado en carga y afinidad de contenido
+  \item Permitir acceso distribuido mediante DNS con múltiples puntos de entrada
 \end{itemize}
 
 \section{Arquitectura del Sistema}
@@ -53,135 +54,173 @@ El sistema propuesto es una plataforma distribuida peer-to-peer para almacenamie
 
 \subsubsection{Clasificación según estilos arquitectónicos}
 
-El sistema sigue un \textbf{estilo arquitectónico peer-to-peer estructurado} que se caracteriza por una organización simétrica de componentes con capacidades equivalentes. Los componentes principales son nodos peer que exponen interfaces bien definidas para operaciones de almacenamiento, consulta y routing. Cada componente encapsula datos y ofrece métodos sin revelar su implementación interna, siguiendo el estilo basado en objetos. Esta encapsulación permite que los componentes sean reemplazables mientras mantengan la interfaz estándar del sistema.
+El sistema sigue un \textbf{estilo arquitectónico Master-Slave} con capacidad de promoción dinámica. En este modelo, un nodo asume el rol de Master (coordinador) mientras los demás actúan como Slaves (trabajadores). La característica distintiva es que cualquier Slave puede convertirse en Master mediante un proceso de elección cuando el Master actual falla, eliminando así el punto único de fallo típico de arquitecturas centralizadas.
 
-La comunicación entre componentes se realiza mediante conectores que incluyen sockets TCP/UDP para comunicación punto a punto confiable, mecanismos de mensajería asíncrona para coordinación entre nodos, y streaming de datos para transferencias grandes. La configuración del sistema está determinada por una topología overlay hipercubo que define las conexiones lógicas entre nodos, creando una red estructurada con un índice distribuido basado en direcciones binarias.
+Los componentes principales son:
+\begin{itemize}
+  \item \textbf{Nodos Slave}: Unidades autónomas que almacenan documentos, procesan búsquedas locales y mantienen su propia instancia de MongoDB. Cada Slave incluye tanto backend (API FastAPI) como frontend (interfaz de usuario).
+  \item \textbf{Master}: Un Slave que asume responsabilidades adicionales de coordinación: mantiene el índice de ubicación semántica global, balancea carga entre Slaves, coordina replicación y enruta queries distribuidas.
+  \item \textbf{Sistema DNS}: Proporciona resolución de nombres con múltiples entradas para failover automático.
+\end{itemize}
 
-\subsection{Modelo arquitectónico: P2P estructurado descentralizado}
+\subsection{Modelo arquitectónico: Master-Slave con elección dinámica}
 
-\subsubsection{Características del sistema P2P}
+\subsubsection{Características del sistema}
 
-El sistema implementa una arquitectura peer-to-peer \textbf{estructurada} pura sin componentes centralizados. La característica fundamental es la simetría de roles: cada nodo peer actúa simultáneamente como cliente y servidor (patrón servant). Esto significa que un mismo nodo puede iniciar consultas hacia otros peers (actuando como cliente) y al mismo tiempo atender solicitudes de otros nodos (actuando como servidor). No existe distinción funcional entre los nodos; todos tienen capacidades equivalentes para almacenar fragmentos de datos y réplicas, procesar consultas tanto propias como de otros nodos, reenviar peticiones según algoritmos de routing, participar en protocolos de replicación y consistencia, y mantener conexiones activas con sus vecinos lógicos en la topología.
+El sistema implementa una arquitectura \textbf{Master-Slave con failover automático}. A diferencia de arquitecturas centralizadas tradicionales, el rol de Master no está fijado a un nodo específico sino que puede migrar dinámicamente entre los Slaves candidatos cuando ocurre una falla.
 
-El sistema utiliza un índice distribuido semánticamente libre donde cada dato se asocia con una clave única derivada de las direcciones binarias en el hipercubo. El sistema emplea direccionamiento directo basado en la estructura del hipercubo, donde cada nodo es responsable de mantener pares (clave, valor) que corresponden a su región del espacio de direcciones. Esto crea un índice distribuido sin necesidad de un servidor central de índices, aprovechando las propiedades geométricas del hipercubo para routing eficiente.
+\textbf{Ubicación de recursos por vectorización semántica:} En lugar de utilizar funciones hash para determinar dónde almacenar documentos (como en DHT), el sistema emplea embeddings semánticos generados mediante sentence-transformers. Cada documento se representa como un vector de 384 dimensiones que captura su significado semántico. El Master mantiene un índice de ubicación que mapea embeddings a los Slaves que contienen documentos similares, permitiendo:
+\begin{itemize}
+  \item Routing inteligente de queries a Slaves con contenido relevante
+  \item Selección de nodos para replicación basada en afinidad de contenido
+  \item Balanceo de carga considerando tanto capacidad como especialización de contenido
+\end{itemize}
 
 \begin{figure}[H]
 \centering
 \begin{tikzpicture}[scale=0.9]
   % Definir estilos
-  \tikzstyle{peer}=[circle, draw=blue!60, fill=blue!20, thick, minimum size=1.2cm, font=\small]
-  \tikzstyle{extclient}=[rectangle, draw=green!60, fill=green!20, thick, minimum size=0.8cm]
-  \tikzstyle{conn}=[<->, thick, >=stealth]
-  \tikzstyle{query}=[->, thick, >=stealth, red, dashed]
+  \tikzstyle{master}=[rectangle, draw=orange!80, fill=orange!30, thick, minimum size=1.5cm, font=\small, rounded corners, align=center]
+  \tikzstyle{slave}=[rectangle, draw=blue!60, fill=blue!20, thick, minimum size=1.2cm, font=\small, rounded corners, align=center]
+  \tikzstyle{dns}=[rectangle, draw=green!60, fill=green!20, thick, minimum size=1cm, font=\small, rounded corners, align=center]
+  \tikzstyle{client}=[rectangle, draw=gray!60, fill=gray!20, thick, minimum size=0.8cm, align=center]
+  \tikzstyle{conn}=[->, thick, >=stealth]
+  \tikzstyle{heartbeat}=[<->, thick, >=stealth, red, dashed]
   
-  % Nodos peer (todos son clientes Y servidores)
-  \node[peer] (p1) at (0,0) {P1};
-  \node[peer] (p2) at (3,0) {P2};
-  \node[peer] (p3) at (6,0) {P3};
-  \node[peer] (p4) at (1.5,2.5) {P4};
-  \node[peer] (p5) at (4.5,2.5) {P5};
+  % DNS
+  \node[dns] (dns) at (3,5) {DNS \\ (CoreDNS)};
   
-  % Cliente externo (aplicación sin capacidad de servidor)
-  \node[extclient] (c1) at (-1.5,-1.5) {App};
+  % Master (actualmente Slave 1)
+  \node[master] (master) at (0,2.5) {Slave 1 \\ (MASTER)};
   
-  % Conexiones P2P (cada peer puede ser cliente del otro)
-  \draw[conn, blue] (p1) -- (p2);
-  \draw[conn, blue] (p2) -- (p3);
-  \draw[conn, blue] (p1) -- (p4);
-  \draw[conn, blue] (p2) -- (p4);
-  \draw[conn, blue] (p2) -- (p5);
-  \draw[conn, blue] (p3) -- (p5);
-  \draw[conn, blue] (p4) -- (p5);
+  % Slaves
+  \node[slave] (s2) at (3,2.5) {Slave 2};
+  \node[slave] (s3) at (6,2.5) {Slave 3};
   
-  % Ejemplo: P1 inicia consulta hacia P3 (P1 actúa como cliente)
-  \draw[query] (p1) to[bend left=20] node[above, font=\tiny] {Query} (p3);
+  % Cliente
+  \node[client] (c1) at (3,0) {Cliente};
   
-  % Cliente externo se conecta a cualquier peer
-  \draw[conn, green!60] (c1) -- (p1);
+  % Conexiones Master-Slave
+  \draw[conn, blue] (master) -- node[above, font=\tiny] {Coordina} (s2);
+  \draw[conn, blue] (master) -- node[above, font=\tiny] {Coordina} (s3);
+  \draw[conn, blue] (s2) -- (s3);
+  
+  % Heartbeats
+  \draw[heartbeat] (master) to[bend left=20] node[left, font=\tiny] {HB} (s2);
+  \draw[heartbeat] (s2) to[bend left=20] node[above, font=\tiny] {HB} (s3);
+  \draw[heartbeat] (master) to[bend right=30] node[below, font=\tiny] {HB} (s3);
+  
+  % DNS resuelve a cualquier nodo
+  \draw[conn, green!60] (dns) -- (master);
+  \draw[conn, green!60] (dns) -- (s2);
+  \draw[conn, green!60] (dns) -- (s3);
+  
+  % Cliente puede conectar a cualquiera via DNS
+  \draw[conn, gray] (c1) -- node[right, font=\tiny] {Via DNS} (dns);
   
   % Leyenda
-  \node[peer, scale=0.6] at (7.5,2.3) {};
-  \node[right, font=\footnotesize] at (8,2.3) {Peer (cliente \& servidor)};
-  \node[extclient, scale=0.6] at (7.5,1.6) {};
-  \node[right, font=\footnotesize] at (8,1.6) {Aplicación externa};
+  \node[master, scale=0.5] at (7.5,4.5) {};
+  \node[right, font=\footnotesize] at (8,4.5) {Master actual};
+  \node[slave, scale=0.5] at (7.5,4) {};
+  \node[right, font=\footnotesize] at (8,4) {Slave};
+  \node[right, font=\footnotesize, red] at (7.5,3.5) {-- Heartbeat};
 \end{tikzpicture}
-\caption{Arquitectura P2P: cada peer actúa como cliente y servidor. P1 puede consultar a P3 (cliente) mientras atiende peticiones de otros (servidor)}
-\label{fig:p2p-arch}
+\caption{Arquitectura Master-Slave: Slave 1 actúa como Master. Los heartbeats detectan fallos. DNS permite acceso a cualquier nodo.}
+\label{fig:master-slave-arch}
 \end{figure}
 
 \subsection{Distribución del sistema}
 
-\subsubsection{Distribución horizontal}
-El sistema emplea \textbf{distribución horizontal} (horizontal distribution), donde los nodos peer están físicamente distribuidos en múltiples máquinas pero mantienen capacidades equivalentes. Cada nodo opera sobre su propio subconjunto del conjunto completo de datos, sin que exista una jerarquía vertical de capas entre los peers. Todos los nodos ejecutan el mismo software y pueden asumir cualquier rol necesario, lo que garantiza simetría funcional en el sistema. Esta distribución horizontal contrasta con la distribución vertical (donde diferentes capas de aplicación residen en diferentes máquinas), enfatizando la naturaleza descentralizada de la arquitectura P2P.
+\subsubsection{Distribución jerárquica Master-Slave}
+El sistema emplea una \textbf{arquitectura Master-Slave} donde existe un nodo coordinador (Master) y múltiples nodos trabajadores (Slaves). A diferencia de sistemas P2P puros, esta arquitectura proporciona un punto de coordinación centralizado que simplifica la gestión del clúster mientras mantiene la escalabilidad horizontal a través de los Slaves.
 
-\subsection{Topología de red overlay: Hipercubo estructurado}
+Cada \textbf{Slave} es un nodo completo que integra:
+\begin{itemize}
+  \item \textbf{Backend}: API REST para procesamiento de consultas y gestión de documentos
+  \item \textbf{Frontend}: Interfaz web Streamlit para interacción con usuarios
+  \item \textbf{Base de datos}: Instancia MongoDB local para almacenamiento de documentos
+  \item \textbf{Servicios de clúster}: Heartbeat, participación en elecciones, replicación
+\end{itemize}
+
+El \textbf{Master} coordina el clúster manteniendo:
+\begin{itemize}
+  \item Índice semántico de ubicación de recursos
+  \item Balanceador de carga entre Slaves
+  \item Coordinador de replicación
+  \item Enrutador de consultas
+\end{itemize}
+
+\subsection{Topología de red: Estrella con redundancia}
 
 \subsubsection{Definición de la topología}
-La red lógica (overlay) se estructura como un hipercubo de dimensión $d$. En esta topología, cada nodo posee una dirección binaria única de $d$ bits que determina su posición en el espacio lógico. Los vecinos lógicos de un nodo son aquellos cuya dirección difiere en exactamente un bit, lo que significa que cada nodo mantiene $d$ conexiones directas. El número máximo de nodos que puede soportar el sistema es $N = 2^d$, y la distancia máxima entre cualquier par de nodos (diámetro de la red) es también $d$.
-
-Esta estructura presenta propiedades clave que la hacen ideal para sistemas distribuidos. La \textbf{conectividad} múltiple garantiza redundancia, ya que existen varias rutas alternativas entre cualquier par de nodos. La \textbf{escalabilidad} se manifiesta en el crecimiento logarímico del diámetro respecto al número de nodos, lo que mantiene las latencias manejables incluso con miles de nodos. La \textbf{simetría} asegura que todos los nodos tienen el mismo grado de conectividad, evitando cuellos de botella. Finalmente, la \textbf{tolerancia a fallos} se logra porque la red permanece conectada incluso ante fallos de nodos individuales, gracias a las rutas alternativas disponibles.
-
-\subsubsection{Ejemplo: Hipercubo de dimensión 3}
-Un hipercubo de dimensión 3 (\(d=3\)) tiene \(2^3 = 8\) nodos, cada uno con una dirección binaria de 3 bits (000, 001, 010, ..., 111). Cada nodo tiene exactamente 3 vecinos (uno por cada bit que puede cambiar).
+La red se estructura como una \textbf{topología en estrella} donde el Master actúa como nodo central y los Slaves se conectan directamente a él. Sin embargo, para garantizar tolerancia a fallos, todos los Slaves mantienen conexiones entre sí para:
+\begin{itemize}
+  \item \textbf{Heartbeat}: Detección de fallos mediante UDP broadcast
+  \item \textbf{Elección de líder}: Algoritmo Bully para elegir nuevo Master
+  \item \textbf{Replicación directa}: Sincronización de datos entre réplicas
+\end{itemize}
 
 \begin{figure}[H]
 \centering
 \begin{tikzpicture}[scale=1.2]
-  \tikzstyle{node}=[circle, draw=red!80, fill=red!30, thick, minimum size=0.9cm, font=\small]
-  \tikzstyle{edge}=[-, thick, blue!70]
+  \tikzstyle{master}=[circle, draw=blue!80, fill=blue!30, thick, minimum size=1.2cm, font=\small]
+  \tikzstyle{slave}=[circle, draw=green!80, fill=green!30, thick, minimum size=1cm, font=\small]
+  \tikzstyle{primary}=[-, thick, blue!70]
+  \tikzstyle{secondary}=[-, dashed, gray!50]
   
-  % Vértices del cubo (hipercubo 3D)
-  \node[node] (n000) at (0,0,0) {000};
-  \node[node] (n001) at (0,0,2) {001};
-  \node[node] (n010) at (0,2,0) {010};
-  \node[node] (n011) at (0,2,2) {011};
-  \node[node] (n100) at (3,0,0) {100};
-  \node[node] (n101) at (3,0,2) {101};
-  \node[node] (n110) at (3,2,0) {110};
-  \node[node] (n111) at (3,2,2) {111};
+  % Master en el centro
+  \node[master] (m) at (0,0) {Master};
   
-  % Aristas del cubo
-  \draw[edge] (n000) -- (n001);
-  \draw[edge] (n000) -- (n010);
-  \draw[edge] (n000) -- (n100);
-  \draw[edge] (n001) -- (n011);
-  \draw[edge] (n001) -- (n101);
-  \draw[edge] (n010) -- (n011);
-  \draw[edge] (n010) -- (n110);
-  \draw[edge] (n011) -- (n111);
-  \draw[edge] (n100) -- (n101);
-  \draw[edge] (n100) -- (n110);
-  \draw[edge] (n101) -- (n111);
-  \draw[edge] (n110) -- (n111);
+  % Slaves alrededor
+  \node[slave] (s1) at (3,2) {Slave 1};
+  \node[slave] (s2) at (3,-2) {Slave 2};
+  \node[slave] (s3) at (-3,2) {Slave 3};
+  \node[slave] (s4) at (-3,-2) {Slave 4};
+  
+  % Conexiones primarias (Master-Slave)
+  \draw[primary] (m) -- (s1);
+  \draw[primary] (m) -- (s2);
+  \draw[primary] (m) -- (s3);
+  \draw[primary] (m) -- (s4);
+  
+  % Conexiones secundarias (Slave-Slave para tolerancia a fallos)
+  \draw[secondary] (s1) -- (s2);
+  \draw[secondary] (s2) -- (s4);
+  \draw[secondary] (s4) -- (s3);
+  \draw[secondary] (s3) -- (s1);
 \end{tikzpicture}
-\caption{Hipercubo de dimensión 3: cada nodo tiene 3 vecinos (difieren en 1 bit)}
-\label{fig:hypercube3d}
+\caption{Topología Master-Slave: líneas sólidas = comunicación primaria, líneas punteadas = heartbeat y elección}
+\label{fig:master-slave-topology}
 \end{figure}
 
-\subsubsection{Propiedades matemáticas del hipercubo}
-Para un hipercubo de dimensión \(d\):
+\subsubsection{Propiedades de la topología Master-Slave}
+Para un clúster con \(N\) Slaves:
 \begin{itemize}
-  \item \textbf{Número de nodos}: \(N = 2^d\)
-  \item \textbf{Grado de cada nodo}: \(d\) (cada nodo tiene \(d\) vecinos)
-  \item \textbf{Diámetro de la red}: \(d\) (máximo número de saltos entre dos nodos cualesquiera)
-  \item \textbf{Número total de aristas}: \(\frac{N \cdot d}{2} = d \cdot 2^{d-1}\)
-  \item \textbf{Conectividad}: \(d\) (número de caminos disjuntos entre nodos)
+  \item \textbf{Latencia de consulta}: \(O(1)\) saltos (Master enruta directamente al Slave apropiado)
+  \item \textbf{Escalabilidad}: Lineal con el número de Slaves
+  \item \textbf{Tolerancia a fallos}: El sistema continúa operando si falla el Master (elección automática)
+  \item \textbf{Consistencia}: Eventual, con replicación configurable (factor por defecto: 2)
 \end{itemize}
 
-\textbf{Ejemplo de routing}: Para enviar un mensaje del nodo 000 al nodo 111:
+\textbf{Flujo de consulta típico}:
 \begin{enumerate}
-  \item Comparar direcciones bit a bit: 000 vs 111 $\rightarrow$ difieren en 3 bits
-  \item Ruta posible: 000 $\rightarrow$ 100 $\rightarrow$ 110 $\rightarrow$ 111 (3 saltos)
-  \item Existen múltiples rutas alternativas de longitud 3
+  \item Cliente envía consulta al Master
+  \item Master calcula embeddings semánticos de la consulta
+  \item Master identifica Slaves con contenido semánticamente relevante
+  \item Master enruta la consulta a los Slaves seleccionados
+  \item Slaves ejecutan búsqueda local y devuelven resultados
+  \item Master agrega y ordena resultados finales
 \end{enumerate}
 
 \section{Roles y organización funcional}
 
-En el sistema P2P propuesto, el concepto de "rol" es fluido debido a la naturaleza simétrica de la arquitectura. El componente fundamental es el \textbf{nodo peer}, que simultáneamente actúa como cliente y servidor. Cuando un peer necesita localizar un dato que no posee localmente, asume el rol de \textbf{cliente} iniciando consultas hacia otros peers. Al mismo tiempo, ese mismo peer puede estar atendiendo solicitudes de otros nodos, actuando como \textbf{servidor}. Esta dualidad cliente-servidor es la esencia del modelo peer-to-peer y permite que el sistema funcione sin depender de servidores dedicados.
+En el sistema Master-Slave propuesto, los roles están claramente diferenciados para optimizar la coordinación y el procesamiento distribuido. El \textbf{Master} actúa como coordinador central del clúster, mientras que los \textbf{Slaves} son los nodos trabajadores que almacenan datos y procesan consultas.
 
-Cuando un peer almacena datos, responde peticiones y participa en el routing de mensajes, está ejerciendo su rol de servidor. Cuando ese mismo peer busca información, solicita datos a otros nodos o envía consultas a través de la red, está ejerciendo su rol de cliente. Es importante destacar que estas funciones no son excluyentes sino concurrentes: un peer puede estar procesando múltiples peticiones entrantes (servidor) mientras simultáneamente envía sus propias consultas a otros nodos (cliente).
+El \textbf{Master} mantiene el índice semántico global de ubicación de recursos. Cuando recibe una consulta, calcula el embedding semántico y determina qué Slaves contienen información relevante. El Master no almacena documentos directamente sino metadatos sobre qué contenido tiene cada Slave.
 
-Adicionalmente, el sistema  posee un \textbf{balanceo de carga} que esta lógica no constituye un servidor central sino un algoritmo que cada peer utiliza para tomar decisiones sobre cómo distribuir sus peticiones entre vecinos, considerando factores como carga actual, latencia y disponibilidad. Esto lo asume un pequeño conjunto de peers tomando responsabilidades adicionales de coordinación de manera redundante, sin romper la descentralización del sistema.
+Los \textbf{Slaves} son nodos autónomos que integran backend, frontend y base de datos. Cada Slave puede atender usuarios directamente a través de su interfaz web, procesar consultas locales y participar en la replicación de datos. Esta arquitectura permite que los Slaves operen de forma independiente incluso si el Master falla temporalmente.
+
+Un aspecto crítico es la \textbf{elección de líder}: si el Master falla, los Slaves ejecutan el algoritmo Bully para elegir un nuevo Master entre los candidatos elegibles. Esto garantiza la continuidad del servicio sin intervención manual.
 
 \subsection{Diagrama de roles e interacciones}
 
@@ -189,30 +228,27 @@ Adicionalmente, el sistema  posee un \textbf{balanceo de carga} que esta lógica
 \centering
 \begin{tikzpicture}[scale=0.9]
   \tikzstyle{role}=[rectangle, draw, thick, minimum width=2.5cm, minimum height=1.2cm, rounded corners, font=\footnotesize, align=center]
-  \tikzstyle{peer}=[role, fill=blue!20]
-  \tikzstyle{app}=[role, fill=green!20]
-  \tikzstyle{coord}=[role, fill=orange!20]
+  \tikzstyle{master}=[role, fill=blue!30]
+  \tikzstyle{slave}=[role, fill=green!20]
+  \tikzstyle{client}=[role, fill=yellow!20]
   
-  \node[app] (c) at (0,4) {\textbf{App externa}\\Solo cliente};
-  \node[coord] (coord) at (5,4) {\textbf{Coordinador}\\Balanceo de carga};
-  \node[peer] (p1) at (0,1.5) {\textbf{Peer 1}\\Cliente+Servidor};
-  \node[peer] (p2) at (3.5,1.5) {\textbf{Peer 2}\\Cliente+Servidor};
-  \node[peer] (p3) at (7,1.5) {\textbf{Peer 3}\\Cliente+Servidor};
+  \node[client] (c) at (0,5) {\textbf{Cliente}\\Usuario web};
+  \node[master] (m) at (5,5) {\textbf{Master}\\Coordinador};
+  \node[slave] (s1) at (0,2) {\textbf{Slave 1}\\Backend+Frontend+DB};
+  \node[slave] (s2) at (5,2) {\textbf{Slave 2}\\Backend+Frontend+DB};
+  \node[slave] (s3) at (10,2) {\textbf{Slave 3}\\Backend+Frontend+DB};
   
-  % App externa consulta a Peer 1
-  \draw[->, thick, green!60] (c) -- node[left, font=\tiny] {1. Query} (p1);
-  % Peer 1 actúa como CLIENTE consultando a Peer 2
-  \draw[->, thick, red!60, dashed] (p1) -- node[above, font=\tiny] {2. P1 como cliente} (p2);
-  % Peer 2 reenvía a Peer 3
-  \draw[->, thick, blue] (p2) -- node[above, font=\tiny] {3. Forward} (p3);
-  % Respuesta de vuelta
-  \draw[->, thick, purple, dashed] (p3) to[bend left=30] node[right, font=\tiny] {4. Response} (c);
-  % Coordinador monitorea peers
-  \draw[<->, thick, orange] (coord) -- (p1);
-  \draw[<->, thick, orange] (coord) -- (p2);
-  \draw[<->, thick, orange] (coord) -- (p3);
+  % Cliente accede a cualquier Slave
+  \draw[->, thick, green!60] (c) -- node[left, font=\tiny] {1. Acceso directo} (s1);
+  % Master coordina
+  \draw[<->, thick, blue] (m) -- node[right, font=\tiny] {Heartbeat} (s1);
+  \draw[<->, thick, blue] (m) -- (s2);
+  \draw[<->, thick, blue] (m) -- (s3);
+  % Replicación entre Slaves
+  \draw[<->, thick, orange, dashed] (s1) -- node[below, font=\tiny] {Replicación} (s2);
+  \draw[<->, thick, orange, dashed] (s2) -- (s3);
 \end{tikzpicture}
-\caption{Interacción: app externa (solo cliente) vs peers (cliente y servidor). P1 actúa como servidor para app, y como cliente al consultar P2}
+\caption{Arquitectura Master-Slave: clientes acceden directamente a Slaves, Master coordina ubicación y replicación}
 \label{fig:roles}
 \end{figure}
 
@@ -223,145 +259,144 @@ Adicionalmente, el sistema  posee un \textbf{balanceo de carga} que esta lógica
 \begin{tabularx}{\textwidth}{|l|X|}
 \hline
 \textbf{Rol} & \textbf{Responsabilidades} \\ \hline
-\textbf{Peer} & 
-\textbf{Como servidor:} Almacenar fragmentos de datos y réplicas, procesar consultas locales de otros peers o apps externas, reenviar consultas según algoritmo de routing, mantener conexiones con vecinos lógicos, participar en protocolos de replicación, reportar métricas de carga y salud. \newline
-\textbf{Como cliente:} Iniciar búsquedas de datos no disponibles localmente, formular consultas hacia otros peers, manejar timeouts y reintentos, procesar respuestas recibidas. \\ \hline
-\textbf{Aplicación externa} & 
-Formular consultas de datos sin ofrecer capacidad de servidor, conectarse al gateway o directamente a peers designados, manejar timeouts y reintentos, procesar respuestas recibidas. No almacena datos ni participa en routing. \\ \hline
-\textbf{Coordinador} & 
-Monitorear carga de peers, distribuir consultas según políticas de balanceo, detectar peers sobrecargados o caídos, ajustar dinámicamente asignación de tráfico, recopilar estadísticas del sistema. \\ \hline
+\textbf{Master} & 
+Mantener índice semántico de ubicación de recursos, recibir registros de nuevos documentos, calcular embeddings y determinar relevancia semántica, enrutar consultas a Slaves apropiados, coordinar replicación, monitorear salud del clúster mediante heartbeats, detectar fallos de nodos. \\ \hline
+\textbf{Slave} & 
+Almacenar documentos en MongoDB local, servir interfaz web (frontend Streamlit), procesar consultas de búsqueda locales, participar en elecciones de líder (algoritmo Bully), enviar heartbeats al Master, recibir y aplicar replicaciones de otros Slaves. \\ \hline
+\textbf{Cliente} & 
+Acceder a cualquier Slave disponible vía web, realizar búsquedas semánticas y por nombre, subir y descargar documentos, el DNS resuelve distrisearch.local a cualquier Slave saludable. \\ \hline
 \end{tabularx}
-\caption{Responsabilidades por rol: peers tienen doble naturaleza (cliente y servidor)}
+\caption{Responsabilidades por rol en arquitectura Master-Slave}
 \label{tab:responsibilities}
 \end{table}
 
 \section{Despliegue y distribución de servicios con Docker}
 
-El despliegue se implementa usando contenedores Docker con dos redes separadas:
+El despliegue se implementa usando contenedores Docker con una red compartida para el clúster Master-Slave:
 
 \subsection{Arquitectura de redes Docker}
 
 \begin{description}
-  \item[p2p-internal] Red bridge interna donde residen los peers del hipercubo. Los peers se comunican entre sí para routing, replicación y búsqueda distribuida.
-  \item[frontend-net] Red bridge pública conectada al gateway/balanceador. Expuesta al host para acceso externo (puerto 8080).
+  \item[cluster-network] Red bridge donde residen el Master, los Slaves y sus bases de datos MongoDB. Permite comunicación directa entre todos los componentes del clúster.
+  \item[dns-network] Red opcional para CoreDNS que resuelve \texttt{distrisearch.local} a los Slaves disponibles.
 \end{description}
 
-El gateway actúa como puente entre ambas redes: conectado a \texttt{frontend-net} para recibir peticiones externas y a \texttt{p2p-internal} para distribuirlas a los peers.
+Cada Slave expone sus puertos de backend (8000) y frontend (8501) al host, permitiendo acceso directo desde usuarios externos.
 
 \subsection{Comandos de despliegue}
 
-\textbf{1. Crear redes Docker:}
+\textbf{1. Crear red del clúster:}
 \begin{verbatim}
-docker network create p2p-internal
-docker network create frontend-net
+docker network create cluster-network
 \end{verbatim}
 
-\textbf{2. Desplegar peers en red interna:}
+\textbf{2. Desplegar Master:}
 \begin{verbatim}
-docker run -d --name peer-000 --network p2p-internal \
-  -e PEER_ID=000 peer-image:latest
-docker run -d --name peer-001 --network p2p-internal \
-  -e PEER_ID=001 peer-image:latest
-docker run -d --name peer-010 --network p2p-internal \
-  -e PEER_ID=010 peer-image:latest
-docker run -d --name peer-011 --network p2p-internal \
-  -e PEER_ID=011 peer-image:latest
+docker run -d --name master --network cluster-network \
+  -e NODE_ROLE=master \
+  -e NODE_ID=master-001 \
+  master-image:latest
 \end{verbatim}
 
-\textbf{3. Desplegar gateway conectado a ambas redes:}
+\textbf{3. Desplegar Slaves con MongoDB local:}
 \begin{verbatim}
-docker run -d --name gateway --network frontend-net \
-  -p 8080:8080 gateway-image:latest
-docker network connect p2p-internal gateway
+docker run -d --name mongo-slave1 --network cluster-network \
+  mongo:latest
+docker run -d --name slave-001 --network cluster-network \
+  -e NODE_ROLE=slave \
+  -e NODE_ID=slave-001 \
+  -e MASTER_HOST=master \
+  -p 8000:8000 -p 8501:8501 \
+  slave-image:latest
 \end{verbatim}
 
 \begin{figure}[H]
 \centering
 \begin{tikzpicture}[scale=0.9]
-  \tikzstyle{net}=[rectangle, draw, thick, dashed, minimum width=7cm, minimum height=3.5cm, rounded corners]
-  \tikzstyle{container}=[rectangle, draw=blue!60, fill=blue!15, thick, minimum width=1.5cm, minimum height=0.8cm, rounded corners]
-  \tikzstyle{gateway}=[rectangle, draw=orange!70, fill=orange!20, thick, minimum width=2cm, minimum height=1cm, rounded corners]
+  \tikzstyle{net}=[rectangle, draw, thick, dashed, minimum width=10cm, minimum height=4cm, rounded corners]
+  \tikzstyle{container}=[rectangle, draw=green!60, fill=green!15, thick, minimum width=1.8cm, minimum height=0.8cm, rounded corners]
+  \tikzstyle{master}=[rectangle, draw=blue!70, fill=blue!20, thick, minimum width=2cm, minimum height=1cm, rounded corners]
+  \tikzstyle{db}=[rectangle, draw=orange!70, fill=orange!15, thick, minimum width=1.2cm, minimum height=0.6cm, rounded corners]
   
-  % Red frontend
-  \node[net, draw=green!60, fill=green!5] (front) at (1,5) {};
-  \node[above right, font=\small] at (-2.5,6.5) {\textbf{frontend-net} (puerto 8080)};
-  \node[gateway] (gw) at (1,5.5) {Gateway};
-  \node[font=\tiny] at (1,4.5) {Acepta peticiones};
+  % Red del clúster
+  \node[net, draw=blue!60, fill=blue!5] (cluster) at (3,2) {};
+  \node[above right, font=\small] at (-2,4.2) {\textbf{cluster-network}};
   
-  % Red P2P interna
-  \node[net, draw=blue!60, fill=blue!5] (p2p) at (2,1.5) {};
-  \node[above right, font=\small] at (-1.5,3.3) {\textbf{p2p-internal}};
-  \node[container] (p1) at (0,2) {\tiny 000};
-  \node[container] (p2) at (2,2) {\tiny 001};
-  \node[container] (p3) at (4,2) {\tiny 010};
-  \node[container] (p4) at (1,0.5) {\tiny 011};
+  % Master
+  \node[master] (m) at (3,4) {Master};
   
-  % Conexiones
-  \draw[<->, thick, blue!50] (p1) -- (p2);
-  \draw[<->, thick, blue!50] (p2) -- (p3);
-  \draw[<->, thick, blue!50] (p1) -- (p4);
-  \draw[->, thick, orange] (gw) -- node[right, font=\tiny] {distribuye} (p2);
+  % Slaves con MongoDB
+  \node[container] (s1) at (0,1.5) {Slave 1};
+  \node[db] (db1) at (0,0.3) {\tiny MongoDB};
+  \node[container] (s2) at (3,1.5) {Slave 2};
+  \node[db] (db2) at (3,0.3) {\tiny MongoDB};
+  \node[container] (s3) at (6,1.5) {Slave 3};
+  \node[db] (db3) at (6,0.3) {\tiny MongoDB};
   
-  % Gateway en ambas redes
-  \draw[thick, dashed, purple] (gw) -- (2,3.5);
+  % Conexiones Master-Slave
+  \draw[<->, thick, blue!50] (m) -- (s1);
+  \draw[<->, thick, blue!50] (m) -- (s2);
+  \draw[<->, thick, blue!50] (m) -- (s3);
+  
+  % Conexiones Slave-DB
+  \draw[->, thick, orange!60] (s1) -- (db1);
+  \draw[->, thick, orange!60] (s2) -- (db2);
+  \draw[->, thick, orange!60] (s3) -- (db3);
+  
+  % Heartbeat entre Slaves
+  \draw[<->, thick, dashed, gray] (s1) -- (s2);
+  \draw[<->, thick, dashed, gray] (s2) -- (s3);
 \end{tikzpicture}
-\caption{Distribución en dos redes Docker: gateway conecta frontend-net (pública) con p2p-internal (privada)}
+\caption{Clúster Master-Slave: Master coordina, cada Slave tiene MongoDB local, líneas punteadas = heartbeat}
 \label{fig:docker-deploy}
 \end{figure}
 
 \subsection{Ventajas del diseño}
 
 \begin{itemize}
-  \item \textbf{Aislamiento}: Peers protegidos en red interna sin exposición directa
-  \item \textbf{Escalabilidad}: Nuevos peers se agregan solo a \texttt{p2p-internal}
-  \item \textbf{Punto de entrada único}: Gateway gestiona autenticación y balanceo
-  \item \textbf{Separación de responsabilidades}: Frontend vs lógica P2P distribuida
+  \item \textbf{Simplicidad}: Una sola red para todo el clúster
+  \item \textbf{Escalabilidad}: Nuevos Slaves se registran automáticamente con el Master
+  \item \textbf{Tolerancia a fallos}: Si el Master falla, un Slave es elegido nuevo líder (algoritmo Bully)
+  \item \textbf{Acceso directo}: Usuarios acceden a cualquier Slave sin necesidad de gateway
 \end{itemize}
 
 \section{Procesos y patrones de diseño}
 
-Cada nodo peer ejecuta uno o más procesos que proporcionan servicios especializados: un servicio de almacenamiento gestiona los datos locales y réplicas, un servicio de red se encarga del routing y escucha de conexiones entrantes, y un servicio de manejo de peticiones procesa las solicitudes tanto propias como de otros nodos. Si el sistema implementa lógica de balanceo o coordinación, esta puede residir como un módulo separado o subproceso dentro de algunos peers, ejecutándose de forma redundante para evitar puntos únicos de fallo.
+Cada nodo del clúster ejecuta procesos especializados según su rol. Los \textbf{Slaves} ejecutan: un servidor FastAPI para el backend, un servidor Streamlit para el frontend, un servicio de heartbeat UDP para detección de fallos, y un cliente MongoDB para persistencia local. El \textbf{Master} ejecuta adicionalmente: el índice semántico de ubicación, el balanceador de carga, y el coordinador de replicación.
 
-En términos de concurrencia, cada nodo utiliza hilos o programación asíncrona (async I/O) para manejar múltiples conexiones y peticiones simultáneas sin bloqueos. El sistema adopta un patrón de diseño basado en concurrencia, asincronía y arquitectura dirigida por eventos (event-driven) con paso de mensajes (message-passing). Este enfoque es especialmente adecuado para sistemas distribuidos de red donde la latencia variable y las operaciones I/O dominan el tiempo de ejecución.
+En términos de concurrencia, el sistema utiliza \texttt{asyncio} de Python para manejar múltiples conexiones y operaciones I/O sin bloqueos. Los heartbeats se procesan en un hilo separado usando UDP para minimizar latencia. El patrón adoptado combina arquitectura dirigida por eventos (event-driven) con paso de mensajes, ideal para sistemas distribuidos donde la latencia de red domina el tiempo de ejecución.
 
-\subsection{Arquitectura interna de un nodo peer}
+\subsection{Arquitectura interna de un Slave}
 
 \begin{figure}[H]
 \centering
 \begin{tikzpicture}[scale=0.9, node distance=1.5cm]
   \tikzstyle{component}=[rectangle, draw=blue!60, fill=blue!15, thick, minimum width=3.5cm, minimum height=1cm, rounded corners, font=\footnotesize, align=center]
   \tikzstyle{storage}=[cylinder, draw=orange!60, fill=orange!15, thick, minimum width=2cm, minimum height=1.2cm, shape border rotate=90, font=\footnotesize, align=center]
-  \tikzstyle{queue}=[rectangle, draw=green!60, fill=green!15, thick, minimum width=2cm, minimum height=0.6cm, font=\tiny]
   
   % Componentes principales
-  \node[component] (net) at (0,4) {Network Manager\\(TCP/UDP sockets)};
-  \node[component] (route) at (0,2.5) {Routing Engine\\(Hipercubo routing)};
-  \node[component] (query) at (0,1) {Query Processor\\(búsqueda/replicación)};
-  \node[component] (rep) at (5,2.5) {Replication Manager\\(sincronización)};
-  \node[component] (sec) at (5,1) {Security Module\\(auth/crypto)};
+  \node[component] (api) at (0,4) {FastAPI Backend\\(REST endpoints)};
+  \node[component] (search) at (0,2.5) {Search Service\\(semántica + nombre)};
+  \node[component] (cluster) at (0,1) {Cluster Services\\(heartbeat/elección)};
+  \node[component] (frontend) at (5,4) {Streamlit Frontend\\(interfaz web)};
+  \node[component] (embed) at (5,2.5) {Embedding Service\\(sentence-transformers)};
   
   % Almacenamiento
-  \node[storage] (store) at (2.5,-0.5) {Data\\Storage};
-  
-  % Colas de mensajes
-  \node[queue] (q1) at (-2,3.2) {Inbox};
-  \node[queue] (q2) at (7,2.5) {Outbox};
+  \node[storage] (mongo) at (2.5,-0.5) {MongoDB\\Local};
   
   % Conexiones
-  \draw[->, thick] (net) -- (route);
-  \draw[->, thick] (route) -- (query);
-  \draw[->, thick] (query) -- (store);
-  \draw[<->, thick] (query) -- (rep);
-  \draw[<->, thick] (query) -- (sec);
-  \draw[->, thick] (q1) -- (net);
-  \draw[->, thick] (rep) -- (q2);
-  \draw[<->, thick] (store) -- (rep);
+  \draw[->, thick] (api) -- (search);
+  \draw[->, thick] (search) -- (cluster);
+  \draw[->, thick] (cluster) -- (mongo);
+  \draw[<->, thick] (search) -- (embed);
+  \draw[->, thick] (frontend) -- (api);
+  \draw[<->, thick] (embed) -- (mongo);
   
   % Etiquetas
-  \node[above, font=\tiny] at (0,4.5) {Capa de comunicación};
-  \node[right, font=\tiny] at (5.5,0.7) {Capa de seguridad};
+  \node[above, font=\tiny] at (0,4.5) {Capa API};
+  \node[above, font=\tiny] at (5,4.5) {Capa UI};
 \end{tikzpicture}
-\caption{Arquitectura modular de un nodo peer: actúa como cliente (Query Processor inicia búsquedas) y servidor (Network Manager atiende peticiones)}
+\caption{Arquitectura de un Slave: integra backend, frontend, búsqueda semántica y servicios de clúster}
 \label{fig:peer-architecture}
 \end{figure}
 
@@ -407,19 +442,22 @@ En términos de concurrencia, cada nodo utiliza hilos o programación asíncrona
 
 \subsection{Modelo de comunicación por capas}
 
-El sistema implementa una \textbf{arquitectura en capas} para la comunicación que separa las responsabilidades en tres niveles. La \textbf{capa de aplicación} define un protocolo de mensajería de alto nivel con mensajes como \texttt{REQUEST}, \texttt{RESPONSE}, \texttt{REPLICATE} y \texttt{HEARTBEAT}. Esta capa contiene la lógica de routing y búsqueda basada en la topología hipercubo, así como la gestión de sesiones y estado de transacciones. Cada peer interpreta estos mensajes y toma decisiones sobre cómo procesarlos o reenviarlos.
+El sistema implementa una \textbf{arquitectura en capas} para la comunicación que separa las responsabilidades en tres niveles. La \textbf{capa de aplicación} define un protocolo de mensajería de alto nivel con mensajes como \texttt{REGISTER}, \texttt{HEARTBEAT}, \texttt{ELECTION}, \texttt{REPLICATE} y \texttt{QUERY}. Esta capa contiene la lógica de coordinación Master-Slave, ubicación semántica de recursos y gestión de estado del clúster.
 
-La \textbf{capa de transporte} utiliza sockets TCP para comunicación confiable en operaciones que requieren entrega garantizada, como transferencia de datos y replicación. Para mensajes de control de baja latencia que toleran pérdidas ocasionales, como heartbeats y descubrimiento de vecinos, se emplean sockets UDP. Esta capa también gestiona conexiones persistentes entre vecinos lógicos, manteniendo un pool de conexiones activas para minimizar la latencia de establecimiento.
+La \textbf{capa de transporte} utiliza HTTP/REST (TCP) para operaciones de API como registro de documentos, consultas y replicación. Para heartbeats entre nodos se emplea UDP, optimizado para baja latencia y tolerancia a pérdidas ocasionales. Esta capa también gestiona conexiones persistentes mediante pools de conexiones HTTP.
 
-La \textbf{capa de red} utiliza routing IP estándar sobre Internet. Es importante destacar que la topología overlay hipercubo es completamente independiente de la red física subyacente: dos nodos que son vecinos lógicos en el hipercubo pueden estar físicamente en diferentes continentes, mientras que nodos físicamente cercanos pueden no ser vecinos lógicos.
+La \textbf{capa de red} utiliza routing IP estándar sobre la red Docker interna. El dominio \texttt{distrisearch.local} se resuelve mediante CoreDNS a cualquier Slave saludable, proporcionando descubrimiento automático de servicios.
 
 \subsection{Tipos de comunicación}
 
-\subsubsection{Comunicación peer-to-peer directa}
-Los nodos se comunican directamente mediante sockets TCP/UDP sin intermediarios. Cada peer mantiene conexiones activas con sus $d$ vecinos lógicos determinados por la topología hipercubo, lo que garantiza que cualquier peer pueda ser alcanzado en máximo $d$ saltos. Para operaciones síncronas como consultas de datos, se utiliza un modelo petición-respuesta (request-reply) donde el peer cliente espera una respuesta del peer servidor. Para operaciones asíncronas como replicación de datos y notificaciones de cambios de estado, se emplea mensajería asíncrona donde el emisor no bloquea esperando confirmación inmediata.
+\subsubsection{Comunicación Master-Slave}
+Los Slaves se comunican con el Master mediante REST API para: registrar nuevos documentos (el Master actualiza su índice semántico), recibir instrucciones de replicación, y reportar estado de salud. El Master inicia comunicación con Slaves para: enrutar consultas a nodos relevantes, coordinar replicación, y verificar disponibilidad.
 
-\subsubsection{Comunicación cliente-sistema}
-Las aplicaciones externas que no forman parte de la red P2P (y por tanto no actúan como servidores) pueden acceder al sistema de dos formas. Pueden conectarse a través de un gateway que actúa como punto de entrada y balanceador de carga, redirigiendo peticiones a la red P2P interna. También un cliente externo puede comunicarse directamente con cualquier peer específico. En ambos casos, el cliente externo solo actúa como cliente, a diferencia de los peers que simultáneamente son clientes y servidores.
+\subsubsection{Comunicación Slave-Slave}
+Los Slaves se comunican entre sí para: heartbeats UDP (detección de fallos), mensajes de elección (algoritmo Bully cuando el Master falla), y transferencia directa de réplicas. Esta comunicación no pasa por el Master, garantizando continuidad ante fallos del coordinador.
+
+\subsubsection{Comunicación Cliente-Sistema}
+Los usuarios acceden directamente a cualquier Slave mediante su interfaz web Streamlit. El DNS resuelve \texttt{distrisearch.local} a Slaves disponibles, proporcionando balanceo de carga implícito. No existe gateway centralizado; cada Slave es autónomo para atender usuarios.
 
 \subsection{Protocolo de mensajería}
 Se definen los siguientes tipos de mensajes:
@@ -429,37 +467,44 @@ Se definen los siguientes tipos de mensajes:
 \begin{tabularx}{\textwidth}{|l|X|}
 \hline
 \textbf{Mensaje} & \textbf{Descripción} \\ \hline
-\texttt{QUERY(key, ttl, origin)} & Búsqueda de dato con clave \texttt{key}, tiempo de vida \texttt{ttl}, nodo origen \\ \hline
-\texttt{QUERY\_HIT(key, data, holder)} & Respuesta con el dato encontrado y nodo que lo posee \\ \hline
-\texttt{STORE(key, data, replicas)} & Almacenar dato con número de réplicas especificado \\ \hline
-\texttt{REPLICATE(key, data, target)} & Replicar dato hacia nodo objetivo \\ \hline
-\texttt{PING / PONG} & Verificación de disponibilidad entre vecinos \\ \hline
-\texttt{JOIN(node\_id, address)} & Notificación de unión de nuevo nodo \\ \hline
-\texttt{LEAVE(node\_id)} & Notificación de salida de nodo \\ \hline
+\texttt{REGISTER(doc\_id, embedding)} & Slave notifica al Master sobre nuevo documento con su embedding semántico \\ \hline
+\texttt{HEARTBEAT(node\_id, status)} & Slave envía estado de salud al Master y otros Slaves (UDP) \\ \hline
+\texttt{ELECTION(node\_id)} & Mensaje del algoritmo Bully: inicio de elección de nuevo Master \\ \hline
+\texttt{OK(node\_id)} & Respuesta en elección: nodo con ID mayor responde que tomará el liderazgo \\ \hline
+\texttt{COORDINATOR(node\_id)} & Anuncio del nuevo Master elegido a todos los Slaves \\ \hline
+\texttt{REPLICATE(doc\_id, data, target)} & Instrucción de replicar documento hacia Slave objetivo \\ \hline
+\texttt{QUERY(embedding, top\_k)} & Consulta semántica: Master enruta a Slaves con contenido similar \\ \hline
 \end{tabularx}
-\caption{Tipos de mensajes del protocolo P2P}
+\caption{Tipos de mensajes del protocolo Master-Slave}
 \label{tab:messages}
 \end{table}
 
-\subsection{Algoritmo de routing basado en distancia Hamming}
-Para enviar un mensaje desde el nodo \(A\) al nodo \(B\):
+\subsection{Algoritmo de elección de líder: Bully}
+Cuando un Slave detecta que el Master no responde (timeout en heartbeats):
 
 \begin{algorithm}[H]
-\caption{Routing en hipercubo}
+\caption{Algoritmo Bully para elección de Master}
 \begin{algorithmic}[1]
-\State \textbf{Input:} nodo actual $current$, nodo destino $target$
-\State \textbf{Output:} siguiente salto en la ruta
-\State $diff \gets current \oplus target$ \Comment{XOR bit a bit}
-\If{$diff = 0$}
-    \State \Return $target$ \Comment{Ya llegamos}
+\State \textbf{Input:} nodo actual $P_i$, conjunto de nodos $\{P_1, ..., P_n\}$ ordenados por ID
+\State $P_i$ envía mensaje ELECTION a todos $P_j$ donde $j > i$
+\If{ningún $P_j$ responde con OK en timeout}
+    \State $P_i$ se convierte en Master
+    \State $P_i$ envía COORDINATOR a todos los nodos
+\Else
+    \State $P_i$ espera mensaje COORDINATOR del nodo con mayor ID
 \EndIf
-\State $bit \gets$ primer bit en 1 de $diff$ (de derecha a izquierda)
-\State $next \gets current$ con el bit $bit$ invertido
-\State \Return $next$
 \end{algorithmic}
 \end{algorithm}
 
-\textbf{Ejemplo}: Para ilustrar el routing desde el nodo 000 al nodo 111, primero calculamos la diferencia: $diff = 000 \oplus 111 = 111$, lo que indica que difieren en los tres bits. El algoritmo invierte el bit menos significativo primero, moviendo de $000 \rightarrow 001$. Desde 001, la nueva diferencia es $diff = 001 \oplus 111 = 110$, por lo que invertimos el siguiente bit: $001 \rightarrow 011$. Finalmente, desde 011 calculamos $diff = 011 \oplus 111 = 100$ e invertimos el bit más significativo: $011 \rightarrow 111$, alcanzando el destino en exactamente 3 saltos (igual a la distancia Hamming entre ambos nodos).
+\textbf{Ejemplo}: Si el Master (ID=100) falla y los Slaves tienen IDs 50, 60, 70:
+\begin{enumerate}
+  \item Slave-50 detecta fallo, envía ELECTION a 60, 70
+  \item Slave-60 y 70 responden OK (tienen ID mayor)
+  \item Slave-60 envía ELECTION a 70
+  \item Slave-70 responde OK
+  \item Slave-70 no tiene nadie con ID mayor, se convierte en Master
+  \item Slave-70 envía COORDINATOR a todos: nuevo Master elegido
+\end{enumerate}
 
 \section{Coordinación y sincronización}
 
@@ -517,157 +562,141 @@ Por otro lado, la \textbf{comunicación basada en eventos} es temporalmente desa
 
 \section{Localización y nombrado de datos / recursos}
 
-Cada dato en el sistema tiene un identificador global único (ID o hash criptográfico) que lo distingue de otros elementos. El mecanismo de localización aprovecha la topología overlay del hipercubo combinada con lógica inteligente de búsqueda y routing. El sistema ofrece tres estrategias principales de localización.
+Cada documento en el sistema tiene un identificador único (UUID generado al subir) y un \textbf{embedding semántico} de 384 dimensiones que representa su contenido. El mecanismo de localización se basa en \textbf{similitud semántica} en lugar de funciones hash, lo que permite ubicar documentos según su significado y no según propiedades arbitrarias de su identificador.
 
-La \textbf{búsqueda mediante reenvío} funciona cuando un peer recibe una petición de dato que no posee localmente: reenvía la consulta a sus vecinos lógicos, quienes a su vez propagan la búsqueda hasta encontrar una réplica del dato solicitado. La \textbf{búsqueda dirigida} utiliza heurísticas para optimizar el proceso, realizando encaminamiento preferente hacia nodos "más cercanos" según distancia de Hamming, seleccionando nodos con menor carga actual, o priorizando nodos con alto historial de disponibilidad.
+El Master mantiene un \textbf{índice de ubicación semántica} que mapea cada Slave a un perfil semántico agregado de sus documentos. Cuando llega una consulta, el Master calcula su embedding y determina qué Slaves tienen contenido semánticamente similar.
 
 \subsection{Estrategias de localización de datos}
 
-\subsubsection{Estrategia 1: Búsqueda por inundación controlada (Flooding)}
+\subsubsection{Estrategia 1: Búsqueda semántica centralizada}
 \begin{algorithm}[H]
-\caption{Búsqueda por flooding con TTL}
+\caption{Búsqueda semántica en Master}
 \begin{algorithmic}[1]
-\State \textbf{Input:} $key$ (clave del dato), $ttl$ (tiempo de vida)
-\State \textbf{Output:} dato encontrado o NULL
-\If{dato con $key$ está en almacenamiento local}
-    \State \Return dato
-\EndIf
-\If{$ttl \leq 0$}
-    \State \Return NULL
-\EndIf
-\State Enviar \texttt{QUERY($key$, $ttl-1$)} a todos los vecinos
-\State Esperar respuestas con timeout
-\State \Return primera respuesta válida o NULL
+\State \textbf{Input:} $query$ (texto de consulta), $top\_k$ (número de resultados)
+\State \textbf{Output:} lista de documentos relevantes
+\State $q\_embedding \gets$ calcular\_embedding($query$)
+\State $slaves \gets$ ordenar\_slaves\_por\_similitud($q\_embedding$)
+\State $results \gets []$
+\For{$slave$ en $slaves[:3]$}  \Comment{Top 3 Slaves más relevantes}
+    \State $local\_results \gets$ enviar\_query($slave$, $query$)
+    \State $results \gets results \cup local\_results$
+\EndFor
+\State \Return ordenar\_por\_relevancia($results$)[:$top\_k$]
 \end{algorithmic}
 \end{algorithm}
 
-\subsubsection{Estrategia 2: Asignación determinística basada en hash}
-Asignar cada dato al nodo cuya dirección es más cercana al hash del dato:
-$$\text{nodo\_destino} = \arg\min_{i \in \text{nodos}} d_H(\text{hash}(key) \mod 2^d, i)$$
-donde $d_H$ es la distancia de Hamming.
+\subsubsection{Estrategia 2: Asignación por afinidad semántica}
+Asignar cada documento al Slave cuyo perfil semántico es más similar:
+$$\text{slave\_destino} = \arg\max_{s \in \text{slaves}} \cos(embedding_{doc}, profile_s)$$
+donde $\cos$ es la similitud coseno entre vectores.
 
-\textbf{Ejemplo} (hipercubo $d=3$): Consideremos un dato cuyo hash es 42. Para mapearlo al espacio de direcciones de dimensión 3, calculamos $42 \mod 8 = 2$, que en binario es 010. Por lo tanto, este dato se almacena preferentemente en el nodo con dirección 010, y sus réplicas se distribuyen en nodos vecinos para garantizar disponibilidad y tolerancia a fallos.
+\textbf{Ejemplo}: Un documento sobre "algoritmos de ordenamiento" tiene un embedding que el Master compara con los perfiles de cada Slave. Si Slave-2 ya contiene documentos sobre "estructuras de datos" y "complejidad algorítmica", su perfil será semánticamente cercano, por lo que el nuevo documento se almacena allí.
 
 \begin{figure}[H]
 \centering
 \begin{tikzpicture}[scale=1.0]
-  \tikzstyle{node}=[circle, draw, minimum size=0.8cm, font=\small]
+  \tikzstyle{node}=[rectangle, draw, minimum width=1.5cm, minimum height=0.8cm, font=\small, rounded corners]
+  \tikzstyle{master}=[fill=blue!20, thick]
   \tikzstyle{primary}=[fill=green!30, thick]
   \tikzstyle{replica}=[fill=yellow!30, thick]
-  \tikzstyle{normal}=[fill=gray!10]
   
-  % Hipercubo simplificado 2D para visualización
-  \node[node, primary] (n010) at (0,2) {010};
-  \node[node, replica] (n000) at (0,0) {000};
-  \node[node, replica] (n011) at (2,2) {011};
-  \node[node, normal] (n001) at (2,0) {001};
-  \node[node, normal] (n110) at (4,2) {110};
-  \node[node, normal] (n100) at (4,0) {100};
+  % Master
+  \node[node, master] (m) at (3,4) {Master};
   
-  \draw[-, thick] (n010) -- (n000);
-  \draw[-, thick] (n010) -- (n011);
-  \draw[-, thick] (n000) -- (n001);
-  \draw[-, thick] (n011) -- (n001);
-  \draw[-, thick] (n010) -- (n110);
-  \draw[-, thick] (n000) -- (n100);
+  % Slaves
+  \node[node, primary] (s1) at (0,1.5) {Slave 1};
+  \node[node, replica] (s2) at (3,1.5) {Slave 2};
+  \node[node] (s3) at (6,1.5) {Slave 3};
+  
+  % Perfiles semánticos
+  \node[font=\tiny, below] at (0,0.8) {IA, ML};
+  \node[font=\tiny, below] at (3,0.8) {Algoritmos};
+  \node[font=\tiny, below] at (6,0.8) {Redes};
+  
+  % Conexiones
+  \draw[->, thick] (m) -- node[left, font=\tiny] {query} (s1);
+  \draw[->, thick] (m) -- node[right, font=\tiny] {query} (s2);
   
   % Leyenda
-  \node[below] at (1,-0.8) {\small \textbf{Dato X}:};
-  \node[node, primary, minimum size=0.5cm] at (0,-1.5) {};
-  \node[right, font=\footnotesize] at (0.3,-1.5) {Nodo primario};
-  \node[node, replica, minimum size=0.5cm] at (2.5,-1.5) {};
-  \node[right, font=\footnotesize] at (2.8,-1.5) {Réplicas};
+  \node[font=\small] at (3,-0.5) {Consulta "sorting algorithms" $\rightarrow$ Slave 2 (más relevante)};
 \end{tikzpicture}
-\caption{Distribución de dato X: nodo primario 010 con réplicas en vecinos 000 y 011}
+\caption{Ubicación semántica: Master enruta consultas a Slaves con contenido similar}
 \label{fig:data-location}
 \end{figure}
 
 \section{Distribución, replicación y consistencia de datos}
 
-El sistema implementa replicación de datos donde cada elemento puede tener $k$ réplicas en diferentes nodos (típicamente $k = 2$ o $k = 3$) para garantizar tolerancia a fallos y alta disponibilidad. El protocolo de replicación funciona asignando, al momento de insertar un dato, las réplicas a nodos distintos que idealmente estén "lejanos" en la topología hipercubo. Esta distancia lógica maximiza la probabilidad de que las réplicas sobrevivan a fallos correlacionados.
+El sistema implementa replicación de datos donde cada documento puede tener $k$ réplicas en diferentes Slaves (por defecto $k = 2$) para garantizar tolerancia a fallos y alta disponibilidad. El coordinador de replicación en el Master selecciona Slaves con \textbf{afinidad semántica}: documentos similares se replican en Slaves que ya contienen contenido relacionado, mejorando la localidad de las consultas.
 
-Respecto a la consistencia, los datos son inmutables, entonces  el problema se simplifica ya que no hay sincronización de actualizaciones.
+Respecto a la consistencia, los documentos son inmutables una vez subidos, simplificando el modelo al eliminar la necesidad de sincronizar actualizaciones.
 
 \subsection{Estrategia de replicación}
-Para un factor de replicación $k=3$, al almacenar un dato en el nodo primario $N_p$, el sistema selecciona $k-1 = 2$ nodos adicionales para almacenar réplicas. Los criterios de selección incluyen maximizar la distancia de Hamming entre réplicas para lograr dispersión geográfica lógica, preferir nodos con baja carga actual para balancear el almacenamiento, y priorizar nodos con alta disponibilidad histórica según métricas de uptime. Una vez seleccionados los nodos, el sistema envía mensajes \texttt{REPLICATE} y espera confirmación de almacenamiento antes de considerar la operación completa.
+Para un factor de replicación $k=2$, al almacenar un documento en el Slave primario $S_p$, el Master selecciona $k-1 = 1$ Slaves adicionales para réplicas. Los criterios de selección son:
+\begin{itemize}
+  \item \textbf{Afinidad semántica}: Preferir Slaves cuyo perfil sea similar al embedding del documento
+  \item \textbf{Carga actual}: Balancear distribución de almacenamiento entre Slaves
+  \item \textbf{Disponibilidad}: Priorizar Slaves con historial de uptime alto
+\end{itemize}
 
 \begin{figure}[H]
 \centering
 \begin{tikzpicture}[scale=0.9]
-  \tikzstyle{node}=[circle, draw, thick, minimum size=1cm, font=\footnotesize, align=center]
-  \tikzstyle{primary}=[fill=blue!40]
-  \tikzstyle{replica}=[fill=green!30]
+  \tikzstyle{node}=[rectangle, draw, thick, minimum width=1.5cm, minimum height=1cm, font=\footnotesize, align=center, rounded corners]
+  \tikzstyle{master}=[fill=blue!30]
+  \tikzstyle{primary}=[fill=green!40]
+  \tikzstyle{replica}=[fill=yellow!30]
   \tikzstyle{normal}=[fill=gray!10]
   
-  % Hipercubo 3D simplificado
-  \node[node, primary] (p) at (0,2) {010\\$D_1$};
-  \node[node, replica] (r1) at (-2,0) {000\\$D_1$};
-  \node[node, normal] (n1) at (2,2) {011};
-  \node[node, replica] (r2) at (4,0) {101\\$D_1$};
-  \node[node, normal] (n2) at (2,0) {001};
-  \node[node, normal] (n3) at (-2,2) {110};
-  \node[node, normal] (n4) at (4,2) {111};
+  % Master
+  \node[node, master] (m) at (3,4) {Master};
+  
+  % Slaves
+  \node[node, primary] (s1) at (0,1.5) {Slave 1\\$D_1$ prim};
+  \node[node, replica] (s2) at (3,1.5) {Slave 2\\$D_1$ repl};
+  \node[node, normal] (s3) at (6,1.5) {Slave 3};
+  
+  % Perfiles
+  \node[font=\tiny, below] at (0,0.7) {ML, IA};
+  \node[font=\tiny, below] at (3,0.7) {ML, Data};
+  \node[font=\tiny, below] at (6,0.7) {Redes};
   
   % Conexiones
-  \draw[-] (p) -- (n1);
-  \draw[-] (p) -- (r1);
-  \draw[-] (p) -- (n3);
-  \draw[-] (r1) -- (n2);
-  \draw[-] (n1) -- (n2);
-  \draw[-] (n1) -- (n4);
-  \draw[-] (r2) -- (n4);
-  \draw[-] (r2) -- (n2);
+  \draw[<->, thick] (m) -- (s1);
+  \draw[<->, thick] (m) -- (s2);
+  \draw[<->, thick] (m) -- (s3);
   
-  % Flechas de replicación
-  \draw[->, very thick, red, dashed] (p) to[bend right=20] node[midway, above left] {\tiny replica} (r1);
-  \draw[->, very thick, red, dashed] (p) to[bend left=20] node[midway, above right] {\tiny replica} (r2);
+  % Flecha de replicación
+  \draw[->, very thick, red, dashed] (s1) -- node[midway, above] {\tiny replica} (s2);
   
   % Leyenda
-  \node[node, primary, minimum size=0.6cm] at (6,2.5) {};
-  \node[right, font=\footnotesize] at (6.4,2.5) {Primario};
-  \node[node, replica, minimum size=0.6cm] at (6,1.5) {};
-  \node[right, font=\footnotesize] at (6.4,1.5) {Réplica};
-  
-  % Información de distancias
-  \node[below, font=\footnotesize, align=center] at (1,-0.8) {
-    Distancia Hamming:\\
-    $d_H(010, 000) = 1$\\
-    $d_H(010, 101) = 3$
-  };
+  \node[font=\footnotesize, below] at (3,-0.5) {$D_1$ (doc sobre ML) $\rightarrow$ replicado a Slave 2 (perfil similar)};
 \end{tikzpicture}
-\caption{Replicación de dato $D_1$ con factor $k=3$: nodo primario 010 y réplicas en 000 y 101}
+\caption{Replicación por afinidad semántica: documento ML replicado a Slave con perfil similar}
 \label{fig:replication}
 \end{figure}
 
-\subsection{Protocolo de consistencia eventual}
-
-\begin{algorithm}[H]
-\caption{Actualización con consistencia eventual}
-\begin{algorithmic}[1]
-\State \textbf{Input:} $key$, $new\_value$, $timestamp$
-\State Actualizar valor local si $timestamp$ es más reciente
-\State Obtener lista de réplicas para $key$
-\For{cada réplica $r$ en lista}
-    \State Enviar \texttt{UPDATE($key$, $new\_value$, $timestamp$)} a $r$
-    \State No esperar confirmación (asíncrono)
-\EndFor
-\State Programar verificación de consistencia periódica
-\end{algorithmic}
-\end{algorithm}
-
 \subsection{Modelo de consistencia}
 
-El sistema adopta un modelo de consistencia eventual con las siguientes características. Para operaciones de \textbf{lectura}, el sistema acepta respuestas de cualquier réplica disponible, lo que significa que un cliente puede obtener una versión que no sea la más reciente si otras réplicas aún no han sido actualizadas
-
-La \textbf{convergencia} entre réplicas está garantizada eventualmente mediante timestamps lógicos y mecanismos de anti-entropy que periódicamente detectan y corrigen divergencias.
+El sistema adopta un modelo de \textbf{consistencia eventual} con las siguientes características:
+\begin{itemize}
+  \item \textbf{Escrituras}: Documentos nuevos se escriben primero en el Slave que recibe la subida, luego se replican
+  \item \textbf{Lecturas}: Cualquier Slave con una réplica puede responder consultas
+  \item \textbf{Convergencia}: Garantizada por la naturaleza inmutable de los documentos
+\end{itemize}
 
 \section{Tolerancia a fallos, robustez y dinámicas de red}
 
-El sistema proporciona soporte integral para fallos parciales, incluyendo nodos que se desconectan temporalmente, nodos que fallan permanentemente, y la reincorporación de nodos nuevos o recuperados. La topología de hipercubo es fundamental para la resiliencia ya que ofrece múltiples rutas alternativas entre cualquier par de nodos, proporcionando redundancia natural ante fallos de nodos o enlaces individuales.
+El sistema proporciona soporte integral para fallos parciales, incluyendo: Slaves que se desconectan temporalmente, fallo del Master (recuperado mediante elección Bully), y reincorporación de nodos nuevos o recuperados.
 
-Cuando un nodo nuevo se une a la red o un nodo existente sale, es necesario reconfigurar las conexiones lógicas del sistema. Esto implica asignar o actualizar la dirección del nodo en el hipercubo, establecer o terminar conexiones con sus vecinos lógicos determinados por diferencias de un bit, reasignar réplicas si el nodo que falla era responsable de datos críticos, y actualizar las tablas de routing para reflejar la nueva topología.
+La arquitectura Master-Slave con elección de líder garantiza continuidad: si el Master falla, los Slaves detectan la ausencia de heartbeats y ejecutan el algoritmo Bully para elegir un nuevo coordinador.
 
-El manejo de errores se implementa mediante múltiples estrategias complementarias. Se configuran timeouts para detectar nodos no responsivos, se reintentan peticiones fallidas dirigiéndolas hacia vecinos alternativos en la topología, y se implementa fallback automático a réplicas cuando el nodo primario no está disponible.
+Cuando un Slave nuevo se une a la red o un Slave existente falla:
+\begin{itemize}
+  \item \textbf{Nuevo Slave}: Se registra con el Master enviando su perfil semántico inicial
+  \item \textbf{Fallo de Slave}: El Master detecta ausencia de heartbeats y marca el nodo como no disponible
+  \item \textbf{Fallo de Master}: Slaves detectan timeout, inician elección Bully, nuevo Master asume coordinación
+  \item \textbf{Rerreplicación}: Si un Slave con réplicas falla, el Master coordina crear nuevas réplicas en otros Slaves
+\end{itemize}
 
 \subsection{Detección de fallos mediante Heartbeat}
 \begin{algorithm}[H]
@@ -782,7 +811,13 @@ Cuando un nodo $N$ falla:
 
 \subsection{Métricas de resiliencia}
 
-Para un hipercubo de dimensión $d$, el sistema presenta características de resiliencia cuantificables. La \textbf{conectividad de nodo} es igual a $d$, lo que significa que cada nodo puede tolerar hasta $d$ fallos de vecinos antes de quedar desconectado de la red. Existen $d!$ (factorial de $d$) rutas alternativas posibles entre cualquier par de nodos, proporcionando múltiples caminos de routing ante fallos. El \textbf{tiempo de detección de fallo} está determinado por el timeout de heartbeat, configurado en $T_{timeout} = 15s$. El \textbf{tiempo de recuperación} tras un fallo es del orden de $O(d \cdot T_{message})$, donde $T_{message}$ es el tiempo promedio de entrega de mensaje, ya que la información de reconfiguración debe propagarse a través de $d$ saltos máximo.
+Para un clúster con $N$ Slaves, el sistema presenta características de resiliencia cuantificables:
+\begin{itemize}
+  \item \textbf{Tolerancia a fallos de Slaves}: El sistema permanece operativo mientras al menos un Slave esté activo
+  \item \textbf{Tolerancia a fallo de Master}: El algoritmo Bully elige nuevo Master en $O(N)$ mensajes
+  \item \textbf{Tiempo de detección de fallo}: Determinado por $T_{timeout} = 15s$ (3 heartbeats perdidos)
+  \item \textbf{Tiempo de recuperación}: Elección Bully completa en $< 30s$ típicamente
+\end{itemize}
 
 \section{Seguridad, autenticación y autorización}
 
@@ -885,22 +920,21 @@ El sistema presenta 4 propiedades fundamentales que caracterizan su arquitectura
 
 \begin{table}[H]
 \centering
-\begin{tabularx}{\textwidth}{|c|c|c|c|X|}
+\begin{tabularx}{\textwidth}{|c|c|c|X|}
 \hline
-\textbf{Dimensión $d$} & \textbf{Nodos ($2^d$)} & \textbf{Diámetro} & \textbf{Vecinos/nodo} & \textbf{Escenario de uso} \\ \hline
-3 & 8 & 3 & 3 & Prototipo/Testing \\ \hline
-4 & 16 & 4 & 4 & Desarrollo \\ \hline
-5 & 32 & 5 & 5 & Despliegue piloto \\ \hline
-6 & 64 & 6 & 6 & Producción pequeña \\ \hline
-7 & 128 & 7 & 7 & Producción media \\ \hline
-8 & 256 & 8 & 8 & Producción grande \\ \hline
-10 & 1024 & 10 & 10 & Escala empresarial \\ \hline
+\textbf{Slaves} & \textbf{Capacidad} & \textbf{Throughput} & \textbf{Escenario de uso} \\ \hline
+3 & 3 TB & 100 qps & Prototipo/Testing \\ \hline
+5 & 5 TB & 200 qps & Desarrollo \\ \hline
+10 & 10 TB & 500 qps & Producción pequeña \\ \hline
+20 & 20 TB & 1000 qps & Producción media \\ \hline
+50 & 50 TB & 2500 qps & Producción grande \\ \hline
+100 & 100 TB & 5000 qps & Escala empresarial \\ \hline
 \end{tabularx}
-\caption{Escalabilidad del hipercubo según dimensión}
+\caption{Escalabilidad del sistema Master-Slave según número de Slaves}
 \label{tab:scalability}
 \end{table}
 
-\textbf{Análisis}: La estructura hipercubo presenta características de escalabilidad excepcionales. El diámetro de la red crece logarítmicamente con el número de nodos según la fórmula $d = \log_2(N)$, lo que significa que duplicar el número de nodos solo incrementa el diámetro en uno. Cada nodo mantiene exactamente $\log_2(N)$ conexiones activas independientemente del tamaño total de la red, evitando que el overhead de conectividad crezca linealmente. Esto proporciona excelente escalabilidad para sistemas de hasta varios miles de nodos, ya que el overhead de comunicación permanece manejable para la mayoría de aplicaciones prácticas. Incluso con 1024 nodos (dimensión 10), cada nodo solo necesita mantener 10 conexiones y la distancia máxima entre nodos es de 10 saltos.
+\textbf{Análisis}: La arquitectura Master-Slave presenta escalabilidad lineal con el número de Slaves. Cada Slave agregado aumenta proporcionalmente la capacidad de almacenamiento y el throughput del sistema. El Master se convierte en potencial cuello de botella solo cuando el número de Slaves supera varios cientos, momento en que se pueden implementar técnicas de sharding del índice semántico o replicación del Master. Para la mayoría de casos de uso (hasta 100 Slaves), un solo Master es suficiente.
 
 \subsection{Métricas de rendimiento esperadas}
 
@@ -926,15 +960,24 @@ MTTR & Tiempo promedio de recuperación tras fallo & $< 30$s \\ \hline
 
 \section{Conclusión}
 
-Este documento ha presentado la especificación arquitectónica completa de un sistema distribuido P2P basado en topología hipercubo. El diseño prioriza cinco aspectos fundamentales para garantizar un sistema robusto y escalable. La \textbf{descentralización completa} elimina puntos únicos de fallo al distribuir uniformemente las responsabilidades entre todos los nodos peers, donde cada nodo actúa simultáneamente como cliente cuando solicita datos y como servidor cuando atiende peticiones de otros nodos. La \textbf{alta disponibilidad} se logra mediante replicación estratégica de datos en nodos lógicamente distantes y múltiples rutas alternativas que garantizan conectividad incluso ante fallos parciales. La \textbf{tolerancia a fallos} se implementa con detección automática de nodos caídos mediante heartbeats y mecanismos de recuperación que permiten reconexiones dinámicas. La \textbf{seguridad} abarca protocolos robustos de autenticación basados en PKI, cifrado de comunicaciones mediante TLS, y control de acceso granular con sistemas de reputación para mitigar nodos maliciosos. Finalmente, la \textbf{escalabilidad} se asegura mediante un crecimiento logarítmico de recursos por nodo, donde cada peer mantiene solo $\log_2(N)$ conexiones independientemente del tamaño total del sistema.
+Este documento ha presentado la especificación arquitectónica completa de un sistema distribuido Master-Slave con ubicación de recursos por vectorización semántica. El diseño prioriza cinco aspectos fundamentales:
+
+\textbf{Coordinación centralizada con tolerancia a fallos}: El Master coordina el clúster manteniendo el índice semántico de ubicación y el balanceo de carga. Si el Master falla, el algoritmo Bully garantiza elección automática de un nuevo líder entre los Slaves candidatos, eliminando puntos únicos de fallo permanentes.
+
+\textbf{Ubicación semántica de recursos}: En lugar de funciones hash (DHT), el sistema utiliza embeddings de 384 dimensiones generados por sentence-transformers para representar documentos. Esto permite localización basada en similitud de contenido, mejorando la relevancia de búsquedas y la localidad de datos relacionados.
+
+\textbf{Alta disponibilidad}: Cada Slave es autónomo con su propio backend, frontend y base de datos MongoDB. Los usuarios pueden acceder a cualquier Slave directamente, y la replicación por afinidad semántica garantiza que los datos sobrevivan fallos individuales.
+
+\textbf{Escalabilidad horizontal}: Agregar Slaves es trivial: el nuevo nodo se registra con el Master, reporta su perfil semántico, y comienza a recibir consultas y datos. El Master actualiza dinámicamente su índice de ubicación.
+
+\textbf{Simplicidad operativa}: La arquitectura Master-Slave es conceptualmente más simple que topologías P2P complejas como hipercubo, facilitando debugging, monitoreo y mantenimiento del sistema en producción.
 
 \section*{Referencias}
-% Lista de referencias bibliográficas utilizadas
-% Puedes formatearlas según el estilo que prefieras (IEEE, APA, etc.)
 \begin{itemize}
-  \item “Peer-to-Peer (P2P) Architecture – GeeksforGeeks” — definición y características del modelo P2P.  
-  \item “Structured and Unstructured Peer-to-Peer Systems – GeeksforGeeks” — diferencias entre redes estructuradas y no estructuradas.  
-  \item Artículos sobre overlays basados en hipercubo para sistemas P2P / distribuidos.  
+  \item Sentence-Transformers: documentación oficial para generación de embeddings semánticos.
+  \item Algoritmo Bully: Garcia-Molina, H. ``Elections in a Distributed Computing System'' (1982).
+  \item CoreDNS: documentación oficial para resolución DNS en entornos containerizados.
+  \item FastAPI y Streamlit: frameworks utilizados para backend y frontend respectivamente.
 \end{itemize}
 
 \end{document}

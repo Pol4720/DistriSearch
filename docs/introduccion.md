@@ -1,153 +1,238 @@
 # Introducción a DistriSearch
 
-## 📖 Visión General
+<div class="hero-banner" style="padding: 2rem; background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%); border-radius: 16px; margin-bottom: 2rem; border-left: 4px solid #667eea;">
+  <h2 style="margin-top: 0;">📖 Sistema de Búsqueda Distribuida</h2>
+  <p>Arquitectura <strong>Master-Slave</strong> con ubicación semántica y alta disponibilidad</p>
+</div>
 
-**DistriSearch** es un sistema de búsqueda distribuida diseñado para resolver el desafío de localizar archivos en entornos donde los datos están dispersos en múltiples nodos o servidores. A diferencia de los sistemas de búsqueda tradicionales centralizados, DistriSearch utiliza una arquitectura peer-to-peer (P2P) que permite a cada nodo mantener su propio índice de archivos mientras participa en una red colaborativa de búsqueda.
+## 🎯 ¿Qué es DistriSearch?
+
+**DistriSearch** es un sistema de búsqueda distribuida que utiliza una arquitectura **Master-Slave** con:
+
+| Característica | Descripción |
+|----------------|-------------|
+| 🧠 **Ubicación Semántica** | Localiza recursos por similitud de contenido usando embeddings |
+| 👑 **Elección Dinámica** | Cualquier nodo puede ser Master (algoritmo Bully) |
+| 💓 **Heartbeats UDP** | Detección de fallos en ~15 segundos |
+| 🔄 **Replicación Inteligente** | Por afinidad semántica, no por hash |
+
+!!! success "Beneficios Clave"
+    - ✅ **Alta disponibilidad**: Failover automático sin intervención manual
+    - ✅ **Búsqueda semántica**: Resultados relevantes por significado, no solo palabras
+    - ✅ **Escalabilidad horizontal**: Agregar nodos sin reconfiguración
+    - ✅ **Privacidad**: Archivos permanecen en nodos de origen
 
 ---
 
-## 🎯 Objetivo del Proyecto
+## 🏛️ Arquitectura Master-Slave
 
-El objetivo principal de DistriSearch es proporcionar una solución **moderna**, **escalable** y **eficiente** para la búsqueda de archivos en entornos distribuidos, permitiendo:
-
-- ✅ Búsqueda rápida y precisa de archivos en múltiples nodos
-- ✅ Escalabilidad horizontal sin límites teóricos
-- ✅ Tolerancia a fallos con replicación automática
-- ✅ Interfaz de usuario intuitiva y moderna
-- ✅ Fácil despliegue y mantenimiento
-
----
-
-## 🏛️ Arquitectura de Alto Nivel
-
-DistriSearch está compuesto por tres componentes principales:
+DistriSearch abandona las arquitecturas P2P puras (DHT, hipercubo) en favor de un modelo **Master-Slave dinámico**:
 
 ```mermaid
-graph LR
-    A[👤 Usuario] --> B[🎨 Frontend]
-    B --> C[🔧 Backend]
-    C --> D[🤖 Agente 1]
-    C --> E[🤖 Agente 2]
-    C --> F[🤖 Agente N]
+graph TB
+    subgraph "Cluster DistriSearch"
+        DNS[🌐 CoreDNS]
+        
+        subgraph "Master (Slave 1)"
+            M_API[FastAPI]
+            M_UI[Streamlit]
+            M_DB[(MongoDB)]
+            M_IDX[Índice Semántico]
+        end
+        
+        subgraph "Slave 2"
+            S2_API[FastAPI]
+            S2_UI[Streamlit]
+            S2_DB[(MongoDB)]
+        end
+        
+        subgraph "Slave 3"
+            S3_API[FastAPI]
+            S3_UI[Streamlit]
+            S3_DB[(MongoDB)]
+        end
+    end
     
-    style A fill:#667eea
-    style B fill:#764ba2
-    style C fill:#9f7aea
-    style D fill:#f59e0b
-    style E fill:#f59e0b
-    style F fill:#f59e0b
+    DNS --> M_API
+    DNS --> S2_API
+    DNS --> S3_API
+    
+    M_API <-->|Heartbeat| S2_API
+    M_API <-->|Heartbeat| S3_API
+    S2_API <-->|Heartbeat| S3_API
+    
+    style DNS fill:#10b981
+    style M_API fill:#667eea,color:#fff
+    style S2_API fill:#764ba2,color:#fff
+    style S3_API fill:#764ba2,color:#fff
 ```
 
-### 1. Frontend (Streamlit)
+### Componentes por Nodo
 
-Interfaz web moderna y responsiva que permite a los usuarios:
+Cada **Slave** es un nodo completo que incluye:
 
-- Realizar búsquedas de archivos
-- Gestionar nodos de la red
-- Visualizar estadísticas y métricas
-- Configurar el sistema
+=== "Backend (FastAPI)"
+    
+    - API REST para búsqueda y gestión
+    - Servicios de heartbeat y elección
+    - Conexión a MongoDB local
+    - Endpoints de health check
 
-**Tecnologías**: Streamlit, Plotly, Python
+=== "Frontend (Streamlit)"
+    
+    - Interfaz web moderna
+    - Búsqueda distribuida
+    - Gestión de nodos
+    - Estadísticas en tiempo real
 
-### 2. Backend (FastAPI)
+=== "Base de Datos (MongoDB)"
+    
+    - Almacenamiento de documentos
+    - Metadatos de archivos
+    - Réplicas por afinidad semántica
 
-API REST centralizada que coordina:
+### El Master Adiciona
 
-- Búsquedas distribuidas a través de todos los nodos
-- Registro y gestión de nodos
-- Descarga de archivos
-- Replicación y tolerancia a fallos
-- Índice central (modo centralizado)
+El nodo que actúa como **Master** mantiene servicios adicionales:
 
-**Tecnologías**: FastAPI, SQLite, SQLAlchemy, Pydantic
-
-### 3. Agentes (Nodos)
-
-Servicios independientes que ejecutan en cada nodo:
-
-- Escaneo automático de carpetas locales
-- Indexación de archivos con metadatos
-- API REST para consultas locales
-- Sincronización con el backend central
-
-**Tecnologías**: FastAPI, Python, Threading
+- 🧠 **Índice de Ubicación Semántica**: Mapea embeddings a nodos
+- ⚖️ **Balanceador de Carga**: Distribuye consultas
+- 🔄 **Coordinador de Replicación**: Gestiona réplicas
+- 🎯 **Query Router**: Enruta a Slaves relevantes
 
 ---
 
-## 🔄 Flujo de Trabajo
+## 🔄 Flujos de Trabajo
 
-### Proceso de Búsqueda
+### Búsqueda Distribuida Semántica
+
+```mermaid
+sequenceDiagram
+    participant U as 👤 Usuario
+    participant F as 🎨 Frontend
+    participant M as 👑 Master
+    participant S1 as 📦 Slave 1
+    participant S2 as 📦 Slave 2
+    
+    U->>F: Ingresa consulta
+    F->>M: POST /search/?q=...
+    M->>M: Genera embedding de query
+    M->>M: Identifica Slaves relevantes
+    
+    par Búsqueda paralela
+        M->>S1: GET /search/local
+        M->>S2: GET /search/local
+    end
+    
+    S1-->>M: Resultados locales
+    S2-->>M: Resultados locales
+    
+    M->>M: Agrega y rankea
+    M-->>F: Resultados combinados
+    F-->>U: Muestra resultados
+```
+
+### Elección de Líder (Bully Algorithm)
+
+```mermaid
+sequenceDiagram
+    participant S1 as Slave 1 (ID: 1)
+    participant S2 as Slave 2 (ID: 2)
+    participant S3 as Slave 3 (ID: 3)
+    participant M as Master (offline)
+    
+    Note over M: ❌ Master falla
+    
+    S1->>S1: Detecta fallo (3 heartbeats)
+    S1->>S2: ELECTION
+    S1->>S3: ELECTION
+    
+    S2-->>S1: ELECTION_OK
+    S3-->>S1: ELECTION_OK
+    
+    Note over S3: Nodo con mayor ID
+    S3->>S3: Se proclama Master
+    S3->>S1: COORDINATOR
+    S3->>S2: COORDINATOR
+    
+    Note over S3: ✅ Nuevo Master
+```
+
+### Replicación por Afinidad Semántica
 
 ```mermaid
 sequenceDiagram
     participant U as Usuario
-    participant F as Frontend
-    participant B as Backend
-    participant N1 as Nodo 1
-    participant N2 as Nodo 2
+    participant S1 as Slave 1
+    participant M as Master
+    participant S2 as Slave 2
     
-    U->>F: Ingresa consulta
-    F->>B: POST /search/
-    B->>N1: GET /local/search
-    B->>N2: GET /local/search
-    N1-->>B: Resultados Nodo 1
-    N2-->>B: Resultados Nodo 2
-    B->>B: Agrega y rankea (BM25)
-    B-->>F: Resultados combinados
-    F-->>U: Muestra resultados
-```
-
-### Proceso de Registro de Nodo
-
-```mermaid
-sequenceDiagram
-    participant A as Admin
-    participant F as Frontend
-    participant B as Backend
-    participant N as Nuevo Nodo
-    
-    A->>F: Registrar nodo
-    F->>B: POST /register/node
-    B->>B: Valida y guarda en BD
-    B-->>F: Confirmación
-    B->>N: Ping (health check)
-    N-->>B: Status OK
-    B->>B: Marca nodo online
-    F-->>A: Nodo registrado
+    U->>S1: Sube documento
+    S1->>M: Notifica nuevo documento
+    M->>M: Genera embedding
+    M->>M: Encuentra nodos con<br/>contenido similar
+    M->>S2: Replica documento
+    S2-->>M: ACK
+    M-->>S1: Confirmación
 ```
 
 ---
 
 ## 💡 Conceptos Clave
 
-### Búsqueda Distribuida
+### Ubicación Semántica vs DHT
 
-En lugar de mantener un índice centralizado de todos los archivos, cada nodo mantiene su propio índice. Cuando se realiza una búsqueda:
+A diferencia de sistemas basados en DHT (tablas hash distribuidas), DistriSearch usa **ubicación semántica**:
 
-1. El backend envía la consulta a todos los nodos activos
-2. Cada nodo busca en su índice local
-3. Los resultados se agregan y rankean en el backend
-4. Se devuelven los mejores resultados al usuario
+| Aspecto | DHT Tradicional | DistriSearch |
+|---------|-----------------|--------------|
+| **Ubicación** | Hash del nombre → nodo | Embedding del contenido → nodos similares |
+| **Búsqueda** | Por clave exacta | Por similitud semántica |
+| **Replicación** | Por hash (aleatorio) | Por afinidad de contenido |
+| **Ventaja** | Localización O(log N) | Resultados más relevantes |
 
-**Ventajas**:
+### Embeddings Semánticos
 
-- ✅ No hay punto único de fallo
-- ✅ Escalabilidad lineal
-- ✅ Privacidad de datos (archivos permanecen en nodos)
-- ✅ Reducción de carga en el backend
+DistriSearch genera vectores de 384 dimensiones usando `sentence-transformers`:
 
-### Algoritmo BM25
+```python
+# EmbeddingService (master/embedding_service.py)
+from sentence_transformers import SentenceTransformer
 
-DistriSearch utiliza **BM25 (Best Matching 25)**, un algoritmo de ranking probabilístico que mejora significativamente la relevancia de los resultados de búsqueda.
+model = SentenceTransformer('all-MiniLM-L6-v2')
+embedding = model.encode("texto del documento")  # → Vector 384D
+```
 
-**Características**:
+!!! info "Similitud Coseno"
+    Dos documentos son similares si el ángulo entre sus vectores es pequeño:
+    
+    $$\text{similitud} = \frac{A \cdot B}{||A|| \cdot ||B||}$$
 
-- Considera la frecuencia del término (TF)
-- Considera la frecuencia inversa de documento (IDF)
-- Normaliza por longitud de documento
-- Ajustable con parámetros k1 y b
+### Sistema de Heartbeats
 
-!!! info "Score BM25"
+Los nodos envían heartbeats UDP cada 5 segundos:
+
+```
+Puerto 5000: Heartbeats (PING/PONG)
+Puerto 5001: Elección de líder (ELECTION/COORDINATOR)
+```
+
+| Estado | Condición | Acción |
+|--------|-----------|--------|
+| `online` | Heartbeat OK | Normal |
+| `suspected` | 1-2 beats fallidos | Monitoreo |
+| `offline` | 3+ beats fallidos | Elección si era Master |
+
+### Algoritmo Bully para Elección
+
+Cuando el Master falla, los Slaves candidatos ejecutan el algoritmo Bully:
+
+!!! example "Reglas del Algoritmo"
+    1. **Inicio**: Cualquier nodo puede iniciar elección
+    2. **Mensaje ELECTION**: Se envía a nodos con ID mayor
+    3. **Respuesta OK**: Nodos mayores responden y asumen elección
+    4. **Proclamación**: Nodo con mayor ID envía COORDINATOR a todos
+    5. **Nuevo Master**: Todos reconocen al nuevo líder
     El score BM25 indica qué tan relevante es un documento para una consulta. Un score más alto significa mayor relevancia.
 
 ### Modo Distribuido vs Centralizado
@@ -290,8 +375,8 @@ Ahora que conoces los conceptos básicos de DistriSearch, te recomendamos:
 
 1. [:octicons-rocket-24: Guía de Inicio Rápido](getting-started/index.md)
 2. [:octicons-code-24: Instalación Detallada](getting-started/instalacion.md)
-3. [:octicons-book-24: Tutoriales Prácticos](tutorials/index.md)
-4. [:octicons-tools-24: Arquitectura Completa](arquitectura.md)
+3. [:octicons-tools-24: Arquitectura Completa](arquitectura.md)
+4. [:octicons-book-24: API Reference](api/index.md)
 
 ---
 

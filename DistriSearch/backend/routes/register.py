@@ -251,7 +251,7 @@ async def get_node_configuration(node_id: str):
 @router.post("/upload")
 async def upload_file_to_system(
     file: UploadFile = File(...),
-    node_id: Optional[str] = Form("central"),
+    node_id: Optional[str] = Form(None),  # Usa NODE_ID del entorno si no se especifica
     virtual_path: Optional[str] = Form(None),
     replicate: Optional[str] = Form("false"),
     _: None = Depends(require_api_key)
@@ -260,6 +260,10 @@ async def upload_file_to_system(
     Sube un archivo al sistema.
     Si replicate=true, automáticamente lo replica a otros nodos.
     """
+    # Usar NODE_ID del entorno si no se especifica
+    if not node_id:
+        node_id = os.getenv("NODE_ID", "node_1")
+    
     try:
         # Leer contenido del archivo
         content = await file.read()
@@ -376,10 +380,14 @@ async def upload_file_to_system(
 @router.post("/upload/bulk")
 async def upload_multiple_files(
     files: List[UploadFile] = File(...),
-    node_id: Optional[str] = Form("central"),
+    node_id: Optional[str] = Form(None),  # Usa NODE_ID del entorno si no se especifica
     _: None = Depends(require_api_key)
 ):
     """Sube múltiples archivos de una vez"""
+    # Usar NODE_ID del entorno si no se especifica
+    if not node_id:
+        node_id = os.getenv("NODE_ID", "node_1")
+    
     results = []
     
     for file in files:

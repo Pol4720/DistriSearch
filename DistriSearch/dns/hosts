@@ -1,0 +1,16 @@
+# DNS Hosts File for DistriSearch Cluster
+# Este archivo es actualizado dinámicamente por el sistema
+# Format: IP hostname [aliases...]
+
+# Los nodos se registran aquí al iniciarse
+# y se eliminan cuando fallan los health checks
+
+# Ejemplo de configuración con 3 nodos:
+# 172.20.0.10 node_1.distrisearch.local node_1
+# 172.20.0.11 node_2.distrisearch.local node_2
+# 172.20.0.12 node_3.distrisearch.local node_3
+
+# Alias principal (round-robin a todos los nodos activos)
+# 172.20.0.10 distrisearch.local
+# 172.20.0.11 distrisearch.local
+# 172.20.0.12 distrisearch.local

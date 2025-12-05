@@ -1,25 +1,41 @@
 # Bienvenido a DistriSearch
 
-<div style="text-align: center; margin: 2rem 0;">
-  <img src="assets/logo.png" alt="DistriSearch Logo" style="width: 200px; margin-bottom: 1rem;">
-  <h2 style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-size: 2.5rem; font-weight: 700;">
-    Sistema de Búsqueda Distribuida de Nueva Generación
+<div class="hero-section" style="text-align: center; margin: 2rem 0; padding: 3rem 2rem; background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%); border-radius: 24px; border: 1px solid rgba(102, 126, 234, 0.2);">
+  <img src="assets/logo.png" alt="DistriSearch Logo" style="width: 180px; margin-bottom: 1.5rem; filter: drop-shadow(0 8px 16px rgba(102, 126, 234, 0.3));">
+  <h2 style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-size: 2.5rem; font-weight: 800; margin-bottom: 0.5rem;">
+    Sistema de Búsqueda Distribuida
   </h2>
+  <p style="font-size: 1.2rem; color: #666; margin: 1rem 0 2rem 0;">
+    Arquitectura <strong>Master-Slave</strong> con ubicación semántica y alta disponibilidad
+  </p>
+  <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+    <a href="getting-started/index.md" class="md-button md-button--primary" style="padding: 0.8rem 2rem; font-size: 1.1rem;">
+      🚀 Comenzar Ahora
+    </a>
+    <a href="arquitectura.md" class="md-button" style="padding: 0.8rem 2rem; font-size: 1.1rem;">
+      📐 Ver Arquitectura
+    </a>
+  </div>
 </div>
 
 ---
 
 ## 🚀 ¿Qué es DistriSearch?
 
-**DistriSearch** es un sistema de búsqueda distribuida de archivos de código abierto que permite indexar y buscar archivos a través de múltiples nodos en una red P2P (peer-to-peer). Con una arquitectura moderna basada en FastAPI, Streamlit y Docker, DistriSearch ofrece una solución escalable y eficiente para la gestión y búsqueda de archivos en entornos distribuidos.
+**DistriSearch** es un sistema de búsqueda distribuida de archivos de código abierto basado en arquitectura **Master-Slave** con:
 
-!!! tip "Características Principales"
-    - 🔍 **Búsqueda ultra-rápida** con algoritmo BM25
-    - 🌐 **Arquitectura distribuida** escalable
+- 🧠 **Ubicación semántica** de recursos mediante embeddings
+- 👑 **Elección dinámica de líder** con algoritmo Bully
+- 💓 **Sistema de heartbeats** para detección de fallos
+- 🔄 **Replicación inteligente** por afinidad semántica
+
+!!! success "Características v2.0 - Master-Slave"
+    - 🔍 **Búsqueda semántica** con sentence-transformers
+    - 🌐 **Cluster distribuido** con CoreDNS
+    - ⚡ **Failover automático** en ~15 segundos
     - 🎨 **Interfaz moderna** con Streamlit
-    - 🐳 **Despliegue con Docker** y orquestación
-    - 🔒 **Seguridad robusta** con autenticación API
-    - 📊 **Monitoreo en tiempo real** de métricas
+    - 🐳 **Docker Compose** para cluster de 3 nodos
+    - 📊 **Métricas MTTR/MTBF** de confiabilidad
 
 ---
 
@@ -27,51 +43,51 @@
 
 <div class="grid cards" markdown>
 
--   :material-lightning-bolt:{ .lg .middle } __Búsqueda Veloz__
+-   :material-brain:{ .lg .middle } __Ubicación Semántica__
 
     ---
 
-    Algoritmo BM25 optimizado para resultados en milisegundos. Búsqueda por nombre, contenido y metadatos.
+    Localiza recursos por similitud de contenido usando embeddings de `sentence-transformers`. Sin tablas hash.
 
     [:octicons-arrow-right-24: Ver más](caracteristicas.md#busqueda-avanzada)
 
--   :material-network:{ .lg .middle } __Arquitectura Distribuida__
+-   :material-crown:{ .lg .middle } __Elección de Líder__
 
     ---
 
-    Red P2P con nodos autónomos. Escalabilidad horizontal sin límites y tolerancia a fallos integrada.
+    Algoritmo Bully para elección automática de Master. Cualquier nodo puede ser líder ante fallos.
 
     [:octicons-arrow-right-24: Ver arquitectura](arquitectura.md)
 
--   :material-shield-check:{ .lg .middle } __Seguridad Integrada__
+-   :material-heart-pulse:{ .lg .middle } __Heartbeats UDP__
 
     ---
 
-    Autenticación con API keys, CORS configurado y validación de datos con Pydantic.
+    Detección de fallos en ~15 segundos. Sistema de monitoreo con métricas MTTR/MTBF.
 
-    [:octicons-arrow-right-24: Ver seguridad](backend/security.md)
+    [:octicons-arrow-right-24: Ver tolerancia](caracteristicas.md#tolerancia-a-fallos)
 
--   :material-monitor-dashboard:{ .lg .middle } __Panel de Control__
-
-    ---
-
-    Interfaz web moderna con métricas en tiempo real, gráficos interactivos y gestión de nodos.
-
-    [:octicons-arrow-right-24: Ver frontend](frontend/index.md)
-
--   :material-docker:{ .lg .middle } __Listo para Producción__
+-   :material-content-copy:{ .lg .middle } __Replicación Inteligente__
 
     ---
 
-    Contenedores Docker, Docker Compose y Docker Swarm. Fácil despliegue y escalado.
+    Réplicas en nodos con contenido semánticamente similar. Factor K=2 configurable.
 
-    [:octicons-arrow-right-24: Ver despliegue](deployment/index.md)
+    [:octicons-arrow-right-24: Ver replicación](caracteristicas.md#replicacion-por-afinidad-semantica)
 
--   :material-api:{ .lg .middle } __API REST Completa__
+-   :material-dns:{ .lg .middle } __CoreDNS Integrado__
 
     ---
 
-    Documentación interactiva con Swagger, endpoints bien definidos y respuestas consistentes.
+    Resolución DNS con failover automático. Round-robin entre nodos disponibles.
+
+    [:octicons-arrow-right-24: Ver arquitectura](arquitectura.md)
+
+-   :material-api:{ .lg .middle } __Health Checks__
+
+    ---
+
+    Endpoints de salud para Kubernetes: liveness, readiness y métricas de cluster.
 
     [:octicons-arrow-right-24: Ver API](api/index.md)
 
@@ -91,157 +107,160 @@ DistriSearch es ideal para:
 
 ---
 
-## 🏗️ Arquitectura del Sistema
+## 🏗️ Arquitectura Master-Slave
 
 ```mermaid
 graph TB
-    subgraph "Frontend"
-        UI[Streamlit UI]
+    subgraph "Cluster DistriSearch"
+        DNS[🌐 CoreDNS<br/>Round-Robin]
+        
+        subgraph "Node 1 (MASTER)"
+            M_B[Backend API]
+            M_F[Frontend]
+            M_DB[(MongoDB)]
+        end
+        
+        subgraph "Node 2 (SLAVE)"
+            S1_B[Backend API]
+            S1_F[Frontend]
+            S1_DB[(MongoDB)]
+        end
+        
+        subgraph "Node 3 (SLAVE)"
+            S2_B[Backend API]
+            S2_F[Frontend]
+            S2_DB[(MongoDB)]
+        end
     end
     
-    subgraph "Backend"
-        API[FastAPI Backend]
-        DB[(SQLite Database)]
-        INDEX[Index Service]
-    end
+    DNS --> M_B
+    DNS --> S1_B
+    DNS --> S2_B
     
-    subgraph "Nodos Distribuidos"
-        N1[Agente Node 1]
-        N2[Agente Node 2]
-        N3[Agente Node 3]
-    end
+    M_B <-->|Heartbeat UDP| S1_B
+    M_B <-->|Heartbeat UDP| S2_B
+    S1_B <-->|Heartbeat UDP| S2_B
     
-    UI --> API
-    API --> DB
-    API --> INDEX
-    INDEX --> N1
-    INDEX --> N2
-    INDEX --> N3
+    M_B --> M_DB
+    S1_B --> S1_DB
+    S2_B --> S2_DB
     
-    style UI fill:#667eea
-    style API fill:#764ba2
-    style DB fill:#10b981
-    style N1 fill:#f59e0b
-    style N2 fill:#f59e0b
-    style N3 fill:#f59e0b
+    M_F --> M_B
+    S1_F --> S1_B
+    S2_F --> S2_B
+    
+    style DNS fill:#10b981,stroke:#059669,color:#fff
+    style M_B fill:#667eea,stroke:#5a67d8,color:#fff
+    style S1_B fill:#764ba2,stroke:#6b46c1,color:#fff
+    style S2_B fill:#764ba2,stroke:#6b46c1,color:#fff
 ```
+
+!!! info "¿Por qué Master-Slave?"
+    - **Sin DHT ni hipercubo**: Ubicación semántica basada en embeddings
+    - **Elección dinámica**: Cualquier nodo puede ser Master (Bully Algorithm)
+    - **Alta disponibilidad**: Failover automático en ~15 segundos
+    - **Replicación inteligente**: Por afinidad de contenido, no por hash
 
 ---
 
 ## 🚀 Inicio Rápido
 
-### Instalación en 3 Pasos
+### Despliegue con Docker Compose (Recomendado)
 
-=== "1️⃣ Clonar Repositorio"
+=== "🐳 Cluster Completo (3 Nodos)"
 
     ```bash
+    # Clonar repositorio
     git clone https://github.com/Pol4720/DS-Project.git
-    cd DS-Project/DistriSearch
+    cd DS-Project/DistriSearch/deploy
+    
+    # Levantar cluster
+    docker-compose -f docker-compose.cluster.yml up -d
+    ```
+    
+    **URLs de acceso:**
+    
+    | Componente | URL |
+    |------------|-----|
+    | Frontend Node 1 | http://localhost:8511 |
+    | Frontend Node 2 | http://localhost:8512 |
+    | Frontend Node 3 | http://localhost:8513 |
+    | API Node 1 | http://localhost:8001/docs |
+
+=== "💻 Desarrollo Local"
+
+    ```bash
+    cd DS-Project/DistriSearch/deploy
+    
+    # Un solo nodo para desarrollo
+    docker-compose up -d
     ```
 
-=== "2️⃣ Configurar Entorno"
+=== "🐍 Sin Docker"
 
     ```bash
     # Backend
     cd backend
     pip install -r requirements.txt
-    
-    # Frontend
-    cd ../frontend
-    pip install -r requirements.txt
-    
-    # Agente
-    cd ../agent
-    pip install -r requirements.txt
-    ```
-
-=== "3️⃣ Ejecutar Sistema"
-
-    ```bash
-    # Terminal 1: Backend
-    cd backend
     python main.py
     
-    # Terminal 2: Frontend
+    # Frontend (otra terminal)
     cd frontend
+    pip install -r requirements.txt
     streamlit run app.py
-    
-    # Terminal 3: Agente (opcional)
-    cd agent
-    python agent.py
     ```
 
 !!! success "¡Listo!"
-    Accede a:
+    El cluster está funcionando con:
     
-    - **Frontend**: [http://localhost:8501](http://localhost:8501)
-    - **Backend API**: [http://localhost:8000](http://localhost:8000)
-    - **Swagger Docs**: [http://localhost:8000/docs](http://localhost:8000/docs)
+    - ✅ **3 nodos** con elección automática de Master
+    - ✅ **CoreDNS** para resolución con failover
+    - ✅ **Heartbeats UDP** cada 5 segundos
+    - ✅ **MongoDB** replicado por nodo
 
 [:octicons-arrow-right-24: Guía de instalación completa](getting-started/instalacion.md)
 
 ---
 
-## 📚 Documentación por Componente
+## 📚 Documentación
 
 <div class="grid" markdown>
 
-=== "Backend"
-
-    ### 🔧 Backend API
+=== "🔧 Backend API"
     
     FastAPI con endpoints REST para búsqueda, registro y descarga.
     
-    - [Introducción al Backend](backend/index.md)
-    - [API REST](backend/api.md)
-    - [Base de Datos](backend/database.md)
-    - [Servicios](backend/services.md)
+    - [API Reference](api/index.md)
+    - [Arquitectura](arquitectura.md)
     
-=== "Frontend"
-
-    ### 🎨 Frontend Web
+=== "🎨 Frontend"
     
     Interfaz moderna con Streamlit y componentes personalizados.
     
-    - [Introducción al Frontend](frontend/index.md)
-    - [Componentes UI](frontend/componentes.md)
-    - [Páginas](frontend/paginas.md)
-    - [Estilos y Temas](frontend/estilos.md)
+    - [Características](caracteristicas.md)
+    - [Casos de Uso](casos-de-uso.md)
 
-=== "Agente"
-
-    ### 🤖 Agente de Nodo
+=== "🚀 Despliegue"
     
-    Servicio que indexa y comparte archivos de cada nodo.
+    Docker Compose para cluster de producción.
     
-    - [Introducción al Agente](agent/index.md)
-    - [Funcionamiento](agent/funcionamiento.md)
-    - [Scanner de Archivos](agent/scanner.md)
-    - [API del Agente](agent/api.md)
-
-=== "Despliegue"
-
-    ### 🐳 Despliegue
-    
-    Docker, Docker Compose y Docker Swarm para producción.
-    
-    - [Introducción al Despliegue](deployment/index.md)
-    - [Docker](deployment/docker.md)
-    - [Docker Compose](deployment/docker-compose.md)
-    - [Docker Swarm](deployment/docker-swarm.md)
+    - [Guía de Inicio](getting-started/index.md)
+    - [Instalación](getting-started/instalacion.md)
+    - [Configuración](getting-started/configuracion.md)
 
 </div>
 
 ---
 
-## 📊 Métricas del Proyecto
+## 📊 Stack Tecnológico
 
-| Componente | Tecnología | Líneas de Código | Endpoints |
-|------------|------------|------------------|-----------|
-| Backend | FastAPI | ~2,000 | 15+ |
-| Frontend | Streamlit | ~2,500 | N/A |
-| Agente | FastAPI | ~800 | 5+ |
-| Documentación | MkDocs | ~5,000 | N/A |
+| Componente | Tecnología | Descripción |
+|------------|------------|-------------|
+| Backend | FastAPI + MongoDB | API REST con base de datos NoSQL |
+| Frontend | Streamlit | Interfaz web interactiva |
+| Embeddings | sentence-transformers | Ubicación semántica |
+| DNS | CoreDNS | Resolución con failover |
+| Contenedores | Docker Compose | Orquestación de cluster |
 
 ---
 
@@ -257,7 +276,6 @@ DistriSearch es un proyecto de código abierto y agradecemos las contribuciones 
     - ⭐ Dar una estrella en GitHub
 
 [:octicons-mark-github-16: Ver en GitHub](https://github.com/Pol4720/DS-Project){ .md-button .md-button--primary }
-[:octicons-book-16: Guía de Contribución](development/contribucion.md){ .md-button }
 
 ---
 
@@ -269,12 +287,6 @@ DistriSearch es un proyecto de código abierto y agradecemos las contribuciones 
 
 ---
 
-## 📜 Licencia
-
-DistriSearch está licenciado bajo la licencia MIT. Consulta el archivo [LICENSE](license.md) para más detalles.
-
----
-
 <div style="text-align: center; margin: 3rem 0; padding: 2rem; background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%); border-radius: 16px;">
   <h3>¿Listo para empezar?</h3>
   <p style="font-size: 1.1rem; margin: 1rem 0;">
@@ -283,7 +295,7 @@ DistriSearch está licenciado bajo la licencia MIT. Consulta el archivo [LICENSE
   <a href="getting-started/index.md" class="md-button md-button--primary" style="margin: 0.5rem;">
     🚀 Comenzar Ahora
   </a>
-  <a href="tutorials/index.md" class="md-button" style="margin: 0.5rem;">
-    📚 Ver Tutoriales
+  <a href="api/index.md" class="md-button" style="margin: 0.5rem;">
+    📚 Ver API
   </a>
 </div>

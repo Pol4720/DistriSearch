@@ -328,7 +328,7 @@ Ejemplo: 1.2.3
 
 ## 📜 Licencia
 
-DistriSearch está licenciado bajo [MIT License](license.md).
+DistriSearch está licenciado bajo MIT License.
 
 ---
 

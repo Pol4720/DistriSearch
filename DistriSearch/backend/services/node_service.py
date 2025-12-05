@@ -71,12 +71,15 @@ def check_node_timeouts():
     """Verifica nodos que no han enviado heartbeat recientemente."""
     timeout = datetime.now() - timedelta(minutes=5)
     
-    # Actualizar nodos con timeout
+    # Obtener el ID de este nodo para no marcarlo como offline
+    this_node_id = os.getenv("NODE_ID", "node_1")
+    
+    # Actualizar nodos con timeout (excepto este nodo)
     result = database._db.nodes.update_many(
         {
             "status": "online",
             "last_seen": {"$lt": timeout},
-            "node_id": {"$ne": "central"}  # No marcar nodo central
+            "node_id": {"$ne": this_node_id}  # No marcar este nodo
         },
         {"$set": {"status": "offline"}}
     )

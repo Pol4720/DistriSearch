@@ -953,10 +953,10 @@ pytest tests/test_download.py
 pytest test/test_end_to_end.py -v
 
 # Test de robustez (tolerancia a fallos)
-pytest test/test_dht_robustness.py -v
+pytest test/test_fault_tolerance.py -v
 
-# Test de correctitud
-pytest test/test_dht_correctness.py -v
+# Test de consistencia de replicación
+pytest test/test_replication_consistency.py -v
 ```
 
 ### Escenarios de Prueba
@@ -1202,8 +1202,8 @@ MIT License - Ver [LICENSE](LICENSE) para más detalles
 
 ### v2.1.0 (Q2 2024)
 
-- [ ] DHT (Distributed Hash Table) para escalabilidad
-- [ ] Algoritmo de consenso Raft como alternativa a PoW
+- [ ] Mejoras en el balanceo de carga del Master
+- [ ] Algoritmo de consenso Raft como alternativa a Bully
 - [ ] Replicación geográfica con awareness de latencia
 - [ ] Compresión de archivos en tránsito
 - [ ] Deduplicación a nivel de bloque

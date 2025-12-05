@@ -82,8 +82,6 @@ plugins:
   - search:
       lang: es
       separator: '[\s\-,:!=\[\]()"/]+|(?!\b)(?=[A-Z][a-z])|\.(?!\d)|&[lg]t;'
-  - tags:
-      tags_file: tags.md
   - minify:
       minify_html: true
       minify_js: true
@@ -91,10 +89,6 @@ plugins:
       htmlmin_opts:
         remove_comments: true
       cache_safe: true
-  - git-revision-date-localized:
-      enable_creation_date: true
-      type: timeago
-      locale: es
 
 # Extensions
 markdown_extensions:
@@ -161,13 +155,9 @@ extra:
       link: https://www.python.org
       name: Built with Python
   
-  version:
-    provider: mike
-    default: latest
-  
   generator: false
 
-# Page tree
+# Page tree - Solo archivos existentes
 nav:
   - Inicio:
     - index.md
@@ -178,72 +168,16 @@ nav:
   
   - Guía de Inicio:
     - getting-started/index.md
-    - Requisitos Previos: getting-started/requisitos.md
     - Instalación: getting-started/instalacion.md
     - Configuración: getting-started/configuracion.md
-    - Primer Uso: getting-started/primer-uso.md
-  
-  - Backend:
-    - backend/index.md
-    - API REST: backend/api.md
-    - Base de Datos: backend/database.md
-    - Modelos de Datos: backend/models.md
-    - Servicios: backend/services.md
-    - Seguridad: backend/security.md
-    - Endpoints:
-      - backend/endpoints/search.md
-      - backend/endpoints/register.md
-      - backend/endpoints/download.md
-      - backend/endpoints/central.md
-  
-  - Frontend:
-    - frontend/index.md
-    - Interfaz de Usuario: frontend/ui.md
-    - Componentes: frontend/componentes.md
-    - Páginas: frontend/paginas.md
-    - Estilos y Temas: frontend/estilos.md
-    - Configuración: frontend/configuracion.md
-  
-  - Agente:
-    - agent/index.md
-    - Funcionamiento: agent/funcionamiento.md
-    - Scanner: agent/scanner.md
-    - Uploader: agent/uploader.md
-    - Configuración: agent/configuracion.md
-    - API del Agente: agent/api.md
-  
-  - Despliegue:
-    - deployment/index.md
-    - Docker: deployment/docker.md
-    - Docker Compose: deployment/docker-compose.md
-    - Docker Swarm: deployment/docker-swarm.md
-    - Kubernetes: deployment/kubernetes.md
-    - Producción: deployment/produccion.md
-  
-  - Desarrollo:
-    - development/index.md
-    - Estructura del Proyecto: development/estructura.md
-    - Guía de Contribución: development/contribucion.md
-    - Testing: development/testing.md
-    - Debugging: development/debugging.md
-    - Best Practices: development/best-practices.md
   
   - API Reference:
     - api/index.md
-    - Búsqueda: api/search.md
-    - Nodos: api/nodes.md
-    - Archivos: api/files.md
-    - Central: api/central.md
-    - Autenticación: api/auth.md
   
-  - Tutoriales:
-    - tutorials/index.md
-    - Configurar un Nodo: tutorials/setup-node.md
-    - Búsqueda Avanzada: tutorials/advanced-search.md
-    - Modo Centralizado: tutorials/central-mode.md
-    - Replicación: tutorials/replication.md
-    - Monitoreo: tutorials/monitoring.md
+  - Guías HTTPS:
+    - HTTPS_SETUP.md
+    - QUICKSTART_HTTPS.md
+    - NETWORK_DOWNLOAD_FIX.md
   
   - FAQ: faq.md
   - Changelog: changelog.md
-  - Licencia: license.md

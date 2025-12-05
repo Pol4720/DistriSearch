@@ -1,173 +1,149 @@
-# Arquitectura del Sistema
+# Arquitectura del Sistema - DistriSearch
 
-Esta sección describe en detalle la arquitectura técnica de DistriSearch, incluyendo componentes, flujos de datos y decisiones de diseño.
+Esta sección describe la arquitectura técnica de DistriSearch basada en el modelo **Master-Slave** con ubicación semántica de recursos.
 
 ---
 
-## 🏗️ Arquitectura General
+## 🏗️ Arquitectura General: Master-Slave
 
-```mermaid
-graph TB
-    subgraph "Capa de Presentación"
-        UI[Streamlit Frontend]
-    end
-    
-    subgraph "Capa de Aplicación"
-        API[FastAPI Backend]
-        AUTH[Autenticación]
-        SEARCH[Search Service]
-        INDEX[Index Service]
-        NODE[Node Service]
-        REP[Replication Service]
-    end
-    
-    subgraph "Capa de Datos"
-        DB[(SQLite DB)]
-        CACHE[(Cache)]
-    end
-    
-    subgraph "Nodos Distribuidos"
-        A1[Agente 1]
-        A2[Agente 2]
-        AN[Agente N]
-    end
-    
-    UI --> API
-    API --> AUTH
-    API --> SEARCH
-    API --> INDEX
-    API --> NODE
-    API --> REP
-    
-    SEARCH --> DB
-    INDEX --> DB
-    NODE --> DB
-    REP --> DB
-    
-    SEARCH -.->|Consulta| A1
-    SEARCH -.->|Consulta| A2
-    SEARCH -.->|Consulta| AN
-    
-    INDEX -.->|Indexación| A1
-    INDEX -.->|Indexación| A2
-    INDEX -.->|Indexación| AN
-    
-    style UI fill:#667eea
-    style API fill:#764ba2
-    style DB fill:#10b981
-    style A1 fill:#f59e0b
-    style A2 fill:#f59e0b
-    style AN fill:#f59e0b
+DistriSearch utiliza una arquitectura **Master-Slave distribuida** donde:
+
+- **Cualquier nodo puede ser Master** (elección dinámica mediante algoritmo Bully)
+- **Todos los nodos son Slaves** por defecto
+- **El Master coordina** búsquedas, replicación y ubicación de recursos
+- **Los Slaves almacenan** documentos y responden queries
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        DistriSearch Cluster                      │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│    ┌──────────────┐                                             │
+│    │   CoreDNS    │  ← Resolución DNS con failover              │
+│    │  (DNS Round  │                                             │
+│    │   Robin)     │                                             │
+│    └──────┬───────┘                                             │
+│           │                                                      │
+│    ┌──────┴────────────────────────────────────────┐            │
+│    │                                                │            │
+│    ▼                    ▼                    ▼      │            │
+│ ┌──────────┐      ┌──────────┐      ┌──────────┐   │            │
+│ │  Node 1  │      │  Node 2  │      │  Node 3  │   │            │
+│ │ (MASTER) │◄────►│ (SLAVE)  │◄────►│ (SLAVE)  │   │            │
+│ │          │      │          │      │          │   │            │
+│ │ Backend  │      │ Backend  │      │ Backend  │   │            │
+│ │ Frontend │      │ Frontend │      │ Frontend │   │            │
+│ │ MongoDB  │      │ MongoDB  │      │ MongoDB  │   │            │
+│ └──────────┘      └──────────┘      └──────────┘   │            │
+│       │                │                │           │            │
+│       └────────────────┼────────────────┘           │            │
+│                        │                            │            │
+│              Heartbeats UDP (puerto 5000)           │            │
+│              Elección Bully (puerto 5001)           │            │
+│                                                     │            │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
 ## 📦 Componentes Principales
 
-### 1. Frontend (Streamlit)
+### 1. Core (Código Compartido)
 
-**Responsabilidades**:
-
-- Interfaz de usuario web
-- Visualización de resultados
-- Gestión de nodos
-- Configuración del sistema
-
-**Stack Tecnológico**:
-
-```yaml
-- Framework: Streamlit 1.32+
-- Visualización: Plotly 5.18+
-- HTTP Client: Requests
-- Componentes: streamlit-extras, streamlit-option-menu
-```
-
-**Estructura**:
+Módulos compartidos entre Master y Slaves:
 
 ```
-frontend/
-├── app.py              # Página principal
-├── pages/              # Sistema de páginas
-│   ├── 01_🔍_Buscar.py
-│   ├── 02_🌐_Nodos.py
-│   ├── 03_🏢_Central.py
-│   └── 04_📊_Estadísticas.py
-├── components/         # Componentes reutilizables
-│   ├── cards.py
-│   └── styles.py
-└── utils/             # Utilidades
-    ├── api_client.py
-    └── helpers.py
+core/
+├── __init__.py
+├── config.py      # ClusterConfig - Configuración del cluster
+└── models.py      # NodeInfo, ClusterMessage, SlaveProfile, etc.
 ```
 
-### 2. Backend (FastAPI)
+**Configuración del Nodo** (`core/config.py`):
 
-**Responsabilidades**:
+| Parámetro | Tipo | Descripción |
+|-----------|------|-------------|
+| `node_id` | string | ID único del nodo |
+| `node_role` | enum | "master" o "slave" |
+| `master_candidate` | bool | ¿Puede ser elegido Master? |
+| `heartbeat_interval` | int | Segundos entre heartbeats |
+| `heartbeat_timeout` | int | Timeout para considerar nodo caído |
+| `replication_factor` | int | Número de réplicas (K) |
+| `embedding_model` | string | Modelo para embeddings semánticos |
 
-- API REST centralizada
-- Coordinación de búsquedas
-- Gestión de nodos
-- Replicación de datos
-- Modo centralizado
+### 2. Master (Lógica de Coordinación)
 
-**Stack Tecnológico**:
+El Master coordina el cluster:
 
-```yaml
-- Framework: FastAPI 0.109+
-- ORM: SQLAlchemy 2.0+
-- Validación: Pydantic 2.5+
-- Base de Datos: SQLite
-- ASGI Server: Uvicorn
+```
+master/
+├── __init__.py
+├── embedding_service.py       # Generación de embeddings semánticos
+├── location_index.py          # Índice de ubicación de documentos
+├── load_balancer.py           # Balanceo de carga entre Slaves
+├── query_router.py            # Enrutamiento de búsquedas
+└── replication_coordinator.py # Coordinación de replicación
 ```
 
-**Estructura**:
+**Funcionalidades del Master**:
+
+| Componente | Responsabilidad |
+|------------|-----------------|
+| `EmbeddingService` | Genera vectores semánticos de documentos/queries usando `sentence-transformers` |
+| `SemanticLocationIndex` | Índice de ubicación por similitud semántica |
+| `LoadBalancer` | Distribuye carga según afinidad y estado (weighted, round-robin, least-connections) |
+| `QueryRouter` | Enruta queries a Slaves relevantes |
+| `ReplicationCoordinator` | Coordina réplicas por afinidad semántica |
+
+### 3. Backend (API y Servicios)
+
+Cada nodo ejecuta un backend FastAPI:
 
 ```
 backend/
-├── main.py            # Punto de entrada
-├── database.py        # Configuración BD
-├── models.py          # Modelos SQLAlchemy
-├── security.py        # Autenticación
-├── routes/            # Endpoints
-│   ├── search.py
-│   ├── register.py
-│   ├── download.py
-│   └── central.py
-├── services/          # Lógica de negocio
-│   ├── index_service.py
-│   ├── node_service.py
-│   ├── central_service.py
-│   └── replication_service.py
-└── tests/            # Tests unitarios
+├── main.py                 # Punto de entrada
+├── database.py             # Conexión MongoDB
+├── models.py               # Modelos Pydantic
+├── routes/
+│   ├── auth.py            # Autenticación JWT
+│   ├── search.py          # Búsqueda distribuida
+│   ├── register.py        # Registro de nodos y archivos
+│   ├── download.py        # Descarga de archivos
+│   ├── cluster.py         # Operaciones de cluster
+│   └── health.py          # Health checks
+└── services/
+    ├── heartbeat.py       # Sistema de heartbeats UDP
+    ├── election.py        # Algoritmo Bully para elección
+    ├── node_service.py    # Gestión de nodos
+    ├── replication_service.py
+    ├── dynamic_replication.py
+    └── reliability_metrics.py  # MTTR/MTBF
 ```
 
-### 3. Agente (Node Service)
+### 4. Frontend (Streamlit)
 
-**Responsabilidades**:
-
-- Escaneo de carpetas locales
-- Indexación de archivos
-- API REST local
-- Sincronización con backend
-
-**Stack Tecnológico**:
-
-```yaml
-- Framework: FastAPI
-- Scanner: watchdog (opcional)
-- Hash: hashlib (SHA256)
-- Threading: concurrent.futures
-```
-
-**Estructura**:
+Interfaz web por nodo:
 
 ```
-agent/
-├── agent.py          # Orquestador principal
-├── server.py         # API REST
-├── scanner.py        # Escaneo de archivos
-├── uploader.py       # Sincronización
-└── config.yaml       # Configuración
+frontend/
+├── app.py                 # Home con autenticación
+├── pages/
+│   ├── 01_🔍_Buscar.py   # Búsqueda distribuida
+│   ├── 02_🌐_Nodos.py    # Gestión de nodos
+│   ├── 03_📊_Estadísticas.py
+│   └── 04_📤_Subir_Archivos.py
+└── utils/
+    └── api_client.py      # Cliente HTTP
+```
+
+### 5. DNS (CoreDNS)
+
+Resolución DNS con failover automático:
+
+```
+dns/
+├── Corefile    # Configuración CoreDNS
+└── hosts       # Hosts dinámicos (se actualizan automáticamente)
 ```
 
 ---
@@ -176,391 +152,209 @@ agent/
 
 ### Flujo de Búsqueda Distribuida
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant U as Usuario
-    participant F as Frontend
-    participant B as Backend
-    participant DB as Database
-    participant N1 as Nodo 1
-    participant N2 as Nodo 2
-    
-    U->>F: Ingresa "proyecto.pdf"
-    F->>B: POST /search/?q=proyecto.pdf
-    B->>DB: Obtiene nodos activos
-    DB-->>B: [node1, node2]
-    
-    par Búsqueda Paralela
-        B->>N1: GET /local/search?q=proyecto.pdf
-        and
-        B->>N2: GET /local/search?q=proyecto.pdf
-    end
-    
-    N1-->>B: [{file1, score: 8.5}]
-    N2-->>B: [{file2, score: 7.2}]
-    
-    B->>B: Agrega resultados
-    B->>B: Aplica BM25 global
-    B->>B: Ordena por score
-    
-    B-->>F: Resultados rankeados
-    F->>F: Renderiza cards
-    F-->>U: Muestra resultados
+1. Usuario ingresa query en Frontend
+2. Frontend envía `POST /search` al Backend local
+3. Backend (si es Master o conoce al Master):
+   - Genera embedding de la query
+   - Identifica Slaves con contenido similar (ubicación semántica)
+   - Envía query en paralelo a Slaves relevantes
+4. Slaves buscan en su MongoDB local
+5. Master agrega y rankea resultados
+6. Resultados se devuelven al Frontend
+
+### Flujo de Elección de Líder (Bully Algorithm)
+
+```
+1. Node_1 detecta que Master no responde (3 heartbeats fallidos)
+
+2. Node_1 inicia elección:
+   Node_1 ────ELECTION────► Node_2 (ID mayor)
+   Node_1 ────ELECTION────► Node_3 (ID mayor)
+
+3. Nodos con ID mayor responden:
+   Node_2 ────ELECTION_OK──► Node_1
+   Node_3 ────ELECTION_OK──► Node_1
+
+4. Node_1 espera... Node_3 (mayor ID) debe proclamarse
+
+5. Node_3 gana y se proclama:
+   Node_3 ────COORDINATOR──► Node_1
+   Node_3 ────COORDINATOR──► Node_2
+
+6. Todos reconocen a Node_3 como nuevo Master
 ```
 
-### Flujo de Indexación (Agente)
+### Flujo de Replicación por Afinidad Semántica
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant A as Agente
-    participant FS as Filesystem
-    participant DB as Local DB
-    participant B as Backend
-    
-    loop Escaneo Periódico
-        A->>FS: Escanear carpeta
-        FS-->>A: Lista de archivos
-        
-        loop Por cada archivo
-            A->>A: Calcular SHA256
-            A->>A: Extraer metadatos
-            A->>DB: Guardar en índice local
-        end
-        
-        A->>B: POST /register/files
-        B->>B: Actualiza índice central
-        B-->>A: Confirmación
-        
-        A->>A: Espera intervalo
-    end
+1. Usuario sube documento a Node_1
+2. Node_1 notifica al Master
+3. Master genera embedding del documento
+4. Master selecciona Slaves con contenido semánticamente similar
+5. Master coordina replicación a nodos seleccionados
+6. Se mantiene factor de replicación K=2
+
+---
+
+## 🌐 Topología de Red
+
+### Configuración Docker
+
+```yaml
+networks:
+  distrisearch_cluster:
+    subnet: 172.20.0.0/24
+
+# IPs Fijas:
+# DNS:     172.20.0.2
+# Node_1:  172.20.0.11 (backend), 172.20.0.12 (frontend)
+# Node_2:  172.20.0.21 (backend), 172.20.0.22 (frontend)
+# Node_3:  172.20.0.31 (backend), 172.20.0.32 (frontend)
 ```
 
-### Flujo de Descarga
+### Puertos
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant U as Usuario
-    participant F as Frontend
-    participant B as Backend
-    participant N as Nodo
-    
-    U->>F: Click "Descargar"
-    F->>B: POST /download/ {file_id}
-    B->>B: Consulta BD por file_id
-    B->>B: Obtiene nodo propietario
-    
-    alt Nodo Online
-        B->>N: Verifica disponibilidad
-        N-->>B: OK
-        B-->>F: URL directa al nodo
-        F-->>U: Redirige a nodo
-        U->>N: GET /download/{file_id}
-        N-->>U: Archivo descargado
-    else Nodo Offline
-        B->>B: Busca en central storage
-        B-->>F: URL al backend
-        F-->>U: Redirige al backend
-        U->>B: GET /download/file/{file_id}
-        B-->>U: Archivo desde central
-    end
+| Puerto | Protocolo | Uso |
+|--------|-----------|-----|
+| 8000 | HTTP | API Backend |
+| 8443 | HTTPS | API Backend (SSL) |
+| 8501 | HTTP | Frontend Streamlit |
+| 5000 | UDP | Heartbeats |
+| 5001 | UDP | Elección de líder |
+| 27017 | TCP | MongoDB |
+| 53 | UDP/TCP | DNS |
+
+---
+
+## 🛡️ Tolerancia a Fallos
+
+### Sistema de Heartbeats
+
+- **Protocolo**: UDP
+- **Intervalo**: 5 segundos
+- **Timeout**: 15 segundos (3 beats fallidos)
+- **Acción**: Marcar nodo como `offline`, iniciar recuperación de réplicas
+
+### Elección de Líder
+
+- **Algoritmo**: Bully
+- **Trigger**: Master no responde a 3 heartbeats consecutivos
+- **Criterio**: Gana el nodo con mayor `node_id` (lexicográfico)
+- **Tiempo de elección**: ~10-15 segundos
+
+### Replicación
+
+- **Factor por defecto**: K=2
+- **Criterio de selección**: Afinidad semántica (nodos con contenido similar)
+- **Modelo de consistencia**: Eventual (Last-Write-Wins)
+- **Recuperación**: Automática ante fallo de Slave
+
+---
+
+## 📊 Métricas de Confiabilidad
+
+El sistema registra automáticamente:
+
+- **MTTR** (Mean Time To Recovery): Tiempo promedio de recuperación
+- **MTBF** (Mean Time Between Failures): Tiempo entre fallos
+- **Disponibilidad**: `MTBF / (MTBF + MTTR)`
+
+Endpoint: `GET /health/cluster`
+
+---
+
+## 🔧 Configuración por Variables de Entorno
+
+```bash
+# Identificación
+NODE_ID=node_1
+NODE_ROLE=slave
+MASTER_CANDIDATE=true
+
+# Red
+BACKEND_HOST=0.0.0.0
+BACKEND_PORT=8000
+EXTERNAL_IP=172.20.0.11
+
+# Cluster
+CLUSTER_PEERS=node_2:172.20.0.21:8000:5000:5001,node_3:172.20.0.31:8000:5000:5001
+HEARTBEAT_INTERVAL=5
+HEARTBEAT_TIMEOUT=15
+
+# Replicación
+REPLICATION_FACTOR=2
+CONSISTENCY_MODEL=eventual
+
+# Base de datos
+MONGO_URI=mongodb://localhost:27017
+MONGO_DBNAME=distrisearch
+
+# Embeddings (ubicación semántica)
+EMBEDDING_MODEL=all-MiniLM-L6-v2
 ```
 
 ---
 
-## 🗄️ Modelo de Datos
+## 🚀 Despliegue
 
-### Diagrama ER
+### Docker Compose (Cluster de 3 nodos)
 
-```mermaid
-erDiagram
-    NODE ||--o{ FILE : tiene
-    NODE {
-        string node_id PK
-        string name
-        string ip_address
-        int port
-        enum status
-        int shared_files_count
-        datetime last_seen
-    }
-    
-    FILE {
-        string file_id PK
-        string node_id FK
-        string name
-        string path
-        int size
-        string file_type
-        string checksum
-        datetime indexed_at
-        datetime modified_at
-    }
-    
-    FILE ||--o{ METADATA : tiene
-    METADATA {
-        int id PK
-        string file_id FK
-        string key
-        string value
-    }
+```bash
+cd DistriSearch/deploy
+docker-compose -f docker-compose.cluster.yml up -d
 ```
 
-### Modelos SQLAlchemy
+Esto levanta:
+- 1 servidor DNS (CoreDNS)
+- 3 nodos completos (backend + frontend + MongoDB cada uno)
 
-=== "Node Model"
+### URLs de Acceso
 
-    ```python
-    class Node(Base):
-        __tablename__ = "nodes"
-        
-        node_id = Column(String, primary_key=True)
-        name = Column(String, nullable=False)
-        ip_address = Column(String, nullable=False)
-        port = Column(Integer, nullable=False)
-        status = Column(Enum(NodeStatus), default=NodeStatus.OFFLINE)
-        shared_files_count = Column(Integer, default=0)
-        last_seen = Column(DateTime, default=datetime.utcnow)
-        
-        # Relación con archivos
-        files = relationship("File", back_populates="node", cascade="all, delete-orphan")
-    ```
-
-=== "File Model"
-
-    ```python
-    class File(Base):
-        __tablename__ = "files"
-        
-        file_id = Column(String, primary_key=True)
-        node_id = Column(String, ForeignKey("nodes.node_id"))
-        name = Column(String, nullable=False, index=True)
-        path = Column(String)
-        size = Column(Integer)
-        file_type = Column(Enum(FileType))
-        checksum = Column(String)
-        indexed_at = Column(DateTime, default=datetime.utcnow)
-        modified_at = Column(DateTime)
-        
-        # Relación con nodo
-        node = relationship("Node", back_populates="files")
-        
-        # Índice para búsquedas
-        __table_args__ = (
-            Index('idx_name_type', 'name', 'file_type'),
-        )
-    ```
+| Componente | URL |
+|------------|-----|
+| Frontend Node 1 | http://localhost:8511 |
+| Frontend Node 2 | http://localhost:8512 |
+| Frontend Node 3 | http://localhost:8513 |
+| API Node 1 | http://localhost:8001 |
+| API Node 2 | http://localhost:8002 |
+| API Node 3 | http://localhost:8003 |
 
 ---
 
-## 🔌 API Design
+## 🔌 API Endpoints Principales
 
-### Principios REST
+### Health Checks
 
-DistriSearch sigue los principios REST:
+| Endpoint | Descripción |
+|----------|-------------|
+| `GET /health` | Check básico |
+| `GET /health/detailed` | Métricas del sistema |
+| `GET /health/cluster` | Estado del cluster |
+| `GET /health/ready` | Readiness probe |
+| `GET /health/live` | Liveness probe |
 
-| Principio | Implementación |
-|-----------|----------------|
-| **Stateless** | No se mantiene estado de sesión |
-| **Cacheable** | Headers Cache-Control apropiados |
-| **Uniform Interface** | Uso consistente de HTTP verbs |
-| **Layered System** | Arquitectura en capas clara |
+### Búsqueda
 
-### Versionado de API
+| Endpoint | Descripción |
+|----------|-------------|
+| `GET /search/?q={query}` | Búsqueda distribuida |
+| `GET /search/nodes` | Lista de nodos |
 
-```http
-# Versión en URL (futuro)
-GET /api/v1/search/
-GET /api/v2/search/
+### Registro
 
-# Versión en header (actual)
-X-API-Version: 1.0
-```
+| Endpoint | Descripción |
+|----------|-------------|
+| `POST /register/node` | Registrar nodo |
+| `POST /register/files` | Registrar archivos |
+| `POST /register/upload` | Subir archivo |
 
-### Códigos de Estado HTTP
+### Cluster
 
-| Código | Uso | Ejemplo |
-|--------|-----|---------|
-| `200` | Success | Búsqueda exitosa |
-| `201` | Created | Nodo registrado |
-| `400` | Bad Request | Parámetros inválidos |
-| `401` | Unauthorized | API key inválida |
-| `404` | Not Found | Archivo no encontrado |
-| `500` | Server Error | Error interno |
-| `503` | Service Unavailable | Nodo offline |
+| Endpoint | Descripción |
+|----------|-------------|
+| `GET /cluster/status` | Estado del cluster |
+| `POST /cluster/election` | Forzar elección |
 
 ---
 
-## 🔐 Seguridad en Capas
-
-```mermaid
-graph TD
-    A[Request] --> B{CORS Check}
-    B -->|Fail| C[403 Forbidden]
-    B -->|Pass| D{Auth Check}
-    D -->|Fail| E[401 Unauthorized]
-    D -->|Pass| F{Rate Limit}
-    F -->|Exceeded| G[429 Too Many Requests]
-    F -->|OK| H{Validation}
-    H -->|Fail| I[400 Bad Request]
-    H -->|Pass| J[Process Request]
-    J --> K[Response]
-    
-    style A fill:#667eea
-    style K fill:#10b981
-    style C fill:#ef4444
-    style E fill:#ef4444
-    style G fill:#f59e0b
-    style I fill:#ef4444
-```
-
-### Capas de Seguridad
-
-1. **CORS**: Valida origen de peticiones
-2. **Autenticación**: Verifica API key (opcional)
-3. **Rate Limiting**: Previene abuso
-4. **Validación**: Pydantic valida datos
-5. **Sanitización**: Limpia inputs peligrosos
-
----
-
-## 📡 Comunicación Entre Componentes
-
-### Protocolo HTTP/REST
-
-Toda la comunicación usa HTTP/REST:
-
-```python
-# Frontend → Backend
-response = requests.post(
-    "http://backend:8000/search/",
-    json={"q": "documento"},
-    headers={"X-API-KEY": api_key}
-)
-
-# Backend → Agente
-response = requests.get(
-    f"http://{node.ip_address}:{node.port}/local/search",
-    params={"q": "documento"}
-)
-```
-
-### Formato de Mensajes
-
-Todos los mensajes usan **JSON**:
-
-```json
-{
-  "status": "success",
-  "data": {
-    "files": [...],
-    "total": 10,
-    "query_time_ms": 150
-  },
-  "error": null
-}
-```
-
----
-
-## ⚡ Optimizaciones de Rendimiento
-
-### 1. Índices de Base de Datos
-
-```sql
--- Índice en file_id para búsquedas rápidas
-CREATE INDEX idx_file_id ON files(file_id);
-
--- Índice compuesto para filtros
-CREATE INDEX idx_name_type ON files(name, file_type);
-
--- Índice en checksum para duplicados
-CREATE INDEX idx_checksum ON files(checksum);
-```
-
-### 2. Búsquedas Asíncronas
-
-```python
-import asyncio
-import aiohttp
-
-async def search_node(session, node, query):
-    url = f"http://{node.ip}:{node.port}/local/search"
-    async with session.get(url, params={"q": query}) as response:
-        return await response.json()
-
-async def search_all_nodes(nodes, query):
-    async with aiohttp.ClientSession() as session:
-        tasks = [search_node(session, node, query) for node in nodes]
-        return await asyncio.gather(*tasks)
-```
-
-### 3. Cache de Resultados
-
-```python
-from functools import lru_cache
-
-@lru_cache(maxsize=1000)
-def get_node_info(node_id: str):
-    return db.query(Node).filter_by(node_id=node_id).first()
-```
-
-### 4. Paginación
-
-```python
-# Limitar resultados por defecto
-@router.get("/search/")
-async def search(
-    q: str,
-    max_results: int = Query(default=50, le=200)
-):
-    # ...
-```
-
----
-
-## 🧩 Patrones de Diseño Utilizados
-
-| Patrón | Aplicación | Beneficio |
-|--------|------------|-----------|
-| **Repository** | `services/` | Abstracción de datos |
-| **Singleton** | API Client | Única instancia |
-| **Factory** | File scanners | Creación flexible |
-| **Observer** | File watcher | Eventos de cambio |
-| **Strategy** | Search algorithms | Algoritmos intercambiables |
-
----
-
-## 🔮 Escalabilidad
-
-### Escalado Horizontal
-
-```mermaid
-graph LR
-    LB[Load Balancer]
-    LB --> B1[Backend 1]
-    LB --> B2[Backend 2]
-    LB --> B3[Backend 3]
-    
-    B1 --> DB[(Shared DB)]
-    B2 --> DB
-    B3 --> DB
-    
-    style LB fill:#667eea
-    style DB fill:#10b981
-```
-
-### Escalado de Nodos
-
-Sin límite teórico de nodos:
-
-- ✅ Cada nodo es independiente
-- ✅ Búsqueda en paralelo
-- ✅ Sin cuello de botella centralizado
-
----
-
-[:octicons-arrow-left-24: Volver a Características](caracteristicas.md){ .md-button }
-[:octicons-arrow-right-24: Comenzar Instalación](getting-started/instalacion.md){ .md-button .md-button--primary }
+[:octicons-arrow-left-24: Volver](index.md){ .md-button }
+[:octicons-arrow-right-24: Características](caracteristicas.md){ .md-button .md-button--primary }

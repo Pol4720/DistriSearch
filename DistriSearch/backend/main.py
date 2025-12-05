@@ -5,27 +5,29 @@ import asyncio
 import logging
 import os
 import httpx
-from typing import Dict
+from typing import Dict, Optional
 from datetime import datetime
 
-from routes import search, register, download, auth, coordination
+from routes import search, register, download, auth, cluster, health
 from services import replication_service, node_service
 from services.dynamic_replication import get_replication_service
-from services.coordination.coordinator import get_coordinator
 from services.naming.multicast_discovery import get_multicast_service
 from services.naming.hierarchical_naming import get_namespace
 from services.naming.ip_cache import get_ip_cache
+from services.cluster_init import initialize_cluster, shutdown_cluster
 from models import NodeInfo
 import database
 import uvicorn
 import socket
-from services.checkpoint_service import get_checkpoint_service
 from services.reliability_metrics import get_reliability_metrics
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # ✅ NUEVO: Lifespan context manager
+cluster_initializer: Optional[object] = None
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Gestión del ciclo de vida de la aplicación"""
@@ -40,7 +42,7 @@ async def lifespan(app: FastAPI):
         logger.error(f"❌ Error conectando a MongoDB: {e}")
         raise
     
-    # ✅ NUEVO: Auto-registrar nodo central
+    # Auto-registrar este nodo en el cluster
     backend_ip = os.getenv("EXTERNAL_IP")
     if not backend_ip:
         try:
@@ -52,12 +54,13 @@ async def lifespan(app: FastAPI):
             backend_ip = "127.0.0.1"
     
     backend_port = int(os.getenv("BACKEND_PORT", "8000"))
-    node_id = os.getenv("NODE_ID", "central")
+    node_id = os.getenv("NODE_ID", "node_1")
+    node_role = os.getenv("NODE_ROLE", "slave")
     
-    # Registrar el nodo central
-    central_node = NodeInfo(
+    # Registrar este nodo en el cluster
+    this_node = NodeInfo(
         node_id=node_id,
-        name="Backend Central",
+        name=f"Node {node_id}",
         ip_address=backend_ip,
         port=backend_port,
         status="online",
@@ -65,8 +68,11 @@ async def lifespan(app: FastAPI):
         shared_files_count=0
     )
     
-    database.register_node(central_node)
-    logger.info(f"✅ Nodo central registrado: {node_id} ({backend_ip}:{backend_port})")
+    database.register_node(this_node)
+    logger.info(f"✅ Nodo registrado en cluster: {node_id} (rol: {node_role}) - {backend_ip}:{backend_port}")
+
+    # Inicializar métricas de confiabilidad
+    reliability_metrics = get_reliability_metrics()
     
     # Iniciar servicio de replicación dinámica
     repl_service = get_replication_service()
@@ -92,7 +98,7 @@ async def lifespan(app: FastAPI):
                 # Verificar timeouts
                 timed_out_nodes = node_service.check_node_timeouts()
                 
-                # Mantener heartbeat del nodo central
+                # Mantener heartbeat de este nodo
                 node_service.update_node_heartbeat(node_id)
                 
                 # ✅ NUEVO: Recuperación automática de nodos caídos
@@ -152,6 +158,10 @@ async def lifespan(app: FastAPI):
     
     discovery_task = asyncio.create_task(_node_discovery_loop())
 
+    # Inicializar cluster Master-Slave (Heartbeat + Bully election)
+    global cluster_initializer
+    cluster_initializer = await initialize_cluster()
+
     async def _probe_unknown_nodes():
         """Intenta contactar nodos con estado 'unknown'."""
         unknown_nodes = [n for n in database.get_all_nodes() 
@@ -167,45 +177,6 @@ async def lifespan(app: FastAPI):
                         logger.info(f"Nodo {node['node_id']} descubierto como ONLINE")
             except Exception:
                 pass
-
-    # Iniciar coordinador distribuido
-    coordinator = get_coordinator()
-    
-    # Elección inicial de líder si es necesario
-    if not coordinator.get_current_leader():
-        election_task = asyncio.create_task(coordinator.start_election(reason="startup"))
-    
-    # Loop de verificación de líder
-    async def _leader_check_loop():
-        """Verifica periódicamente si el líder sigue activo"""
-        interval = 60
-        while True:
-            try:
-                leader = coordinator.get_current_leader()
-                if leader:
-                    leader_node = database.get_node(leader)
-                    
-                    # ✅ FIX: Verificar que el nodo existe Y está online
-                    if not leader_node:
-                        logger.warning(f"⚠️ Líder {leader} no existe en DB - Iniciando nueva elección")
-                        await coordinator.start_election(reason="leader_not_found")
-                    elif leader_node.get("status") != "online":
-                        logger.warning(f"⚠️ Líder {leader} está {leader_node.get('status')} - Iniciando nueva elección")
-                        await coordinator.start_election(reason="leader_offline")
-                    else:
-                        # Todo OK
-                        logger.debug(f"✅ Líder {leader} está activo")
-                else:
-                    # No hay líder, iniciar elección
-                    logger.info("🗳️ No hay líder activo - Iniciando elección")
-                    await coordinator.start_election(reason="no_leader")
-                    
-            except Exception as e:
-                logger.error(f"Error en verificación de líder: {e}")
-            finally:
-                await asyncio.sleep(interval)
-    
-    leader_check_task = asyncio.create_task(_leader_check_loop())
 
     # Inicializar namespace jerárquico
     namespace = get_namespace()
@@ -248,23 +219,34 @@ async def lifespan(app: FastAPI):
     multicast_task = asyncio.create_task(multicast.start())
     logger.info("✅ Multicast discovery iniciado")
     
+    # Consolidar tareas para shutdown limpio
+    background_tasks = [
+        replication_task,
+        maintenance_task,
+        discovery_task,
+        multicast_task,
+    ]
+    
     # ✅ Yield control (aplicación corriendo)
     yield
     
     # SHUTDOWN
     logger.info("🛑 Deteniendo DistriSearch...")
     
-    # ✅ Marcar nodo central como offline antes de detener
+    # Marcar este nodo como offline antes de detener
     database.update_node_status(node_id, "offline")
     
     # Cancelar todas las tareas
-    for task in [replication_task, maintenance_task, discovery_task, leader_check_task, multicast_task, checkpoint_task]:
+    for task in background_tasks:
         task.cancel()
         try:
             await task
         except asyncio.CancelledError:
             pass
     
+    # Detener servicios del cluster
+    await shutdown_cluster()
+
     # Detener multicast
     multicast.stop()
     
@@ -292,15 +274,12 @@ app.include_router(auth.router)
 app.include_router(search.router)
 app.include_router(register.router)
 app.include_router(download.router)
-app.include_router(coordination.router)
+app.include_router(cluster.router)  # Nuevos endpoints del cluster Master-Slave
+app.include_router(health.router)  # Health check endpoints
 
 @app.get("/")
 async def root():
     return {"message": "DistriSearch API - MongoDB + Replicación Dinámica", "version": "2.0.0"}
-
-@app.get("/health")
-async def health_check():
-    return {"status": "healthy", "mode": "distributed", "database": "mongodb"}
 
 def get_local_ip():
     """Obtiene la IP local de la máquina."""

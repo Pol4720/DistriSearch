@@ -82,116 +82,126 @@ GET /search/?q=documento&include_score=true
 
 ---
 
-## 🌐 Arquitectura Distribuida
+## 🌐 Arquitectura Master-Slave
 
-### Nodos Autónomos
+### Modelo de Cluster
 
-Cada nodo opera de forma independiente:
+DistriSearch utiliza una arquitectura **Master-Slave** distribuida:
 
-- 🔄 **Escaneo automático**: Monitoreo continuo de carpetas
-- 📊 **Índice local**: Base de datos SQLite propia
-- 🔌 **API REST**: Interfaz de consulta independiente
-- ⚡ **Cache local**: Respuestas rápidas
+- 👑 **Master dinámico**: Cualquier nodo puede ser elegido Master
+- 🔄 **Elección automática**: Algoritmo Bully para failover
+- 📊 **Índice MongoDB**: Base de datos replicada por nodo
+- 🧠 **Ubicación semántica**: Embeddings para localizar contenido similar
 
 ```mermaid
 graph TD
-    N[Nodo]
-    N --> S[Scanner]
-    N --> I[Indexer]
-    N --> A[API]
-    N --> C[Cache]
+    M[Master]
+    M --> |coordina| S1[Slave 1]
+    M --> |coordina| S2[Slave 2]
+    M --> |coordina| S3[Slave 3]
     
-    S --> F[Filesystem]
-    I --> DB[(SQLite)]
-    A --> DB
+    S1 --> DB1[(MongoDB)]
+    S2 --> DB2[(MongoDB)]
+    S3 --> DB3[(MongoDB)]
     
-    style N fill:#667eea
-    style DB fill:#10b981
+    S1 <--> |heartbeat| S2
+    S2 <--> |heartbeat| S3
+    S1 <--> |heartbeat| S3
+    
+    style M fill:#667eea
+    style DB1 fill:#10b981
+    style DB2 fill:#10b981
+    style DB3 fill:#10b981
 ```
 
-### Comunicación Asíncrona
+### Heartbeats y Monitoreo
 
-El backend coordina búsquedas paralelas:
+El sistema mantiene comunicación constante vía UDP:
 
 ```python
-# Búsqueda en paralelo a 5 nodos
-import asyncio
+# HeartbeatService - Sistema de heartbeats
+HEARTBEAT_INTERVAL = 5    # segundos entre heartbeats
+HEARTBEAT_TIMEOUT = 15    # 3 beats fallidos = nodo offline
 
-async def search_all_nodes(query):
-    tasks = [
-        search_node(node1, query),
-        search_node(node2, query),
-        search_node(node3, query),
-        search_node(node4, query),
-        search_node(node5, query),
-    ]
-    results = await asyncio.gather(*tasks)
-    return aggregate_results(results)
+# Puertos UDP
+HEARTBEAT_PORT = 5000     # Heartbeats
+ELECTION_PORT = 5001      # Elección de líder
 ```
 
 **Beneficios**:
 
-- ⚡ Tiempo de respuesta reducido
-- 🔄 Máximo paralelismo
-- 📈 Escalabilidad lineal
+- ⚡ Detección rápida de fallos (~15 segundos)
+- 🔄 Elección automática de nuevo Master
+- 📈 Alta disponibilidad del cluster
 
-### Descubrimiento de Nodos
+### Elección de Líder (Bully)
 
-!!! tip "Registro Dinámico"
-    Los nodos pueden unirse o salir de la red dinámicamente sin afectar el servicio.
+!!! tip "Algoritmo Bully"
+    Cuando el Master falla, el nodo con mayor ID inicia elección y se proclama nuevo Master.
 
-**Proceso de registro**:
+**Proceso de elección**:
 
-1. Admin registra nuevo nodo via Frontend
-2. Backend valida y almacena información
-3. Backend hace health check al nodo
-4. Nodo se marca como "online" si responde
-5. Nodo queda disponible para búsquedas
+1. Slave detecta que Master no responde (3 heartbeats)
+2. Slave inicia elección enviando `ELECTION` a nodos mayores
+3. Si recibe `OK`, espera proclamación
+4. Nodo con mayor ID envía `COORDINATOR` a todos
+5. Nuevo Master comienza a coordinar
 
 ---
 
 ## 🔄 Tolerancia a Fallos
 
-### Replicación Automática
+### Replicación por Afinidad Semántica
 
-Cuando un nodo se cae, DistriSearch replica sus archivos:
+DistriSearch replica documentos a nodos con contenido **semánticamente similar**:
 
 ```mermaid
 sequenceDiagram
-    participant B as Backend
-    participant N1 as Nodo Offline
-    participant C as Central Storage
+    participant U as Usuario
+    participant M as Master
+    participant S1 as Slave 1
+    participant S2 as Slave 2
     
-    B->>N1: Health check
-    N1--xB: Timeout (offline)
-    B->>B: Marca nodo offline
-    B->>N1: Intenta obtener archivos
-    alt Archivos accesibles
-        N1-->>B: Lista de archivos
-        B->>C: Replica archivos
-    else Archivos no accesibles
-        B->>C: Usa metadatos existentes
-    end
+    U->>S1: Sube documento
+    S1->>M: Notifica nuevo documento
+    M->>M: Genera embedding semántico
+    M->>M: Selecciona nodos similares
+    M->>S2: Replica documento
+    S2-->>M: ACK replicación
+    M-->>S1: Confirma replicación
 ```
 
 **Configuración**:
 
 ```yaml
-# backend/config
-MAINTENANCE_INTERVAL_SECONDS: 300  # Check cada 5 min
-NODE_TIMEOUT_SECONDS: 60           # Timeout de nodo
-REPLICATION_BATCH_SIZE: 25         # Archivos por lote
+# Variables de entorno
+REPLICATION_FACTOR: 2          # Número de réplicas
+CONSISTENCY_MODEL: eventual    # Consistencia eventual
+EMBEDDING_MODEL: all-MiniLM-L6-v2  # Modelo para ubicación semántica
 ```
 
-### Health Checks
+### Sistema de Heartbeats
 
-El backend monitorea constantemente los nodos:
+El cluster monitorea nodos constantemente via UDP:
 
-| Estado | Descripción | Acción |
-|--------|-------------|--------|
-| `online` | Nodo responde correctamente | Disponible para búsquedas |
-| `offline` | Nodo no responde | Excluido de búsquedas |
-| `timeout` | Timeout excedido | Marcado offline automáticamente |
+| Estado | Condición | Acción |
+|--------|-----------|--------|
+| `online` | Heartbeat recibido | Disponible para búsquedas |
+| `suspected` | 1-2 beats fallidos | Monitoreo intensivo |
+| `offline` | 3+ beats fallidos | Excluido, iniciar elección si era Master |
+
+### Métricas de Confiabilidad
+
+```python
+# Endpoint: GET /health/cluster
+{
+  "mttr": 12.5,           # Mean Time To Recovery (segundos)
+  "mtbf": 86400.0,        # Mean Time Between Failures (segundos)
+  "availability": 99.98,  # Disponibilidad porcentual
+  "nodes_online": 3,
+  "nodes_total": 3
+}
+```
 
 ---
 
@@ -475,10 +485,20 @@ GET /search/?q=informe&max_results=10&sort=score
 
 ---
 
-## 🔮 Funcionalidades Futuras
+## 🔮 Funcionalidades Actuales e Implementadas
 
-!!! info "Roadmap"
-    - [ ] Búsqueda por similitud semántica (embeddings)
+!!! success "Características Implementadas"
+    - [x] Búsqueda distribuida por similitud semántica (embeddings)
+    - [x] Arquitectura Master-Slave con elección dinámica
+    - [x] Sistema de heartbeats UDP para detección de fallos
+    - [x] Algoritmo Bully para elección de líder
+    - [x] Replicación por afinidad semántica
+    - [x] Índice de ubicación semántica (SemanticLocationIndex)
+    - [x] Métricas MTTR/MTBF de confiabilidad
+    - [x] Health checks (liveness/readiness probes)
+    - [x] CoreDNS para resolución con failover
+
+!!! info "Roadmap Futuro"
     - [ ] Previsualización de archivos en el frontend
     - [ ] Chat con archivos (RAG)
     - [ ] Versionado de archivos
