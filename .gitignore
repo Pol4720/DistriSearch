@@ -209,3 +209,16 @@ __marimo__/
 *.db
 to-do.txt
 central_shared
+
+# LaTeX compilation files
+*.aux
+*.bbl
+*.blg
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.out
+*.toc
+*.log
+*.lof
+*.lot
