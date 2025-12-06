@@ -4,10 +4,10 @@ Endpoints para sistema de nombrado jerárquico
 from fastapi import APIRouter, HTTPException, Query
 from typing import List, Optional
 from pydantic import BaseModel
-from services.naming.hierarchical_naming import get_namespace
-from services.naming.ip_cache import get_ip_cache
-from services.naming.multicast_discovery import get_multicast_service
 import logging
+
+# Importar desde el nuevo módulo cluster
+from cluster import get_namespace, get_ip_cache, get_multicast_service
 
 logger = logging.getLogger(__name__)
 

@@ -6,19 +6,12 @@ Inicializa los servicios del cluster Master-Slave:
 - BullyElection para elección de líder
 - Integración con el estado del cluster
 """
-import os
-import sys
 import asyncio
 import logging
 from typing import Optional, Dict
 
-# Añadir path para importar módulos de DistriSearch
-distriearch_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-if distriearch_root not in sys.path:
-    sys.path.insert(0, distriearch_root)
-
-from services.heartbeat import HeartbeatService
-from services.election import BullyElection
+# Importar desde el nuevo módulo cluster
+from cluster import HeartbeatService, BullyElection
 
 logger = logging.getLogger(__name__)
 

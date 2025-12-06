@@ -2,12 +2,12 @@
   <img src="DistriSearch/assets/logo.png" alt="DistriSearch Logo" width="200"/>
 </p>
 
-# 🔍 DistriSearch - Sistema de Búsqueda Distribuida P2P
+# 🔍 DistriSearch - Sistema de Búsqueda Distribuida Master-Slave
 
-Sistema de búsqueda distribuida de archivos con arquitectura P2P, replicación dinámica y tolerancia a fallos basado en teoría de sistemas distribuidos.
+Sistema de búsqueda distribuida de archivos con arquitectura **Master-Slave dinámico**, localización semántica, replicación por afinidad y tolerancia a fallos.
 
-![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)
-![Python](https://img.shields.io/badge/python-3.12-green.svg)
+![Version](https://img.shields.io/badge/version-3.0.0-blue.svg)
+![Python](https://img.shields.io/badge/python-3.10+-green.svg)
 ![MongoDB](https://img.shields.io/badge/mongodb-6.0-brightgreen.svg)
 ![License](https://img.shields.io/badge/license-MIT-orange.svg)
 
@@ -17,6 +17,7 @@ Sistema de búsqueda distribuida de archivos con arquitectura P2P, replicación 
 
 - [Características Principales](#-características-principales)
 - [Arquitectura del Sistema](#-arquitectura-del-sistema)
+- [Estructura del Proyecto](#-estructura-del-proyecto)
 - [Tolerancia a Fallos](#-tolerancia-a-fallos)
 - [Coordinación Distribuida](#-coordinación-distribuida)
 - [Sistema de Nombres](#-sistema-de-nombres)
@@ -26,10 +27,8 @@ Sistema de búsqueda distribuida de archivos con arquitectura P2P, replicación 
 - [Configuración](#-configuración)
 - [Uso](#-uso)
 - [API Endpoints](#-api-endpoints)
-- [Métricas y Monitoreo](#-métricas-y-monitoreo)
 - [Testing](#-testing)
-- [Troubleshooting](#-troubleshooting)
-- [Contribución](#-contribución)
+- [Documentación](#-documentación)
 
 ---
 
@@ -39,65 +38,145 @@ Sistema de búsqueda distribuida de archivos con arquitectura P2P, replicación 
 
 | Característica | Descripción | Estado |
 |----------------|-------------|--------|
-| **Búsqueda Distribuida** | Búsqueda full-text con BM25 en MongoDB | ✅ Completo |
-| **Arquitectura P2P** | Nodos peer-to-peer sin servidor central | ✅ Completo |
-| **Replicación Dinámica** | Factor de replicación configurable (k=3) | ✅ Completo |
-| **Tolerancia a Fallos** | Recuperación automática ante caídas | ✅ Completo |
-| **Coordinación Distribuida** | Elección de líder con PoW | ✅ Completo |
+| **Búsqueda Semántica** | Embeddings con sentence-transformers (384 dims) | ✅ Completo |
+| **Arquitectura Master-Slave** | Líder dinámico con elección Bully | ✅ Completo |
+| **Localización Semántica** | Índice vectorial distribuido por afinidad | ✅ Completo |
+| **Replicación Dinámica** | Factor configurable con afinidad semántica | ✅ Completo |
+| **Tolerancia a Fallos** | Heartbeat UDP + elección automática | ✅ Completo |
 | **Naming Jerárquico** | Rutas estilo Unix con aliases | ✅ Completo |
 | **Descubrimiento Automático** | Multicast UDP para detección de nodos | ✅ Completo |
-| **Checkpoints Coordinados** | Snapshots del sistema completo | ✅ Completo |
-| **Métricas de Confiabilidad** | MTTF, MTTR, MTBF tracking | ✅ Completo |
+| **Consistencia Eventual** | Replicación asíncrona coordinada | ✅ Completo |
 
 ---
 
 ## 🏗️ Arquitectura del Sistema
 
-### Componentes Principales
+### Diagrama de Componentes
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    FRONTEND (Streamlit)                      │
-│  • Interfaz de usuario moderna                              │
+│  • Interfaz de usuario                                      │
 │  • Búsqueda interactiva                                     │
 │  • Gestión de nodos                                         │
-│  • Estadísticas en tiempo real                              │
+│  • Visualización de cluster                                 │
 └────────────────────┬────────────────────────────────────────┘
                      │ HTTP/REST
 ┌────────────────────▼────────────────────────────────────────┐
 │                    BACKEND (FastAPI)                         │
 │  ┌──────────────────────────────────────────────────────┐  │
-│  │ API Layer                                             │  │
-│  │  • /search - Búsqueda de archivos                    │  │
-│  │  • /register - Gestión de nodos y archivos           │  │
-│  │  • /download - Descarga distribuida                  │  │
-│  │  • /coordination - Elección de líder y mutex         │  │
-│  │  • /naming - Sistema de nombres jerárquico           │  │
-│  │  • /fault_tolerance - Checkpoints y métricas         │  │
+│  │ API Layer (routes/)                                   │  │
+│  │  • /search    - Búsqueda semántica                   │  │
+│  │  • /register  - Gestión de nodos y archivos          │  │
+│  │  • /download  - Descarga de archivos                 │  │
+│  │  • /cluster   - Estado del cluster                   │  │
+│  │  • /naming    - Sistema de nombres jerárquico        │  │
+│  │  • /health    - Health checks                        │  │
 │  └──────────────────────────────────────────────────────┘  │
 │  ┌──────────────────────────────────────────────────────┐  │
-│  │ Services Layer                                        │  │
+│  │ Services Layer (services/)                            │  │
 │  │  • DynamicReplicationService                         │  │
-│  │  • DistributedCoordinator                            │  │
-│  │  • HierarchicalNamespace                             │  │
-│  │  • MulticastDiscovery                                │  │
-│  │  • CheckpointService                                 │  │
-│  │  • ReliabilityMetrics                                │  │
+│  │  • NodeService                                       │  │
+│  │  • ClusterInitializer                                │  │
+│  └──────────────────────────────────────────────────────┘  │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+┌────────────────────▼────────────────────────────────────────┐
+│                    CLUSTER MODULE                            │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │  • HeartbeatService   - Monitoreo UDP (puerto 5000)  │  │
+│  │  • BullyElection      - Elección líder (puerto 5001) │  │
+│  │  • MulticastDiscovery - Descubrimiento automático    │  │
+│  │  • HierarchicalNaming - Sistema de nombres           │  │
+│  │  • IPCache            - Cache LRU de nodos           │  │
+│  └──────────────────────────────────────────────────────┘  │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+┌────────────────────▼────────────────────────────────────────┐
+│                    MASTER MODULE                             │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │  • EmbeddingService        - Generación embeddings   │  │
+│  │  • LocationIndex           - Índice vectorial        │  │
+│  │  • QueryRouter             - Enrutamiento consultas  │  │
+│  │  • ReplicationCoordinator  - Coordinador réplicas    │  │
+│  │  • LoadBalancer            - Balanceo de carga       │  │
+│  └──────────────────────────────────────────────────────┘  │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+┌────────────────────▼────────────────────────────────────────┐
+│                    CORE MODULE                               │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │  • models.py  - Modelos unificados (Enums, Pydantic) │  │
+│  │  • config.py  - Configuración centralizada           │  │
 │  └──────────────────────────────────────────────────────┘  │
 └────────────────────┬────────────────────────────────────────┘
                      │
 ┌────────────────────▼────────────────────────────────────────┐
 │                    MONGODB                                   │
-│  Collections:                                               │
-│  • files - Metadata de archivos                            │
-│  • nodes - Información de nodos                            │
-│  • file_contents - Contenido indexado (full-text)          │
-│  • replications - Estado de réplicas                       │
-│  • elections - Historial de elecciones                     │
-│  • checkpoints - Snapshots del sistema                     │
-│  • failure_events - Eventos de falla                       │
-│  • reliability_metrics - Métricas MTTF/MTTR                │
+│  Collections: files, nodes, file_contents, replications     │
 └─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 📁 Estructura del Proyecto
+
+```
+DistriSearch/
+├── core/                    # Módulo central
+│   ├── __init__.py
+│   ├── models.py           # Modelos unificados (Enums, Dataclasses, Pydantic)
+│   └── config.py           # Configuración centralizada
+│
+├── cluster/                 # Módulo de cluster (comunicación entre nodos)
+│   ├── __init__.py
+│   ├── heartbeat.py        # Servicio de heartbeat UDP
+│   ├── election.py         # Algoritmo Bully para elección de líder
+│   ├── discovery.py        # Descubrimiento multicast UDP
+│   └── naming/             # Sistema de nombres
+│       ├── hierarchical.py # Namespace jerárquico
+│       └── ip_cache.py     # Cache LRU de IPs
+│
+├── master/                  # Módulo Master (localización semántica)
+│   ├── __init__.py
+│   ├── embedding_service.py    # Generación de embeddings
+│   ├── location_index.py       # Índice vectorial distribuido
+│   ├── query_router.py         # Enrutamiento de consultas
+│   ├── replication_coordinator.py  # Coordinador de réplicas
+│   └── load_balancer.py        # Balanceo de carga
+│
+├── backend/                 # API REST (FastAPI)
+│   ├── main.py             # Punto de entrada
+│   ├── database.py         # Conexión MongoDB
+│   ├── models.py           # Re-exports de core/models.py
+│   ├── routes/             # Endpoints REST
+│   │   ├── search.py
+│   │   ├── register.py
+│   │   ├── download.py
+│   │   ├── cluster.py
+│   │   └── naming.py
+│   └── services/           # Servicios de negocio
+│       ├── node_service.py
+│       ├── replication_service.py
+│       └── dynamic_replication.py
+│
+├── frontend/                # UI (Streamlit)
+│   ├── app.py
+│   ├── pages/
+│   └── components/
+│
+├── deploy/                  # Configuración Docker
+│   ├── docker-compose.yml          # Desarrollo local
+│   └── docker-compose.cluster.yml  # Cluster multi-nodo
+│
+├── tests/                   # Tests
+│   ├── unit/
+│   └── integration/
+│
+└── docs/                    # Documentación MkDocs
+```
+
+---
 
 ┌─────────────────────────────────────────────────────────────┐
 │                    AGENTES (Nodos P2P)                       │
@@ -112,90 +191,108 @@ Sistema de búsqueda distribuida de archivos con arquitectura P2P, replicación 
 
 ## 🛡️ Tolerancia a Fallos
 
-### Implementación Basada en Teoría
+### Arquitectura de Alta Disponibilidad
 
-DistriSearch implementa **tolerancia a fallos de grado k=2**, es decir, el sistema continúa operando correctamente aunque fallen hasta 2 nodos simultáneamente.
+DistriSearch implementa un sistema **Master-Slave dinámico** donde cualquier nodo puede convertirse en Master mediante el algoritmo de elección Bully.
 
-### 📊 Métricas de Confiabilidad
+### 🔄 Mecanismos de Tolerancia
 
-| Métrica | Descripción | Fórmula |
-|---------|-------------|---------|
-| **MTTF** | Mean Time To Failure - Tiempo promedio entre fallas | `Σ(tiempo_uptime) / n_fallas` |
-| **MTTR** | Mean Time To Repair - Tiempo promedio de recuperación | `Σ(tiempo_downtime) / n_fallas` |
-| **MTBF** | Mean Time Between Failures | `MTTF + MTTR` |
-| **Disponibilidad** | Porcentaje de tiempo online | `MTTF / (MTTF + MTTR)` |
+| Mecanismo | Implementación | Módulo |
+|-----------|----------------|--------|
+| **Heartbeat UDP** | PING/PONG cada 5s, timeout 15s | `cluster/heartbeat.py` |
+| **Elección Bully** | Nodo con mayor ID gana | `cluster/election.py` |
+| **Replicación** | Factor k=3 por defecto | `backend/services/dynamic_replication.py` |
+| **Descubrimiento** | Multicast UDP 239.255.0.1:5353 | `cluster/discovery.py` |
 
-### 🔄 Estrategias de Recuperación
+### 📡 Protocolo de Heartbeat
 
-#### 1. **Backward Recovery (Checkpoints)**
-
-```python
-# Crear checkpoint coordinado
-POST /fault_tolerance/checkpoint/create
-
-# Restaurar desde checkpoint
-POST /fault_tolerance/checkpoint/restore/{checkpoint_id}
+```
+   Slave A                     Slave B                     Master
+      │                          │                           │
+      │◄────────── PING ─────────│                           │
+      │─────────── PONG ─────────►                           │
+      │                          │◄──────── PING ────────────│
+      │                          │───────── PONG ────────────►
+      │                          │                           │
+      │    [Master timeout - 15s sin respuesta]              │
+      │                          │                           X
+      │◄─────── ELECTION ────────│                           
+      │──────── ELECTION_OK ─────►                           
+      │                          │─── (Mayor ID, se proclama)
+      │◄────── COORDINATOR ──────│                           
+      │                          │ [Nuevo Master]            
 ```
 
-**Características:**
-- Checkpoints independientes por nodo cada 5 minutos
-- Checkpoints coordinados del sistema completo
-- Línea de recuperación globalmente consistente
-- Verificación de integridad con hashes SHA-256
+### 🎯 Proceso de Elección (Algoritmo Bully)
 
-#### 2. **Forward Recovery (Replicación)**
-
-```python
-# Configuración de replicación
-REPLICATION_FACTOR=3  # Cada archivo en 3 nodos
-SYNC_INTERVAL_SECONDS=60  # Sincronización cada 1 min
-```
-
-**Proceso de recuperación automática:**
-
-1. **Detección de falla**: Heartbeat timeout (5 min)
-2. **Registro de evento**: `failure_events` con timestamp
-3. **Identificación de archivos afectados**: Query a MongoDB
-4. **Verificación de réplicas**: Buscar copias online
-5. **Replicación desde réplica**: Transferencia HTTP
-6. **Actualización de estado**: Restaurar factor k=3
-7. **Cálculo de MTTR**: Tiempo de recuperación
-
-### 🔁 Redundancia por Enmascaramiento
-
-| Tipo | Implementación | Ubicación |
-|------|----------------|-----------|
-| **Información** | Hash SHA-256 + Metadata completa | [`database.py`](backend/database.py) |
-| **Tiempo** | Retry con backoff exponencial | [`dynamic_replication.py`](backend/services/dynamic_replication.py) |
-| **Física** | Replicación en k=3 nodos | [`dynamic_replication.py`](backend/services/dynamic_replication.py) |
-
-### 🎯 Modelos de Fallas Soportados
-
-| Modelo | Descripción | Detección | Recuperación |
-|--------|-------------|-----------|--------------|
-| **Crash** | Nodo se detiene abruptamente | Heartbeat timeout | Replicación desde nodo online |
-| **Omisión** | Nodo no responde mensajes | Request timeout | Retry automático |
-| **Timing** | Respuesta fuera de intervalo | Timeout configurable | Fallback a otro nodo |
-| **Arbitrario** | Comportamiento impredecible | Verificación de hash | Descartar réplica corrupta |
+1. **Detección**: Heartbeat timeout detecta Master caído
+2. **Inicio**: Nodo envía ELECTION a todos con ID mayor
+3. **Respuesta**: Nodos con ID mayor responden ELECTION_OK
+4. **Proclamación**: Si no hay respuesta, se proclama COORDINATOR
+5. **Notificación**: Nuevo Master envía COORDINATOR a todos
 
 ---
 
 ## 🎛️ Coordinación Distribuida
 
-### Elección de Líder (Proof of Work)
+### Elección de Líder (Algoritmo Bully)
 
-**Algoritmo:** Basado en PoW similar a Bitcoin
+**Algoritmo:** Bully Election - El nodo con mayor ID siempre gana
 
-**Proceso:**
+**Tipos de Mensajes:**
 
-1. **Generación de desafío**: `timestamp:random:term`
-2. **Resolución PoW**: Buscar nonce tal que `SHA256(challenge:node_id:nonce)` empiece con `0000`
-3. **Verificación distribuida**: Todos los nodos validan la solución
-4. **Consenso**: Primer nodo con solución válida es líder
+| Mensaje | Descripción |
+|---------|-------------|
+| `ELECTION` | Solicitud de elección enviada a nodos con ID mayor |
+| `ELECTION_OK` | Respuesta indicando que el nodo participará |
+| `COORDINATOR` | Anuncio del nuevo líder a todos los nodos |
+
+**Código de ejemplo:**
 
 ```python
-# Configuración PoW
-POW_DIFFICULTY=4  # Número de ceros iniciales
+from cluster import BullyElection, HeartbeatService
+
+# Crear servicios
+heartbeat = HeartbeatService(
+    node_id="node_1",
+    port=5000,
+    on_master_down=lambda: election.start_election()
+)
+
+election = BullyElection(
+    node_id="node_1", 
+    port=5001,
+    on_become_master=lambda: print("¡Soy el nuevo Master!"),
+    on_new_master=lambda master_id: print(f"Nuevo master: {master_id}")
+)
+
+# Añadir peers
+election.add_peer("node_2", "192.168.1.2", 5001, can_be_master=True)
+election.add_peer("node_3", "192.168.1.3", 5001, can_be_master=True)
+
+# Iniciar
+await heartbeat.start()
+await election.start()
+```
+
+### 🔄 Configuración de Cluster
+
+Variables de entorno:
+
+```bash
+# Identificación
+NODE_ID=node_1
+NODE_ROLE=slave          # slave | master (inicial)
+MASTER_CANDIDATE=true    # Puede ser elegido Master
+
+# Comunicación
+HEARTBEAT_PORT=5000      # Puerto UDP para heartbeats
+ELECTION_PORT=5001       # Puerto UDP para elección
+HEARTBEAT_INTERVAL=5     # Segundos entre PINGs
+HEARTBEAT_TIMEOUT=15     # Segundos para detectar falla
+
+# Peers
+CLUSTER_PEERS=node_2:192.168.1.2:8000:5000:5001,node_3:192.168.1.3:8000:5000:5001
 
 # Endpoints
 POST /coordination/election/start  # Iniciar elección

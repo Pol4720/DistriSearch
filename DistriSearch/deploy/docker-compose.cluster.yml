@@ -80,6 +80,10 @@ services:
     ports:
       - "8001:8000"
       - "8444:8443"
+      - "5001:5000/udp"   # Heartbeat UDP
+      - "5011:5001/udp"   # Election UDP
+    volumes:
+      - ./shared_folders/node_1:/app/uploads
     environment:
       # Identificación del nodo
       - NODE_ID=node_1
@@ -99,6 +103,10 @@ services:
       - REPLICATION_FACTOR=2
       # Embeddings
       - EMBEDDING_MODEL=all-MiniLM-L6-v2
+      # Discovery
+      - MULTICAST_GROUP=239.255.0.1
+      - MULTICAST_PORT=5353
+      - DISCOVERY_INTERVAL=30
       # General
       - ENVIRONMENT=development
       - PYTHONPATH=/app
@@ -113,6 +121,11 @@ services:
     dns:
       - 172.20.0.2
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   frontend_node1:
     build:
@@ -160,6 +173,10 @@ services:
     ports:
       - "8002:8000"
       - "8445:8443"
+      - "5002:5000/udp"   # Heartbeat UDP
+      - "5012:5001/udp"   # Election UDP
+    volumes:
+      - ./shared_folders/node_2:/app/uploads
     environment:
       - NODE_ID=node_2
       - NODE_ROLE=slave
@@ -173,6 +190,9 @@ services:
       - MONGO_DBNAME=distrisearch
       - REPLICATION_FACTOR=2
       - EMBEDDING_MODEL=all-MiniLM-L6-v2
+      - MULTICAST_GROUP=239.255.0.1
+      - MULTICAST_PORT=5353
+      - DISCOVERY_INTERVAL=30
       - ENVIRONMENT=development
       - PYTHONPATH=/app
     depends_on:
@@ -186,6 +206,11 @@ services:
     dns:
       - 172.20.0.2
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   frontend_node2:
     build:
@@ -233,6 +258,10 @@ services:
     ports:
       - "8003:8000"
       - "8446:8443"
+      - "5003:5000/udp"   # Heartbeat UDP
+      - "5013:5001/udp"   # Election UDP
+    volumes:
+      - ./shared_folders/node_3:/app/uploads
     environment:
       - NODE_ID=node_3
       - NODE_ROLE=slave
@@ -246,6 +275,9 @@ services:
       - MONGO_DBNAME=distrisearch
       - REPLICATION_FACTOR=2
       - EMBEDDING_MODEL=all-MiniLM-L6-v2
+      - MULTICAST_GROUP=239.255.0.1
+      - MULTICAST_PORT=5353
+      - DISCOVERY_INTERVAL=30
       - ENVIRONMENT=development
       - PYTHONPATH=/app
     depends_on:
@@ -259,6 +291,11 @@ services:
     dns:
       - 172.20.0.2
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   frontend_node3:
     build:

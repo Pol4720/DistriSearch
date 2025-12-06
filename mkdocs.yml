@@ -170,6 +170,7 @@ nav:
     - getting-started/index.md
     - Instalación: getting-started/instalacion.md
     - Configuración: getting-started/configuracion.md
+    - Docker Swarm: getting-started/docker-swarm-deployment.md
   
   - API Reference:
     - api/index.md

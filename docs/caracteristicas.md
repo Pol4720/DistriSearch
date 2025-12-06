@@ -1,6 +1,8 @@
-# Características de DistriSearch
+# ✨ Características de DistriSearch
 
-DistriSearch ofrece un conjunto completo de características diseñadas para proporcionar una experiencia de búsqueda distribuida potente, flexible y fácil de usar.
+<div style="padding: 1.5rem; background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%); border-radius: 16px; margin-bottom: 2rem;">
+  <p style="margin: 0;">Conjunto completo de características diseñadas para proporcionar una experiencia de búsqueda distribuida <strong>potente, flexible y resiliente</strong>.</p>
+</div>
 
 ---
 
@@ -10,40 +12,48 @@ DistriSearch ofrece un conjunto completo de características diseñadas para pro
 
 DistriSearch utiliza el algoritmo **BM25 (Best Matching 25)**, considerado el estándar de oro para ranking de relevancia en sistemas de búsqueda.
 
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin: 1.5rem 0;">
+<div>
+
+**Ventajas del BM25:**
+
+- ✅ Resultados más relevantes
+- ✅ Manejo de frecuencia de términos
+- ✅ Normalización por longitud
+- ✅ Parámetros ajustables ($k_1$, $b$)
+
+</div>
+<div>
+
 ```python
 # Ejemplo de búsqueda con score
 GET /search/?q=documento&include_score=true
 
 # Respuesta
 {
-  "files": [
-    {
-      "file_id": "abc123",
-      "name": "documento_importante.pdf",
-      "score": 8.456,  # Score BM25
-      "type": "document",
-      ...
-    }
-  ]
+  "files": [{
+    "name": "documento_importante.pdf",
+    "score": 8.456  # Score BM25
+  }]
 }
 ```
 
-**Ventajas del BM25**:
-
-- ✅ Resultados más relevantes
-- ✅ Manejo de frecuencia de términos
-- ✅ Normalización por longitud
-- ✅ Ajustable con parámetros
+</div>
+</div>
 
 ### Búsqueda Multi-criterio
 
+<div style="overflow-x: auto;">
+
 | Criterio | Descripción | Ejemplo |
-|----------|-------------|---------|
-| **Nombre** | Búsqueda en nombre de archivo | `proyecto.pdf` |
-| **Contenido** | Búsqueda en contenido (texto) | `análisis de datos` |
-| **Tipo** | Filtro por tipo de archivo | `document`, `image`, `video` |
-| **Nodo** | Filtro por nodo específico | `node_madrid` |
-| **Metadatos** | Búsqueda en metadatos | Fecha, tamaño, autor |
+|:---------|:------------|:--------|
+| **🏷️ Nombre** | Búsqueda en nombre de archivo | `proyecto.pdf` |
+| **📝 Contenido** | Búsqueda en contenido (texto) | `análisis de datos` |
+| **📁 Tipo** | Filtro por tipo de archivo | `document`, `image`, `video` |
+| **🖥️ Nodo** | Filtro por nodo específico | `node_madrid` |
+| **📊 Metadatos** | Búsqueda en metadatos | Fecha, tamaño, autor |
+
+</div>
 
 ### Filtros Disponibles
 
@@ -67,7 +77,7 @@ GET /search/?q=documento&include_score=true
     GET /search/?q=informe&days=7
     
     # Rango de fechas
-    GET /search/?q=proyecto&from_date=2025-01-01&to_date=2025-01-31
+    GET /search/?q=proyecto&from_date=2025-01-01&to_date=2025-12-31
     ```
 
 === "Por Tamaño"
@@ -86,66 +96,97 @@ GET /search/?q=documento&include_score=true
 
 ### Modelo de Cluster
 
-DistriSearch utiliza una arquitectura **Master-Slave** distribuida:
+DistriSearch utiliza una arquitectura **Master-Slave** distribuida con características únicas:
 
-- 👑 **Master dinámico**: Cualquier nodo puede ser elegido Master
-- 🔄 **Elección automática**: Algoritmo Bully para failover
-- 📊 **Índice MongoDB**: Base de datos replicada por nodo
-- 🧠 **Ubicación semántica**: Embeddings para localizar contenido similar
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin: 1.5rem 0;">
+
+<div style="padding: 1rem; background: rgba(102, 126, 234, 0.08); border-radius: 12px; border-left: 4px solid #667eea;">
+  <strong style="color: #667eea;">👑 Master Dinámico</strong>
+  <p style="margin: 0.5rem 0 0 0; font-size: 0.9rem; color: #718096;">Cualquier nodo puede ser elegido Master mediante algoritmo Bully.</p>
+</div>
+
+<div style="padding: 1rem; background: rgba(16, 185, 129, 0.08); border-radius: 12px; border-left: 4px solid #10b981;">
+  <strong style="color: #10b981;">🔄 Elección Automática</strong>
+  <p style="margin: 0.5rem 0 0 0; font-size: 0.9rem; color: #718096;">Failover automático en ~15 segundos ante caída del Master.</p>
+</div>
+
+<div style="padding: 1rem; background: rgba(245, 158, 11, 0.08); border-radius: 12px; border-left: 4px solid #f59e0b;">
+  <strong style="color: #f59e0b;">📊 MongoDB Local</strong>
+  <p style="margin: 0.5rem 0 0 0; font-size: 0.9rem; color: #718096;">Cada nodo tiene su base de datos independiente.</p>
+</div>
+
+<div style="padding: 1rem; background: rgba(118, 75, 162, 0.08); border-radius: 12px; border-left: 4px solid #764ba2;">
+  <strong style="color: #764ba2;">🧠 Ubicación Semántica</strong>
+  <p style="margin: 0.5rem 0 0 0; font-size: 0.9rem; color: #718096;">Embeddings para localizar contenido similar.</p>
+</div>
+
+</div>
 
 ```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#667eea'}}}%%
 graph TD
-    M[Master]
-    M --> |coordina| S1[Slave 1]
-    M --> |coordina| S2[Slave 2]
-    M --> |coordina| S3[Slave 3]
+    M["👑 Master<br/>(coordina)"]
+    M --> |"coordina"| S1["📦 Slave 1"]
+    M --> |"coordina"| S2["📦 Slave 2"]
+    M --> |"coordina"| S3["📦 Slave 3"]
     
-    S1 --> DB1[(MongoDB)]
-    S2 --> DB2[(MongoDB)]
-    S3 --> DB3[(MongoDB)]
+    S1 --> DB1[("🗄️ MongoDB")]
+    S2 --> DB2[("🗄️ MongoDB")]
+    S3 --> DB3[("🗄️ MongoDB")]
     
-    S1 <--> |heartbeat| S2
-    S2 <--> |heartbeat| S3
-    S1 <--> |heartbeat| S3
+    S1 <--> |"💓 heartbeat"| S2
+    S2 <--> |"💓 heartbeat"| S3
+    S1 <--> |"💓 heartbeat"| S3
     
-    style M fill:#667eea
-    style DB1 fill:#10b981
-    style DB2 fill:#10b981
-    style DB3 fill:#10b981
+    style M fill:#667eea,color:#fff
+    style DB1 fill:#10b981,color:#fff
+    style DB2 fill:#10b981,color:#fff
+    style DB3 fill:#10b981,color:#fff
 ```
 
-### Heartbeats y Monitoreo
+### Sistema de Heartbeats
 
 El sistema mantiene comunicación constante vía UDP:
 
-```python
-# HeartbeatService - Sistema de heartbeats
-HEARTBEAT_INTERVAL = 5    # segundos entre heartbeats
-HEARTBEAT_TIMEOUT = 15    # 3 beats fallidos = nodo offline
+<div style="background: #1e293b; border-radius: 12px; padding: 1rem; margin: 1rem 0; color: #e2e8f0;">
 
-# Puertos UDP
-HEARTBEAT_PORT = 5000     # Heartbeats
-ELECTION_PORT = 5001      # Elección de líder
+```yaml
+# Configuración de HeartbeatService
+HEARTBEAT_INTERVAL: 5     # segundos entre heartbeats
+HEARTBEAT_TIMEOUT: 15     # 3 beats fallidos = nodo offline
+HEARTBEAT_PORT: 5000      # puerto UDP para heartbeats
+ELECTION_PORT: 5001       # puerto UDP para elección de líder
 ```
 
-**Beneficios**:
-
-- ⚡ Detección rápida de fallos (~15 segundos)
-- 🔄 Elección automática de nuevo Master
-- 📈 Alta disponibilidad del cluster
+</div>
 
 ### Elección de Líder (Bully)
 
 !!! tip "Algoritmo Bully"
-    Cuando el Master falla, el nodo con mayor ID inicia elección y se proclama nuevo Master.
+    Cuando el Master falla, el nodo con **mayor ID** se proclama nuevo Master automáticamente.
 
-**Proceso de elección**:
+**Proceso de elección:**
 
-1. Slave detecta que Master no responde (3 heartbeats)
-2. Slave inicia elección enviando `ELECTION` a nodos mayores
-3. Si recibe `OK`, espera proclamación
-4. Nodo con mayor ID envía `COORDINATOR` a todos
-5. Nuevo Master comienza a coordinar
+```mermaid
+sequenceDiagram
+    participant S1 as Slave 1 (ID: 1)
+    participant S2 as Slave 2 (ID: 2)
+    participant S3 as Slave 3 (ID: 3)
+    
+    Note over S1: Detecta Master offline<br/>(3 heartbeats fallidos)
+    
+    S1->>S2: ELECTION
+    S1->>S3: ELECTION
+    
+    S2-->>S1: ELECTION_OK
+    S3-->>S1: ELECTION_OK
+    
+    Note over S3: Nodo con mayor ID
+    S3->>S1: COORDINATOR
+    S3->>S2: COORDINATOR
+    
+    Note over S3: ✅ Nuevo Master
+```
 
 ---
 

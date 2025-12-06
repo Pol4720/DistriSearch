@@ -1,10 +1,154 @@
-# Changelog
+# 📋 Changelog
 
-Historial de cambios y versiones de DistriSearch.
+<div style="padding: 1.5rem; background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%); border-radius: 16px; margin-bottom: 2rem;">
+  <p style="margin: 0;">Historial completo de versiones y cambios de DistriSearch. Seguimos <a href="https://semver.org/lang/es/">Semantic Versioning</a>.</p>
+</div>
 
 ---
 
-## [1.0.0] - 2024-01-15 🎉
+## [2.0.0] - 2025-12-06 🎉 {#v2.0.0}
+
+<div style="display: flex; gap: 0.5rem; margin: 1rem 0; flex-wrap: wrap;">
+  <span style="background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 0.3rem 0.8rem; border-radius: 20px; font-size: 0.85rem; font-weight: 600;">🏆 Major Release</span>
+  <span style="background: #10b981; color: white; padding: 0.3rem 0.8rem; border-radius: 20px; font-size: 0.85rem; font-weight: 600;">Master-Slave</span>
+  <span style="background: #3b82f6; color: white; padding: 0.3rem 0.8rem; border-radius: 20px; font-size: 0.85rem; font-weight: 600;">Bully Election</span>
+</div>
+
+!!! success "Arquitectura Completamente Rediseñada"
+    Esta versión representa una **reescritura completa** del sistema, migrando de una arquitectura centralizada a un modelo **Master-Slave distribuido** con elección dinámica de líder.
+
+### 🏗️ Cambios de Arquitectura
+
+| Componente | v1.x | v2.0 |
+|------------|------|------|
+| **Base de Datos** | SQLite | MongoDB |
+| **Arquitectura** | Centralizada | Master-Slave |
+| **Tolerancia a Fallos** | Manual | Algoritmo Bully |
+| **Ubicación de Datos** | Por hash/ID | Semántica (embeddings) |
+| **Comunicación** | HTTP REST | HTTP + UDP (Heartbeats) |
+| **DNS** | N/A | CoreDNS integrado |
+
+### ✨ Nuevas Características
+
+#### 🧠 Sistema de Ubicación Semántica
+- Embeddings con `sentence-transformers` (all-MiniLM-L6-v2)
+- Vectores de 384 dimensiones
+- Similitud coseno para búsqueda y ubicación
+- Perfiles semánticos de nodos
+
+#### 👑 Elección Dinámica de Líder
+- Implementación del algoritmo **Bully**
+- Elección automática en ~10-15 segundos
+- Cualquier nodo puede ser Master
+- Eliminación del punto único de fallo
+
+#### 💓 Sistema de Heartbeats
+```yaml
+# Configuración de heartbeats
+HEARTBEAT_PORT: 5000      # Puerto UDP
+HEARTBEAT_INTERVAL: 5     # Segundos entre beats
+HEARTBEAT_TIMEOUT: 15     # Timeout para offline
+ELECTION_PORT: 5001       # Puerto para elección
+```
+
+#### 🔄 Replicación por Afinidad Semántica
+- Réplicas en nodos con contenido similar
+- Factor K=2 configurable
+- Distribución inteligente basada en embeddings
+
+#### 🌐 CoreDNS Integrado
+- Resolución `distrisearch.local`
+- Round-robin entre nodos saludables
+- Failover automático
+
+#### 📊 Métricas de Confiabilidad
+- **MTTR** (Mean Time To Recovery)
+- **MTBF** (Mean Time Between Failures)
+- Disponibilidad calculada
+- Historial de fallos
+
+### 📦 Estructura del Proyecto
+
+```
+DistriSearch/
+├── core/                    # 🔧 Código compartido
+│   ├── config.py           # Configuración unificada
+│   ├── models.py           # NodeInfo, ClusterMessage, etc.
+│   └── messaging.py        # Serialización UDP
+├── cluster/                 # 🔗 Coordinación
+│   ├── heartbeat.py        # Sistema de heartbeats
+│   ├── election.py         # Algoritmo Bully
+│   ├── discovery.py        # Descubrimiento multicast
+│   └── naming/             # Naming jerárquico
+├── master/                  # 👑 Lógica del Master
+│   ├── embedding_service.py
+│   ├── location_index.py
+│   └── replication_coordinator.py
+├── slave/                   # 🖥️ Lógica del Slave
+│   ├── api/                # FastAPI routes
+│   ├── services/           # Servicios
+│   └── scanner/            # Escaneo de archivos
+├── backend/                 # 🔌 API REST
+├── frontend/               # 🎨 Streamlit UI
+└── deploy/                 # 🐳 Docker configs
+```
+
+### 🔧 Backend
+
+- ✅ Migración completa a **MongoDB**
+- ✅ Endpoints de cluster: `/cluster/nodes`, `/cluster/master`
+- ✅ Health checks Kubernetes-ready: `/health/live`, `/health/ready`
+- ✅ Rutas de tolerancia a fallos: `/fault-tolerance/metrics`
+- ✅ Sistema de naming jerárquico
+
+### 🎨 Frontend
+
+- ✅ Página de **Nodos** con estado del cluster
+- ✅ Página de **Estadísticas** con métricas en tiempo real
+- ✅ Visualización de Master actual
+- ✅ Indicadores de salud por nodo
+
+### 🐳 Deployment
+
+- ✅ `docker-compose.cluster.yml` para 3 nodos
+- ✅ CoreDNS preconfigurado
+- ✅ MongoDB por nodo
+- ✅ **Guía Docker Swarm** para multi-host
+- ✅ Redes overlay configuradas
+
+### ✅ Testing
+
+- ✅ Tests unitarios: `test_heartbeat.py`, `test_election.py`
+- ✅ Tests de integración: `test_master_slave_integration.py`
+- ✅ Tests E2E: `test_cluster_e2e.py`
+- ✅ Cobertura >80%
+
+### 📚 Documentación
+
+- ✅ Documentación MkDocs completamente renovada
+- ✅ Diagramas Mermaid actualizados
+- ✅ Guía de despliegue Docker Swarm
+- ✅ API Reference completa
+- ✅ FAQ actualizado
+
+### 🐛 Bug Fixes
+
+- 🔧 Eliminación de código legacy SQLite
+- 🔧 Limpieza de carpetas obsoletas
+- 🔧 Corrección de imports circulares
+- 🔧 Fix de timeouts en búsquedas distribuidas
+
+### ⚠️ Breaking Changes
+
+!!! warning "Migración desde v1.x"
+    - SQLite ha sido **eliminado completamente**
+    - Se requiere MongoDB 6.0+
+    - Nuevas variables de entorno requeridas
+    - Estructura de carpetas reorganizada
+
+---
+
+## [1.0.0] - 2024-01-15 {#v1.0.0}
 
 ### ✨ Características Principales
 

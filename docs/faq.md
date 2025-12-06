@@ -1,6 +1,8 @@
-# Preguntas Frecuentes (FAQ)
+# ❓ Preguntas Frecuentes (FAQ)
 
-Respuestas a las preguntas más comunes sobre DistriSearch.
+<div style="padding: 1.5rem; background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%); border-radius: 16px; margin-bottom: 2rem;">
+  <p style="margin: 0;">Respuestas a las preguntas más comunes sobre DistriSearch. ¿No encuentras lo que buscas? <a href="https://github.com/Pol4720/DS-Project/issues">Abre un issue</a>.</p>
+</div>
 
 ---
 
@@ -10,25 +12,53 @@ Respuestas a las preguntas más comunes sobre DistriSearch.
 
 DistriSearch es un sistema de búsqueda distribuida basado en arquitectura **Master-Slave** que permite indexar y buscar archivos en múltiples nodos. Utiliza **ubicación semántica** para localizar contenido similar y ofrece **elección dinámica de líder** para alta disponibilidad.
 
+<div style="display: flex; gap: 0.5rem; margin: 1rem 0; flex-wrap: wrap;">
+  <span style="background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 0.3rem 0.8rem; border-radius: 20px; font-size: 0.85rem;">v2.0</span>
+  <span style="background: #10b981; color: white; padding: 0.3rem 0.8rem; border-radius: 20px; font-size: 0.85rem;">Open Source</span>
+  <span style="background: #3b82f6; color: white; padding: 0.3rem 0.8rem; border-radius: 20px; font-size: 0.85rem;">Python</span>
+</div>
+
 ### ¿Para qué casos de uso es ideal DistriSearch?
 
-- **Empresas distribuidas**: Oficinas en diferentes ubicaciones que necesitan buscar documentos sin centralizar
-- **Instituciones académicas**: Múltiples departamentos con repositorios independientes
-- **Equipos de desarrollo**: Búsqueda de código y documentación en microservicios
-- **Healthcare**: Búsqueda de historiales médicos respetando la privacidad
-- **Productoras**: Gestión de assets multimedia distribuidos
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin: 1rem 0;">
+
+<div style="padding: 1rem; background: rgba(102, 126, 234, 0.08); border-radius: 12px; text-align: center;">
+  <span style="font-size: 1.5rem;">🏢</span><br/>
+  <strong>Empresas distribuidas</strong><br/>
+  <small>Múltiples oficinas</small>
+</div>
+
+<div style="padding: 1rem; background: rgba(16, 185, 129, 0.08); border-radius: 12px; text-align: center;">
+  <span style="font-size: 1.5rem;">🎓</span><br/>
+  <strong>Universidades</strong><br/>
+  <small>Repositorios académicos</small>
+</div>
+
+<div style="padding: 1rem; background: rgba(245, 158, 11, 0.08); border-radius: 12px; text-align: center;">
+  <span style="font-size: 1.5rem;">💻</span><br/>
+  <strong>Equipos de desarrollo</strong><br/>
+  <small>Microservicios</small>
+</div>
+
+<div style="padding: 1rem; background: rgba(239, 68, 68, 0.08); border-radius: 12px; text-align: center;">
+  <span style="font-size: 1.5rem;">🏥</span><br/>
+  <strong>Healthcare</strong><br/>
+  <small>Privacidad de datos</small>
+</div>
+
+</div>
 
 ### ¿Cuál es la diferencia con Google Drive o Dropbox?
 
 | Característica | DistriSearch | Google Drive/Dropbox |
-|----------------|--------------|----------------------|
-| **Almacenamiento** | Distribuido, datos en origen | Centralizado en la nube |
-| **Arquitectura** | Master-Slave con failover | Centralizada |
-| **Privacidad** | Total, datos nunca salen | Datos en servidores terceros |
-| **Coste** | Gratis, open source | Planes de pago por espacio |
-| **Tolerancia a fallos** | Elección automática de líder | Depende del proveedor |
-| **Búsqueda** | Semántica + BM25 distribuida | Búsqueda centralizada |
-| **Offline** | Cada nodo independiente | Requiere internet |
+|:---------------|:------------:|:--------------------:|
+| **Almacenamiento** | 📍 Distribuido, datos en origen | ☁️ Centralizado en la nube |
+| **Arquitectura** | 👑 Master-Slave con failover | 🏠 Centralizada |
+| **Privacidad** | 🔒 Total, datos nunca salen | ❓ Datos en servidores terceros |
+| **Coste** | 💚 Gratis, open source | 💰 Planes de pago |
+| **Tolerancia a fallos** | ⚡ Elección automática de líder | 🔄 Depende del proveedor |
+| **Búsqueda** | 🧠 Semántica + BM25 distribuida | 🔍 Búsqueda centralizada |
+| **Offline** | ✅ Cada nodo independiente | ❌ Requiere internet |
 
 ---
 
@@ -36,13 +66,16 @@ DistriSearch es un sistema de búsqueda distribuida basado en arquitectura **Mas
 
 ### ¿Qué requisitos mínimos necesito?
 
-**Por componente**:
+<div style="overflow-x: auto;">
 
-- **Backend**: 2 GB RAM, 2 CPU cores, 10 GB disco
-- **Frontend**: 1 GB RAM, 1 CPU core, 1 GB disco
-- **Agente**: 512 MB RAM, 1 CPU core, espacio según datos
+| Componente | RAM | CPU | Disco |
+|:-----------|:---:|:---:|:-----:|
+| **Backend** | 2 GB | 2 cores | 10 GB |
+| **Frontend** | 1 GB | 1 core | 1 GB |
+| **MongoDB** | 1 GB | 1 core | 10 GB |
+| **Total recomendado** | **4 GB** | **4 cores** | **SSD** |
 
-**Total recomendado**: 4 GB RAM, 4 CPU cores, SSD
+</div>
 
 ### ¿Puedo instalarlo en Windows?
 
@@ -60,39 +93,32 @@ No, Docker es opcional. Puedes instalar localmente con Python 3.8+:
 
 ```bash
 # Backend
-cd backend
-pip install -r requirements.txt
-uvicorn main:app
+cd backend && pip install -r requirements.txt && python main.py
 
-# Frontend
-cd frontend
-pip install -r requirements.txt
-streamlit run app.py
-
-# Agente
-cd agent
-pip install -r requirements.txt
-python agent.py
+# Frontend (otra terminal)
+cd frontend && pip install -r requirements.txt && streamlit run app.py
 ```
 
 ### ¿Cómo cambio el puerto por defecto?
 
-**Backend** (puerto 8000):
-```bash
-uvicorn main:app --port 8080
-```
+=== "Backend (8000)"
 
-**Frontend** (puerto 8501):
-```bash
-streamlit run app.py --server.port 8502
-```
+    ```bash
+    uvicorn main:app --port 8080
+    ```
 
-**Agente** (puerto 5001):
-```yaml
-# config.yaml
-agent:
-  port: 5002
-```
+=== "Frontend (8501)"
+
+    ```bash
+    streamlit run app.py --server.port 8502
+    ```
+
+=== "Variables de entorno"
+
+    ```bash
+    export BACKEND_PORT=8080
+    export FRONTEND_PORT=8502
+    ```
 
 ---
 

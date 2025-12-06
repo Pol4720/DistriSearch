@@ -4,7 +4,9 @@ import database
 from datetime import datetime, timedelta
 import logging
 import os
-from services.naming.ip_cache import get_ip_cache  # ✅ Agregar import
+
+# Importar desde el nuevo módulo cluster
+from cluster import get_ip_cache
 
 logger = logging.getLogger(__name__)
 

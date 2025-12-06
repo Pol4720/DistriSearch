@@ -1,131 +1,151 @@
-# API Reference
+# 📚 API Reference
 
 <div style="padding: 1.5rem; background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%); border-radius: 16px; margin-bottom: 2rem;">
-  <h3 style="margin-top: 0;">📚 Documentación de Endpoints REST</h3>
-  <p>Todos los nodos exponen la misma API. El Master tiene endpoints adicionales de coordinación.</p>
+  <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+    <span style="background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 0.3rem 0.8rem; border-radius: 20px; font-size: 0.85rem; font-weight: 600;">v2.0</span>
+    <span style="background: #10b981; color: white; padding: 0.3rem 0.8rem; border-radius: 20px; font-size: 0.85rem; font-weight: 600;">REST API</span>
+    <span style="background: #3b82f6; color: white; padding: 0.3rem 0.8rem; border-radius: 20px; font-size: 0.85rem; font-weight: 600;">OpenAPI 3.0</span>
+  </div>
+  <p style="margin-top: 1rem; margin-bottom: 0;">Documentación completa de la API REST de DistriSearch. Todos los nodos exponen la misma API base.</p>
 </div>
 
 ---
 
 ## 🌐 URLs Base
 
-=== "Cluster (Docker Compose)"
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin: 1.5rem 0;">
 
-    | Nodo | API URL | Swagger |
-    |------|---------|---------|
-    | Node 1 | `http://localhost:8001` | `/docs` |
-    | Node 2 | `http://localhost:8002` | `/docs` |
-    | Node 3 | `http://localhost:8003` | `/docs` |
+<div style="padding: 1rem; background: rgba(102, 126, 234, 0.08); border-radius: 12px; border: 1px solid rgba(102, 126, 234, 0.15); text-align: center;">
+  <strong style="color: #667eea;">Node 1</strong><br/>
+  <code style="font-size: 0.9rem;">http://localhost:8001</code>
+</div>
 
-=== "Desarrollo Local"
+<div style="padding: 1rem; background: rgba(118, 75, 162, 0.08); border-radius: 12px; border: 1px solid rgba(118, 75, 162, 0.15); text-align: center;">
+  <strong style="color: #764ba2;">Node 2</strong><br/>
+  <code style="font-size: 0.9rem;">http://localhost:8002</code>
+</div>
 
-    ```
-    http://localhost:8000
-    ```
+<div style="padding: 1rem; background: rgba(16, 185, 129, 0.08); border-radius: 12px; border: 1px solid rgba(16, 185, 129, 0.15); text-align: center;">
+  <strong style="color: #10b981;">Node 3</strong><br/>
+  <code style="font-size: 0.9rem;">http://localhost:8003</code>
+</div>
+
+</div>
+
+!!! tip "Documentación Interactiva"
+    Accede a **Swagger UI** en cualquier nodo: `http://localhost:800X/docs`
 
 ---
 
 ## ❤️ Health Checks
 
-!!! tip "Kubernetes Ready"
-    Estos endpoints están diseñados para probes de Kubernetes/Docker.
+!!! abstract "Kubernetes Ready"
+    Estos endpoints están diseñados para probes de Kubernetes/Docker Swarm.
 
 ### Health Básico
 
-```http
-GET /health
-```
+<div style="display: flex; align-items: center; gap: 0.5rem; margin: 1rem 0;">
+  <span style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 0.3rem 0.8rem; border-radius: 6px; font-weight: 700; font-size: 0.75rem;">GET</span>
+  <code style="font-size: 1rem;">/health</code>
+</div>
 
-**Respuesta:**
-```json
-{
-  "status": "healthy",
-  "node_id": "node_1",
-  "timestamp": "2025-12-05T10:30:00Z"
-}
-```
+Devuelve el estado básico del nodo.
+
+=== "Respuesta"
+
+    ```json
+    {
+      "status": "healthy",
+      "node_id": "node_1",
+      "timestamp": "2025-12-06T10:30:00Z"
+    }
+    ```
 
 ### Health Detallado
 
-```http
-GET /health/detailed
-```
+<div style="display: flex; align-items: center; gap: 0.5rem; margin: 1rem 0;">
+  <span style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 0.3rem 0.8rem; border-radius: 6px; font-weight: 700; font-size: 0.75rem;">GET</span>
+  <code style="font-size: 1rem;">/health/detailed</code>
+</div>
 
-**Respuesta:**
-```json
-{
-  "status": "healthy",
-  "node_id": "node_1",
-  "role": "master",
-  "uptime_seconds": 3600,
-  "system": {
-    "cpu_percent": 25.5,
-    "memory_percent": 45.2,
-    "disk_percent": 60.0
-  }
-}
-```
+Incluye métricas del sistema y rol del nodo.
+
+=== "Respuesta"
+
+    ```json
+    {
+      "status": "healthy",
+      "node_id": "node_1",
+      "role": "master",
+      "uptime_seconds": 3600,
+      "system": {
+        "cpu_percent": 25.5,
+        "memory_percent": 45.2,
+        "disk_percent": 60.0
+      }
+    }
+    ```
 
 ### Estado del Cluster
 
-```http
-GET /health/cluster
-```
+<div style="display: flex; align-items: center; gap: 0.5rem; margin: 1rem 0;">
+  <span style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 0.3rem 0.8rem; border-radius: 6px; font-weight: 700; font-size: 0.75rem;">GET</span>
+  <code style="font-size: 1rem;">/health/cluster</code>
+</div>
 
-**Respuesta:**
-```json
-{
-  "cluster_healthy": true,
-  "master_id": "node_1",
-  "nodes_online": 3,
-  "nodes_total": 3,
-  "metrics": {
-    "mttr": 12.5,
-    "mtbf": 86400.0,
-    "availability": 99.98
-  }
-}
-```
+Métricas de confiabilidad y estado global del cluster.
 
-### Readiness Probe
+=== "Respuesta"
 
-```http
-GET /health/ready
-```
+    ```json
+    {
+      "cluster_healthy": true,
+      "master_id": "node_1",
+      "nodes_online": 3,
+      "nodes_total": 3,
+      "metrics": {
+        "mttr": 12.5,
+        "mtbf": 86400.0,
+        "availability": 99.98
+      }
+    }
+    ```
 
-### Liveness Probe
+### Liveness & Readiness Probes
 
-```http
-GET /health/live
-```
+| Endpoint | Uso | Respuesta |
+|----------|-----|-----------|
+| `GET /health/live` | Liveness probe | `{"status": "alive"}` |
+| `GET /health/ready` | Readiness probe | `{"status": "ready"}` |
 
 ---
 
 ## 🔍 Búsqueda
 
-### Buscar Archivos (Distribuida)
+### Búsqueda Distribuida
 
-Realiza una búsqueda distribuida en todos los Slaves activos.
+<div style="display: flex; align-items: center; gap: 0.5rem; margin: 1rem 0;">
+  <span style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 0.3rem 0.8rem; border-radius: 6px; font-weight: 700; font-size: 0.75rem;">GET</span>
+  <code style="font-size: 1rem;">/search/?q={query}</code>
+</div>
 
-```http
-GET /search/?q={query}
-```
+Realiza una búsqueda semántica distribuida en todos los Slaves activos.
 
 #### Parámetros
 
-| Parámetro | Tipo | Requerido | Descripción |
-|-----------|------|-----------|-------------|
-| `q` | string | ✅ | Término de búsqueda |
-| `max_results` | integer | ❌ | Máximo de resultados (default: 50) |
-| `file_type` | string | ❌ | Filtrar por tipo (.pdf, .docx, etc.) |
-| `node_id` | string | ❌ | Buscar solo en un Slave específico |
+| Parámetro | Tipo | Requerido | Default | Descripción |
+|:----------|:-----|:---------:|:-------:|:------------|
+| `q` | string | ✅ | - | Término de búsqueda |
+| `max_results` | integer | ❌ | 50 | Máximo de resultados |
+| `file_type` | string | ❌ | - | Filtrar por tipo (.pdf, .docx) |
+| `node_id` | string | ❌ | - | Buscar solo en un Slave |
 
-#### Ejemplo
+#### Ejemplos
 
 === "cURL"
 
     ```bash
-    curl "http://localhost:8001/search/?q=proyecto&max_results=10"
+    curl "http://localhost:8001/search/?q=algoritmos%20machine%20learning&max_results=10"
     ```
 
 === "Python"
@@ -135,19 +155,36 @@ GET /search/?q={query}
     
     response = requests.get(
         "http://localhost:8001/search/",
-        params={"q": "proyecto", "max_results": 10}
+        params={
+            "q": "algoritmos machine learning",
+            "max_results": 10
+        }
     )
     results = response.json()
+    
+    for file in results["files"]:
+        print(f"{file['name']} - Score: {file['score']:.2f}")
     ```
 
 === "JavaScript"
 
     ```javascript
+    const params = new URLSearchParams({
+      q: 'algoritmos machine learning',
+      max_results: 10
+    });
+    
     const response = await fetch(
-      'http://localhost:8001/search/?q=proyecto&max_results=10'
+      `http://localhost:8001/search/?${params}`
     );
     const results = await response.json();
+    
+    results.files.forEach(file => {
+      console.log(`${file.name} - Score: ${file.score.toFixed(2)}`);
+    });
     ```
+
+#### Respuesta
 
 #### Respuesta
 

@@ -1,50 +1,75 @@
-# Comenzar con DistriSearch
+# 🚀 Comenzar con DistriSearch
 
 <div style="padding: 2rem; background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(5, 150, 105, 0.1) 100%); border-radius: 16px; margin-bottom: 2rem; border-left: 4px solid #10b981;">
-  <h2 style="margin-top: 0;">🚀 Guía de Inicio Rápido</h2>
-  <p>Despliega un cluster Master-Slave de 3 nodos en <strong>menos de 5 minutos</strong>.</p>
+  <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+    <span style="background: #10b981; color: white; padding: 0.2rem 0.6rem; border-radius: 12px; font-size: 0.75rem; font-weight: 600;">⏱️ 5 min</span>
+    <span style="background: #3b82f6; color: white; padding: 0.2rem 0.6rem; border-radius: 12px; font-size: 0.75rem; font-weight: 600;">Docker Ready</span>
+  </div>
+  <h2 style="margin-top: 0.5rem; margin-bottom: 0.5rem;">Guía de Inicio Rápido</h2>
+  <p style="margin-bottom: 0; color: #718096;">Despliega un cluster <strong>Master-Slave de 3 nodos</strong> en menos de 5 minutos con Docker Compose.</p>
 </div>
 
 ---
 
-## 🐳 Inicio Rápido con Docker Compose
+## 🐳 Despliegue Rápido
 
-### Opción 1: Cluster Completo (3 Nodos) - Recomendado
+### Opción 1: Cluster Completo (Recomendado)
+
+<div style="background: #1e293b; border-radius: 12px; padding: 1.5rem; margin: 1rem 0;">
 
 ```bash
-# 1. Clonar repositorio
+# 1️⃣ Clonar repositorio
 git clone https://github.com/Pol4720/DS-Project.git
 cd DS-Project/DistriSearch/deploy
 
-# 2. Iniciar cluster
+# 2️⃣ Levantar cluster de 3 nodos
 docker-compose -f docker-compose.cluster.yml up -d
 
-# 3. Verificar estado
+# 3️⃣ Verificar estado
 docker-compose -f docker-compose.cluster.yml ps
 ```
 
-!!! success "URLs de Acceso"
-    | Componente | URL |
-    |------------|-----|
-    | 🎨 Frontend Node 1 | http://localhost:8511 |
-    | 🎨 Frontend Node 2 | http://localhost:8512 |
-    | 🎨 Frontend Node 3 | http://localhost:8513 |
-    | 📚 API Node 1 (Swagger) | http://localhost:8001/docs |
-    | 📚 API Node 2 | http://localhost:8002/docs |
-    | 📚 API Node 3 | http://localhost:8003/docs |
+</div>
+
+!!! success "🎉 URLs de Acceso"
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-top: 1rem;">
+    
+    <div style="padding: 1rem; background: rgba(102, 126, 234, 0.1); border-radius: 12px; text-align: center;">
+      <strong>🎨 Frontend 1</strong><br/>
+      <a href="http://localhost:8511" style="color: #667eea;">localhost:8511</a>
+    </div>
+    
+    <div style="padding: 1rem; background: rgba(118, 75, 162, 0.1); border-radius: 12px; text-align: center;">
+      <strong>🎨 Frontend 2</strong><br/>
+      <a href="http://localhost:8512" style="color: #764ba2;">localhost:8512</a>
+    </div>
+    
+    <div style="padding: 1rem; background: rgba(16, 185, 129, 0.1); border-radius: 12px; text-align: center;">
+      <strong>🎨 Frontend 3</strong><br/>
+      <a href="http://localhost:8513" style="color: #10b981;">localhost:8513</a>
+    </div>
+    
+    <div style="padding: 1rem; background: rgba(245, 158, 11, 0.1); border-radius: 12px; text-align: center;">
+      <strong>📚 API Docs</strong><br/>
+      <a href="http://localhost:8001/docs" style="color: #f59e0b;">localhost:8001/docs</a>
+    </div>
+    
+    </div>
 
 ### Opción 2: Nodo Único (Desarrollo)
 
 ```bash
 cd DS-Project/DistriSearch/deploy
 docker-compose up -d
+
+# Acceder a: http://localhost:8501
 ```
 
 ---
 
 ## 💻 Instalación Local (Sin Docker)
 
-Para desarrollo o personalización:
+Para desarrollo o personalización avanzada:
 
 === "1️⃣ Backend"
 
@@ -77,7 +102,7 @@ Para desarrollo o personalización:
 === "3️⃣ MongoDB"
 
     ```bash
-    # Con Docker
+    # Con Docker (recomendado)
     docker run -d -p 27017:27017 --name mongo mongo:6
     
     # O instalar localmente
@@ -90,64 +115,61 @@ Para desarrollo o personalización:
 
 ### Hardware Mínimo por Nodo
 
-| Componente | Mínimo | Recomendado |
-|------------|--------|-------------|
-| **CPU** | 2 cores | 4+ cores |
-| **RAM** | 4 GB | 8 GB |
-| **Disco** | 20 GB HDD | 50 GB SSD |
-| **Red** | 10 Mbps | 100 Mbps |
+<div style="overflow-x: auto;">
+
+| Componente | Mínimo | Recomendado | Notas |
+|:-----------|:------:|:-----------:|:------|
+| **CPU** | 2 cores | 4+ cores | Más cores mejora búsquedas paralelas |
+| **RAM** | 4 GB | 8 GB | Modelo embeddings usa ~500 MB |
+| **Disco** | 20 GB HDD | 50 GB SSD | SSD mejora indexación |
+| **Red** | 10 Mbps | 100 Mbps | Para cluster distribuido |
+
+</div>
 
 !!! warning "Modelo de Embeddings"
-    El modelo `all-MiniLM-L6-v2` requiere ~500 MB de RAM adicional la primera vez que se carga.
+    El modelo `all-MiniLM-L6-v2` requiere **~500 MB de RAM adicional** la primera vez que se carga. Asegúrate de tener suficiente memoria disponible.
 
 ### Software Requerido
 
-=== "Linux"
+=== ":material-linux: Linux"
 
     ```bash
     # Ubuntu/Debian
     sudo apt update
-    sudo apt install python3 python3-pip docker.io docker-compose
+    sudo apt install -y python3 python3-pip docker.io docker-compose
     
-    # Verificar
+    # Añadir usuario al grupo docker
+    sudo usermod -aG docker $USER
+    
+    # Verificar instalación
     python3 --version  # 3.8+
-    docker --version
+    docker --version   # 20.10+
     ```
 
-=== "Windows"
+=== ":material-microsoft-windows: Windows"
 
-    ```powershell
-    # Requerido
-    - Python 3.8+ (python.org)
-    - Docker Desktop (docker.com)
+    **Requisitos:**
     
-    # Verificar
+    - Python 3.8+ → [python.org](https://python.org)
+    - Docker Desktop → [docker.com](https://docker.com)
+    
+    ```powershell
+    # Verificar instalación
     python --version
     docker --version
     ```
 
-=== "macOS"
+=== ":material-apple: macOS"
 
     ```bash
     # Con Homebrew
-    brew install python@3.11 docker docker-compose
+    brew install python@3.11
+    brew install --cask docker
     
     # Verificar
     python3 --version
     docker --version
     ```
-    - Docker Desktop (opcional)
-    
-    # Verificar instalación
-    python --version
-    pip --version
-    docker --version
-    ```
-
-=== "macOS"
-
-    ```bash
-    # Instalar Homebrew
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
     
     # Instalar Python

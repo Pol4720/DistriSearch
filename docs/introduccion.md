@@ -1,103 +1,184 @@
 # Introducción a DistriSearch
 
 <div class="hero-banner" style="padding: 2rem; background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%); border-radius: 16px; margin-bottom: 2rem; border-left: 4px solid #667eea;">
-  <h2 style="margin-top: 0;">📖 Sistema de Búsqueda Distribuida</h2>
-  <p>Arquitectura <strong>Master-Slave</strong> con ubicación semántica y alta disponibilidad</p>
+  <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+    <span style="background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 0.2rem 0.6rem; border-radius: 12px; font-size: 0.75rem; font-weight: 600;">v2.0</span>
+    <span style="background: #10b981; color: white; padding: 0.2rem 0.6rem; border-radius: 12px; font-size: 0.75rem; font-weight: 600;">Master-Slave</span>
+  </div>
+  <h2 style="margin-top: 0.5rem; margin-bottom: 0.5rem;">📖 Sistema Distribuido de Búsqueda de Documentos</h2>
+  <p style="margin-bottom: 0; color: #718096;">Arquitectura <strong>Master-Slave con elección dinámica</strong> de líder y ubicación semántica de recursos basada en embeddings vectoriales.</p>
 </div>
 
 ## 🎯 ¿Qué es DistriSearch?
 
-**DistriSearch** es un sistema de búsqueda distribuida que utiliza una arquitectura **Master-Slave** con:
+**DistriSearch** es una plataforma distribuida de código abierto para almacenamiento y búsqueda de documentos. Implementa una arquitectura **Master-Slave con elección dinámica de líder** que elimina el punto único de fallo típico de sistemas centralizados.
 
-| Característica | Descripción |
-|----------------|-------------|
-| 🧠 **Ubicación Semántica** | Localiza recursos por similitud de contenido usando embeddings |
-| 👑 **Elección Dinámica** | Cualquier nodo puede ser Master (algoritmo Bully) |
-| 💓 **Heartbeats UDP** | Detección de fallos en ~15 segundos |
-| 🔄 **Replicación Inteligente** | Por afinidad semántica, no por hash |
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; margin: 1.5rem 0;">
 
-!!! success "Beneficios Clave"
-    - ✅ **Alta disponibilidad**: Failover automático sin intervención manual
-    - ✅ **Búsqueda semántica**: Resultados relevantes por significado, no solo palabras
-    - ✅ **Escalabilidad horizontal**: Agregar nodos sin reconfiguración
-    - ✅ **Privacidad**: Archivos permanecen en nodos de origen
+<div style="padding: 1.2rem; background: rgba(102, 126, 234, 0.08); border-radius: 12px; border: 1px solid rgba(102, 126, 234, 0.15);">
+  <h4 style="margin-top: 0; color: #667eea;">🎯 Alta Disponibilidad</h4>
+  <p style="margin-bottom: 0; font-size: 0.9rem; color: #718096;">Elección automática de líder ante fallos del Master mediante algoritmo Bully.</p>
+</div>
+
+<div style="padding: 1.2rem; background: rgba(16, 185, 129, 0.08); border-radius: 12px; border: 1px solid rgba(16, 185, 129, 0.15);">
+  <h4 style="margin-top: 0; color: #10b981;">🔄 Redundancia de Datos</h4>
+  <p style="margin-bottom: 0; font-size: 0.9rem; color: #718096;">Replicación basada en afinidad semántica con factor K configurable.</p>
+</div>
+
+<div style="padding: 1.2rem; background: rgba(245, 158, 11, 0.08); border-radius: 12px; border: 1px solid rgba(245, 158, 11, 0.15);">
+  <h4 style="margin-top: 0; color: #f59e0b;">🧠 Localización Eficiente</h4>
+  <p style="margin-bottom: 0; font-size: 0.9rem; color: #718096;">Ubicación de recursos mediante vectorización semántica (embeddings).</p>
+</div>
+
+<div style="padding: 1.2rem; background: rgba(239, 68, 68, 0.08); border-radius: 12px; border: 1px solid rgba(239, 68, 68, 0.15);">
+  <h4 style="margin-top: 0; color: #ef4444;">💓 Tolerancia a Fallos</h4>
+  <p style="margin-bottom: 0; font-size: 0.9rem; color: #718096;">Detección mediante heartbeats UDP y recuperación automática.</p>
+</div>
+
+</div>
+
+!!! abstract "💡 Innovación Clave: Ubicación Semántica"
+    A diferencia de sistemas tradicionales que usan funciones hash (DHT), DistriSearch emplea **embeddings semánticos** de 384 dimensiones:
+    
+    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-top: 1rem;">
+    <div style="text-align: center; padding: 1rem; background: rgba(102, 126, 234, 0.05); border-radius: 8px;">
+      <strong>🔍 Búsquedas Relevantes</strong><br/>
+      <small>Basadas en significado</small>
+    </div>
+    <div style="text-align: center; padding: 1rem; background: rgba(102, 126, 234, 0.05); border-radius: 8px;">
+      <strong>📊 Distribución Inteligente</strong><br/>
+      <small>Por afinidad de contenido</small>
+    </div>
+    <div style="text-align: center; padding: 1rem; background: rgba(102, 126, 234, 0.05); border-radius: 8px;">
+      <strong>🚀 Routing Optimizado</strong><br/>
+      <small>Queries a nodos similares</small>
+    </div>
+    </div>
 
 ---
 
 ## 🏛️ Arquitectura Master-Slave
 
-DistriSearch abandona las arquitecturas P2P puras (DHT, hipercubo) en favor de un modelo **Master-Slave dinámico**:
+El sistema sigue un **estilo arquitectónico Master-Slave** con capacidad de promoción dinámica:
+
+- Un nodo asume el rol de **Master** (coordinador)
+- Los demás actúan como **Slaves** (trabajadores)
+- **Cualquier Slave puede convertirse en Master** mediante el algoritmo Bully
+- Se elimina el punto único de fallo típico de arquitecturas centralizadas
 
 ```mermaid
 graph TB
     subgraph "Cluster DistriSearch"
-        DNS[🌐 CoreDNS]
+        DNS[🌐 CoreDNS<br/>distrisearch.local]
         
-        subgraph "Master (Slave 1)"
-            M_API[FastAPI]
-            M_UI[Streamlit]
+        subgraph "Slave 1 (MASTER)"
+            M_API[API REST<br/>FastAPI]
+            M_UI[Frontend<br/>Streamlit]
             M_DB[(MongoDB)]
-            M_IDX[Índice Semántico]
+            M_IDX[📊 Índice Semántico<br/>+ Coordinador]
         end
         
         subgraph "Slave 2"
-            S2_API[FastAPI]
-            S2_UI[Streamlit]
+            S2_API[API REST]
+            S2_UI[Frontend]
             S2_DB[(MongoDB)]
         end
         
         subgraph "Slave 3"
-            S3_API[FastAPI]
-            S3_UI[Streamlit]
+            S3_API[API REST]
+            S3_UI[Frontend]
             S3_DB[(MongoDB)]
         end
     end
     
+    Cliente([👤 Cliente]) --> DNS
     DNS --> M_API
     DNS --> S2_API
     DNS --> S3_API
     
-    M_API <-->|Heartbeat| S2_API
-    M_API <-->|Heartbeat| S3_API
-    S2_API <-->|Heartbeat| S3_API
+    M_API <-.->|Heartbeat UDP| S2_API
+    M_API <-.->|Heartbeat UDP| S3_API
+    S2_API <-.->|Heartbeat UDP| S3_API
+    
+    M_API -->|Coordina| S2_API
+    M_API -->|Coordina| S3_API
     
     style DNS fill:#10b981
     style M_API fill:#667eea,color:#fff
+    style M_IDX fill:#f59e0b,color:#000
     style S2_API fill:#764ba2,color:#fff
     style S3_API fill:#764ba2,color:#fff
 ```
 
-### Componentes por Nodo
+### Roles del Sistema
 
-Cada **Slave** es un nodo completo que incluye:
-
-=== "Backend (FastAPI)"
+=== "👑 Master"
     
-    - API REST para búsqueda y gestión
-    - Servicios de heartbeat y elección
-    - Conexión a MongoDB local
-    - Endpoints de health check
-
-=== "Frontend (Streamlit)"
+    El Master es un Slave con **responsabilidades adicionales** de coordinación:
     
-    - Interfaz web moderna
-    - Búsqueda distribuida
-    - Gestión de nodos
-    - Estadísticas en tiempo real
+    - 📊 Mantener índice semántico de ubicación de recursos
+    - 🔍 Recibir registros de nuevos documentos
+    - 🧮 Calcular embeddings y determinar relevancia semántica
+    - 🚀 Enrutar consultas a Slaves apropiados
+    - 🔄 Coordinar replicación
+    - 💓 Monitorear salud del clúster mediante heartbeats
+    - ⚠️ Detectar fallos de nodos
 
-=== "Base de Datos (MongoDB)"
+=== "🖥️ Slave"
     
-    - Almacenamiento de documentos
-    - Metadatos de archivos
-    - Réplicas por afinidad semántica
+    Los Slaves son **nodos autónomos** que integran backend, frontend y base de datos:
+    
+    - 💾 Almacenar documentos en MongoDB local
+    - 🎨 Servir interfaz web (Streamlit)
+    - 🔍 Procesar consultas de búsqueda locales
+    - 🗳️ Participar en elecciones de líder (algoritmo Bully)
+    - 💓 Enviar heartbeats al Master
+    - 📥 Recibir y aplicar replicaciones
 
-### El Master Adiciona
+=== "👤 Cliente"
+    
+    Los usuarios acceden directamente a cualquier Slave:
+    
+    - 🌐 Acceso vía DNS (`distrisearch.local`)
+    - 🔍 Búsquedas semánticas y por nombre
+    - 📤 Subida y descarga de documentos
+    - 🔄 Failover automático si un Slave no responde
 
-El nodo que actúa como **Master** mantiene servicios adicionales:
+---
 
-- 🧠 **Índice de Ubicación Semántica**: Mapea embeddings a nodos
-- ⚖️ **Balanceador de Carga**: Distribuye consultas
-- 🔄 **Coordinador de Replicación**: Gestiona réplicas
+## 🧠 Ubicación por Vectorización Semántica
+
+En lugar de funciones hash para determinar dónde almacenar documentos, DistriSearch emplea **embeddings semánticos**:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Proceso de Indexación                         │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│   Documento          Sentence-Transformers         Embedding     │
+│   "Algoritmos        ══════════════════════►       [0.12, 0.45, │
+│    de ML para               (384 dims)              0.78, ...]   │
+│    clasificación"                                                │
+│                                                                  │
+│   ┌─────────────────────────────────────────────────────────┐   │
+│   │  El embedding captura el SIGNIFICADO del documento       │   │
+│   │  permitiendo encontrar documentos relacionados           │   │
+│   │  aunque no compartan palabras exactas                    │   │
+│   └─────────────────────────────────────────────────────────┘   │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Ventajas sobre DHT
+
+| Aspecto | DHT Tradicional | DistriSearch Semántico |
+|---------|-----------------|------------------------|
+| Ubicación | Por hash del ID | Por similitud de contenido |
+| Búsqueda | Solo por clave exacta | Por significado semántico |
+| Distribución | Aleatoria | Por afinidad temática |
+| Replicación | A nodos consecutivos | A nodos con contenido similar |
+
+---
 - 🎯 **Query Router**: Enruta a Slaves relevantes
 
 ---
