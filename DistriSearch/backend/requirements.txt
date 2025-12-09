@@ -1,0 +1,65 @@
+# Backend Requirements for DistriSearch
+# Install with: pip install -r requirements.txt
+
+# Web Framework
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.6
+websockets==12.0
+
+# Data Validation
+pydantic==2.5.3
+pydantic-settings==2.1.0
+
+# Database
+pymongo==4.6.1
+motor==3.3.2
+redis==5.0.1
+
+# gRPC
+grpcio==1.60.0
+grpcio-tools==1.60.0
+protobuf==4.25.2
+
+# Text Processing & NLP
+scikit-learn==1.4.0
+scipy==1.12.0
+numpy==1.26.3
+nltk==3.8.1
+datasketch==1.6.4
+gensim==4.3.2
+networkx==3.2.1
+
+# Document Processing
+python-docx==1.1.0
+PyPDF2==3.0.1
+openpyxl==3.1.2
+python-pptx==0.6.23
+chardet==5.2.0
+python-magic==0.4.27
+
+# HTTP Client
+httpx==0.26.0
+aiohttp==3.9.1
+
+# Security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# Utilities
+python-dotenv==1.0.0
+tenacity==8.2.3
+structlog==24.1.0
+
+# Async utilities
+aiocache==0.12.2
+aiofiles==23.2.1
+
+# Monitoring
+prometheus-client==0.19.0
+
+# Testing
+pytest==7.4.4
+pytest-asyncio==0.23.3
+pytest-cov==4.1.0
+httpx==0.26.0

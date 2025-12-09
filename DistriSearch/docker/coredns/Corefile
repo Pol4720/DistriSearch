@@ -1,0 +1,82 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# DistriSearch CoreDNS Configuration
+# Backup DNS server for service discovery when Docker DNS fails
+# ═══════════════════════════════════════════════════════════════════════════
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ZONA PRINCIPAL: distrisearch.local
+# ═══════════════════════════════════════════════════════════════════════════
+distrisearch.local:53 {
+    # Enable logging for debugging
+    log
+    errors
+    
+    # Load zone file for distrisearch.local
+    file /etc/coredns/zones/distrisearch.local.zone
+    
+    # Enable DNS-based load balancing
+    loadbalance round_robin
+    
+    # Cache responses
+    cache 30
+    
+    # Health checking
+    health {
+        lameduck 5s
+    }
+    
+    # Prometheus metrics
+    prometheus :9153
+    
+    # If not found in zone file, forward to Docker DNS
+    forward . 127.0.0.11 {
+        prefer_udp
+        max_fails 3
+        expire 10s
+    }
+    
+    # Rewrite service names to match Docker Swarm naming
+    rewrite name master.distrisearch.local master
+    rewrite name slave.distrisearch.local slave
+    rewrite name mongodb.distrisearch.local mongodb
+    rewrite name redis.distrisearch.local redis
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ZONA DE SERVICIOS: services.distrisearch.local
+# ═══════════════════════════════════════════════════════════════════════════
+services.distrisearch.local:53 {
+    log
+    errors
+    
+    file /etc/coredns/zones/services.zone
+    
+    loadbalance round_robin
+    cache 15
+    
+    forward . 127.0.0.11 {
+        prefer_udp
+        max_fails 3
+    }
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# DEFAULT: Forward all other queries
+# ═══════════════════════════════════════════════════════════════════════════
+. {
+    log
+    errors
+    
+    # Forward to Docker internal DNS first
+    forward . 127.0.0.11 8.8.8.8 8.8.4.4 {
+        prefer_udp
+        max_fails 2
+        expire 10s
+        health_check 5s
+    }
+    
+    cache 60
+    
+    # Prometheus metrics
+    prometheus :9153
+}

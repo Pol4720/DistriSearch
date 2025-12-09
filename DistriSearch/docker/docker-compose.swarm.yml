@@ -1,0 +1,339 @@
+# Docker Stack for Docker Swarm Production Deployment
+# Deploy with: docker stack deploy -c docker-compose.swarm.yml distrisearch
+
+version: '3.8'
+
+networks:
+  distrisearch-network:
+    driver: overlay
+    attachable: true
+    ipam:
+      config:
+        - subnet: 10.0.10.0/24
+
+  ingress-network:
+    driver: overlay
+    attachable: true
+
+volumes:
+  mongodb-data:
+    driver: local
+  redis-data:
+    driver: local
+
+configs:
+  nginx-config:
+    file: ./load-balancer/nginx.conf
+  coredns-config:
+    file: ./coredns/Corefile
+
+secrets:
+  mongodb-password:
+    external: true
+  jwt-secret:
+    external: true
+  tls-cert:
+    external: true
+  tls-key:
+    external: true
+
+services:
+  # ═══════════════════════════════════════════════════════════════════════
+  # LOAD BALANCER (Nginx)
+  # ═══════════════════════════════════════════════════════════════════════
+  load-balancer:
+    image: distrisearch/load-balancer:latest
+    ports:
+      - target: 80
+        published: 80
+        protocol: tcp
+        mode: ingress
+      - target: 443
+        published: 443
+        protocol: tcp
+        mode: ingress
+    networks:
+      - distrisearch-network
+      - ingress-network
+    configs:
+      - source: nginx-config
+        target: /etc/nginx/nginx.conf
+    secrets:
+      - tls-cert
+      - tls-key
+    deploy:
+      mode: replicated
+      replicas: 2
+      placement:
+        constraints:
+          - node.role == manager
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+      rollback_config:
+        parallelism: 1
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # MASTER NODE (Raft Consensus Leader)
+  # ═══════════════════════════════════════════════════════════════════════
+  master:
+    image: distrisearch/master:latest
+    environment:
+      - NODE_ROLE=master
+      - MONGODB_URI=mongodb://mongodb:27017/distrisearch?replicaSet=rs0
+      - REDIS_URL=redis://redis:6379
+      - RAFT_ELECTION_TIMEOUT_MIN=150
+      - RAFT_ELECTION_TIMEOUT_MAX=300
+      - RAFT_HEARTBEAT_INTERVAL=50
+      - LOG_LEVEL=INFO
+      - PYTHONUNBUFFERED=1
+    networks:
+      - distrisearch-network
+    secrets:
+      - mongodb-password
+      - jwt-secret
+    deploy:
+      mode: replicated
+      replicas: 3
+      placement:
+        constraints:
+          - node.role == manager
+        preferences:
+          - spread: node.id
+      endpoint_mode: dnsrr
+      update_config:
+        parallelism: 1
+        delay: 30s
+        failure_action: rollback
+        order: stop-first
+      rollback_config:
+        parallelism: 1
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 5
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # SLAVE NODES (Frontend + Backend)
+  # ═══════════════════════════════════════════════════════════════════════
+  slave:
+    image: distrisearch/slave:latest
+    environment:
+      - NODE_ROLE=slave
+      - MASTER_SERVICE=master
+      - MASTER_PORT=8001
+      - MONGODB_URI=mongodb://mongodb:27017/distrisearch?replicaSet=rs0
+      - REDIS_URL=redis://redis:6379
+      - REPLICATION_FACTOR=2
+      - DNS_FALLBACK_ENABLED=true
+      - COREDNS_HOST=coredns
+      - LOG_LEVEL=INFO
+      - PYTHONUNBUFFERED=1
+    networks:
+      - distrisearch-network
+    secrets:
+      - mongodb-password
+      - jwt-secret
+    volumes:
+      - type: volume
+        source: slave-data
+        target: /app/data
+    deploy:
+      mode: replicated
+      replicas: 3
+      placement:
+        constraints:
+          - node.role == worker
+        preferences:
+          - spread: node.id
+      endpoint_mode: vip
+      update_config:
+        parallelism: 1
+        delay: 30s
+        failure_action: rollback
+        order: start-first
+      rollback_config:
+        parallelism: 1
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 5
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # MONGODB REPLICA SET
+  # ═══════════════════════════════════════════════════════════════════════
+  mongodb:
+    image: mongo:7.0
+    command: ["--replSet", "rs0", "--bind_ip_all", "--keyFile", "/run/secrets/mongodb-keyfile"]
+    environment:
+      - MONGO_INITDB_DATABASE=distrisearch
+    networks:
+      - distrisearch-network
+    secrets:
+      - mongodb-password
+      - source: mongodb-keyfile
+        target: /run/secrets/mongodb-keyfile
+        mode: 0400
+    volumes:
+      - mongodb-data:/data/db
+    deploy:
+      mode: replicated
+      replicas: 3
+      placement:
+        constraints:
+          - node.role == manager
+        preferences:
+          - spread: node.id
+      endpoint_mode: dnsrr
+      update_config:
+        parallelism: 1
+        delay: 60s
+        failure_action: rollback
+        order: stop-first
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
+        reservations:
+          cpus: '0.25'
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # REDIS CACHE
+  # ═══════════════════════════════════════════════════════════════════════
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    networks:
+      - distrisearch-network
+    volumes:
+      - redis-data:/data
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # COREDNS BACKUP DNS SERVER
+  # ═══════════════════════════════════════════════════════════════════════
+  coredns:
+    image: distrisearch/coredns:latest
+    networks:
+      - distrisearch-network
+    configs:
+      - source: coredns-config
+        target: /etc/coredns/Corefile
+    deploy:
+      mode: replicated
+      replicas: 2
+      placement:
+        preferences:
+          - spread: node.id
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+        reservations:
+          cpus: '0.05'
+          memory: 32M
+    healthcheck:
+      test: ["CMD", "dig", "@localhost", "distrisearch.local", "+short"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # DNS SYNC DAEMON
+  # ═══════════════════════════════════════════════════════════════════════
+  dns-sync:
+    image: distrisearch/dns-sync:latest
+    environment:
+      - SYNC_INTERVAL=30
+      - COREDNS_ZONE_PATH=/zones
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    networks:
+      - distrisearch-network
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          cpus: '0.1'
+          memory: 64M
+        reservations:
+          cpus: '0.05'
+          memory: 32M
+
+# Additional volumes defined inline above

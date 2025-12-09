@@ -1,0 +1,204 @@
+# Docker Compose for Local Development
+# Use docker-compose.swarm.yml for production deployment
+
+version: '3.8'
+
+networks:
+  distrisearch-network:
+    driver: bridge
+
+volumes:
+  mongodb-data:
+  redis-data:
+
+services:
+  # ═══════════════════════════════════════════════════════════════════════
+  # LOAD BALANCER (Nginx)
+  # ═══════════════════════════════════════════════════════════════════════
+  load-balancer:
+    build:
+      context: ./load-balancer
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - distrisearch-network
+    depends_on:
+      - slave-1
+      - slave-2
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # MASTER NODE
+  # ═══════════════════════════════════════════════════════════════════════
+  master:
+    build:
+      context: ..
+      dockerfile: docker/master/Dockerfile
+    environment:
+      - NODE_ID=master-1
+      - NODE_ROLE=master
+      - MONGODB_URI=mongodb://mongodb:27017/distrisearch?replicaSet=rs0
+      - REDIS_URL=redis://redis:6379
+      - RAFT_PEERS=master-1
+      - LOG_LEVEL=INFO
+    ports:
+      - "8001:8001"
+    networks:
+      - distrisearch-network
+    depends_on:
+      - mongodb
+      - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # SLAVE NODES (Backend + Frontend combined)
+  # ═══════════════════════════════════════════════════════════════════════
+  slave-1:
+    build:
+      context: ..
+      dockerfile: docker/slave/Dockerfile
+    environment:
+      - NODE_ID=slave-1
+      - NODE_ROLE=slave
+      - MASTER_HOST=master
+      - MASTER_PORT=8001
+      - MONGODB_URI=mongodb://mongodb:27017/distrisearch?replicaSet=rs0
+      - REDIS_URL=redis://redis:6379
+      - REPLICATION_FACTOR=2
+      - LOG_LEVEL=INFO
+    ports:
+      - "8080:80"
+      - "8000:8000"
+    networks:
+      - distrisearch-network
+    depends_on:
+      - master
+      - mongodb
+      - redis
+    volumes:
+      - ./data/slave-1:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  slave-2:
+    build:
+      context: ..
+      dockerfile: docker/slave/Dockerfile
+    environment:
+      - NODE_ID=slave-2
+      - NODE_ROLE=slave
+      - MASTER_HOST=master
+      - MASTER_PORT=8001
+      - MONGODB_URI=mongodb://mongodb:27017/distrisearch?replicaSet=rs0
+      - REDIS_URL=redis://redis:6379
+      - REPLICATION_FACTOR=2
+      - LOG_LEVEL=INFO
+    ports:
+      - "8081:80"
+      - "8002:8000"
+    networks:
+      - distrisearch-network
+    depends_on:
+      - master
+      - mongodb
+      - redis
+    volumes:
+      - ./data/slave-2:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # MONGODB (Replica Set)
+  # ═══════════════════════════════════════════════════════════════════════
+  mongodb:
+    image: mongo:7.0
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    environment:
+      - MONGO_INITDB_DATABASE=distrisearch
+    ports:
+      - "27017:27017"
+    networks:
+      - distrisearch-network
+    volumes:
+      - mongodb-data:/data/db
+      - ./mongodb/init-replica.js:/docker-entrypoint-initdb.d/init-replica.js:ro
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # REDIS (Cache)
+  # ═══════════════════════════════════════════════════════════════════════
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - distrisearch-network
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # COREDNS BACKUP
+  # ═══════════════════════════════════════════════════════════════════════
+  coredns:
+    build:
+      context: ./coredns
+      dockerfile: Dockerfile
+    ports:
+      - "53:53/udp"
+      - "53:53/tcp"
+    networks:
+      - distrisearch-network
+    volumes:
+      - ./coredns/Corefile:/etc/coredns/Corefile:ro
+      - ./coredns/zones:/etc/coredns/zones
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # DNS SYNC DAEMON
+  # ═══════════════════════════════════════════════════════════════════════
+  dns-sync:
+    build:
+      context: ./dns-sync
+      dockerfile: Dockerfile
+    environment:
+      - SYNC_INTERVAL=30
+      - COREDNS_ZONE_PATH=/zones
+    networks:
+      - distrisearch-network
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./coredns/zones:/zones
+    depends_on:
+      - coredns
+    restart: unless-stopped

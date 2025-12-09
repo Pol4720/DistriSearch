@@ -50,17 +50,60 @@ El sistema propuesto es una plataforma distribuida para almacenamiento y búsque
 
 \section{Arquitectura del Sistema}
 
-\subsection{Estilo arquitectónico}
+\subsection{Estilos arquitectónicos}
 
-\subsubsection{Clasificación según estilos arquitectónicos}
+Según Tanenbaum \& Van Steen (2017), los sistemas distribuidos pueden clasificarse según diferentes estilos arquitectónicos. DistriSearch combina múltiples estilos para lograr sus objetivos:
 
-El sistema sigue un \textbf{estilo arquitectónico Master-Slave} con capacidad de promoción dinámica. En este modelo, un nodo asume el rol de Master (coordinador) mientras los demás actúan como Slaves (trabajadores). La característica distintiva es que cualquier Slave puede convertirse en Master mediante un proceso de elección cuando el Master actual falla, eliminando así el punto único de fallo típico de arquitecturas centralizadas.
+\subsubsection{Arquitectura en Capas (Layered Architecture)}
+
+El sistema implementa una \textbf{arquitectura en capas} donde cada capa proporciona servicios a la capa superior y consume servicios de la capa inferior:
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=0.9]
+  \tikzstyle{layer}=[rectangle, draw, thick, minimum width=10cm, minimum height=1cm, font=\footnotesize]
+  
+  \node[layer, fill=yellow!20] (l1) at (0,0) {Capa 1: Presentación (React SPA)};
+  \node[layer, fill=orange!20] (l2) at (0,1.3) {Capa 2: API REST (FastAPI)};
+  \node[layer, fill=green!20] (l3) at (0,2.6) {Capa 3: Lógica de Negocio (Búsqueda, Vectorización)};
+  \node[layer, fill=blue!20] (l4) at (0,3.9) {Capa 4: Servicios Distribuidos (Coordinación, Replicación)};
+  \node[layer, fill=purple!20] (l5) at (0,5.2) {Capa 5: Almacenamiento (MongoDB, Sistema de Archivos)};
+\end{tikzpicture}
+\caption{Arquitectura en capas del sistema}
+\label{fig:layered-arch}
+\end{figure}
+
+\subsubsection{Arquitectura Publish-Subscribe para Eventos}
+
+Para la comunicación asíncrona entre componentes, el sistema utiliza el patrón \textbf{Publish-Subscribe} (Tanenbaum \& Van Steen, 2017):
+
+\begin{itemize}
+  \item \textbf{Eventos de heartbeat}: Los Slaves publican su estado; el Master y otros Slaves suscritos detectan fallos
+  \item \textbf{Eventos de replicación}: Cuando se sube un documento, se publica evento para que réplicas lo reciban
+  \item \textbf{Eventos de rebalanceo}: Al añadir/remover nodos, se notifica a todo el clúster
+\end{itemize}
+
+Este patrón proporciona \textbf{desacoplamiento temporal y referencial}: los publicadores no necesitan conocer a los suscriptores, y la comunicación puede ocurrir de forma asíncrona.
+
+\subsubsection{Elementos de arquitectura Peer-to-Peer}
+
+Aunque el sistema es principalmente Master-Slave, incorpora elementos \textbf{P2P} (Tanenbaum \& Van Steen, 2017):
+
+\begin{itemize}
+  \item \textbf{Comunicación Slave-Slave}: Los Slaves se comunican directamente para heartbeats y replicación sin pasar por el Master
+  \item \textbf{Elección de líder distribuida}: Cualquier Slave puede iniciar una elección (algoritmo Bully)
+  \item \textbf{Tolerancia a particiones}: Slaves en una partición de red pueden seguir operando entre sí
+\end{itemize}
+
+\subsubsection{Estilo Master-Slave con promoción dinámica}
+
+El estilo principal es \textbf{Master-Slave} donde un nodo coordinador (Master) dirige a múltiples trabajadores (Slaves). La característica distintiva es que cualquier Slave puede convertirse en Master mediante elección cuando el Master actual falla, eliminando el punto único de fallo.
 
 Los componentes principales son:
 \begin{itemize}
-  \item \textbf{Nodos Slave}: Unidades autónomas que almacenan documentos, procesan búsquedas locales y mantienen su propia instancia de MongoDB. Cada Slave incluye tanto backend (API FastAPI) como frontend (interfaz de usuario).
-  \item \textbf{Master}: Un Slave que asume responsabilidades adicionales de coordinación: mantiene el índice de ubicación semántica global, balancea carga entre Slaves, coordina replicación y enruta queries distribuidas.
-  \item \textbf{Sistema DNS}: Proporciona resolución de nombres con múltiples entradas para failover automático.
+  \item \textbf{Nodos Slave}: Unidades autónomas que almacenan documentos, procesan búsquedas locales y mantienen su propia instancia de MongoDB. Cada Slave incluye backend (API FastAPI) y frontend (React).
+  \item \textbf{Master}: Un Slave con responsabilidades adicionales de coordinación: mantiene el índice VP-Tree global, balancea carga, coordina replicación y enruta queries.
+  \item \textbf{Load Balancer}: Distribuye tráfico entrante entre Slaves disponibles (Nginx/Traefik).
 \end{itemize}
 
 \subsection{Modelo arquitectónico: Master-Slave con elección dinámica}
@@ -69,7 +112,7 @@ Los componentes principales son:
 
 El sistema implementa una arquitectura \textbf{Master-Slave con failover automático}. A diferencia de arquitecturas centralizadas tradicionales, el rol de Master no está fijado a un nodo específico sino que puede migrar dinámicamente entre los Slaves candidatos cuando ocurre una falla.
 
-\textbf{Ubicación de recursos por vectorización semántica:} En lugar de utilizar funciones hash para determinar dónde almacenar documentos (como en DHT), el sistema emplea embeddings semánticos generados mediante sentence-transformers. Cada documento se representa como un vector de 384 dimensiones que captura su significado semántico. El Master mantiene un índice de ubicación que mapea embeddings a los Slaves que contienen documentos similares, permitiendo:
+\textbf{Ubicación de recursos por vectorización semántica:} En lugar de utilizar funciones hash para determinar dónde almacenar documentos (como en DHT), el sistema emplea vectores TF-IDF combinados con firmas MinHash. Cada documento se representa mediante un vector TF-IDF sparse y una firma MinHash de 128 hashes que permite estimar similitud Jaccard eficientemente. El Master mantiene un índice de ubicación que mapea perfiles TF-IDF a los Slaves que contienen documentos similares, permitiendo:
 \begin{itemize}
   \item Routing inteligente de queries a Slaves con contenido relevante
   \item Selección de nodos para replicación basada en afinidad de contenido
@@ -131,13 +174,21 @@ El sistema implementa una arquitectura \textbf{Master-Slave con failover automá
 
 \subsection{Distribución del sistema}
 
-\subsubsection{Distribución jerárquica Master-Slave}
-El sistema emplea una \textbf{arquitectura Master-Slave} donde existe un nodo coordinador (Master) y múltiples nodos trabajadores (Slaves). A diferencia de sistemas P2P puros, esta arquitectura proporciona un punto de coordinación centralizado que simplifica la gestión del clúster mientras mantiene la escalabilidad horizontal a través de los Slaves.
+\subsubsection{Distribución jerárquica Master-Slave sobre Docker Swarm}
+El sistema emplea una \textbf{arquitectura Master-Slave} desplegada sobre \textbf{Docker Swarm}, el orquestador nativo de Docker que proporciona clustering, scheduling y service discovery automático. A diferencia de sistemas P2P puros, esta arquitectura proporciona un punto de coordinación centralizado que simplifica la gestión del clúster mientras mantiene la escalabilidad horizontal a través de los Slaves.
+
+\textbf{Docker Swarm} aporta las siguientes características fundamentales (Tanenbaum \& Van Steen, 2017):
+\begin{itemize}
+  \item \textbf{Redes Overlay}: Comunicación multi-host mediante VXLAN, encapsulando tráfico Ethernet sobre UDP/IP
+  \item \textbf{Service Discovery}: DNS interno en \texttt{127.0.0.11} que resuelve nombres de servicio a IPs virtuales
+  \item \textbf{Load Balancing}: Routing mesh con IPVS para distribución de carga entre réplicas
+  \item \textbf{Ingress Network}: Red overlay especial para tráfico externo con balanceo automático
+\end{itemize}
 
 Cada \textbf{Slave} es un nodo completo que integra:
 \begin{itemize}
   \item \textbf{Backend}: API REST para procesamiento de consultas y gestión de documentos
-  \item \textbf{Frontend}: Interfaz web Streamlit para interacción con usuarios
+  \item \textbf{Frontend}: Aplicación web React servida mediante Nginx para interacción con usuarios
   \item \textbf{Base de datos}: Instancia MongoDB local para almacenamiento de documentos
   \item \textbf{Servicios de clúster}: Heartbeat, participación en elecciones, replicación
 \end{itemize}
@@ -262,7 +313,7 @@ Un aspecto crítico es la \textbf{elección de líder}: si el Master falla, los 
 \textbf{Master} & 
 Mantener índice semántico de ubicación de recursos, recibir registros de nuevos documentos, calcular embeddings y determinar relevancia semántica, enrutar consultas a Slaves apropiados, coordinar replicación, monitorear salud del clúster mediante heartbeats, detectar fallos de nodos. \\ \hline
 \textbf{Slave} & 
-Almacenar documentos en MongoDB local, servir interfaz web (frontend Streamlit), procesar consultas de búsqueda locales, participar en elecciones de líder (algoritmo Bully), enviar heartbeats al Master, recibir y aplicar replicaciones de otros Slaves. \\ \hline
+Almacenar documentos en MongoDB local, servir interfaz web (frontend React con Nginx), procesar consultas de búsqueda locales, participar en elecciones de líder (algoritmo Bully), enviar heartbeats al Master, recibir y aplicar replicaciones de otros Slaves. \\ \hline
 \textbf{Cliente} & 
 Acceder a cualquier Slave disponible vía web, realizar búsquedas semánticas y por nombre, subir y descargar documentos, el DNS resuelve distrisearch.local a cualquier Slave saludable. \\ \hline
 \end{tabularx}
@@ -270,44 +321,76 @@ Acceder a cualquier Slave disponible vía web, realizar búsquedas semánticas y
 \label{tab:responsibilities}
 \end{table}
 
-\section{Despliegue y distribución de servicios con Docker}
+\section{Despliegue y distribución de servicios con Docker Swarm}
 
-El despliegue se implementa usando contenedores Docker con una red compartida para el clúster Master-Slave:
+El despliegue se implementa usando \textbf{Docker Swarm} como plataforma de orquestación, aprovechando sus capacidades nativas de networking, service discovery y load balancing:
 
-\subsection{Arquitectura de redes Docker}
+\subsection{Arquitectura de redes Docker Swarm}
 
 \begin{description}
-  \item[cluster-network] Red bridge donde residen el Master, los Slaves y sus bases de datos MongoDB. Permite comunicación directa entre todos los componentes del clúster.
-  \item[dns-network] Red opcional para CoreDNS que resuelve \texttt{distrisearch.local} a los Slaves disponibles.
+  \item[distrisearch-overlay] Red overlay creada con driver \texttt{overlay} que permite comunicación multi-host. Utiliza VXLAN para encapsular tráfico entre nodos físicos del Swarm.
+  \item[ingress] Red overlay especial gestionada automáticamente por Swarm para tráfico externo. Implementa routing mesh con IPVS para balanceo de carga.
 \end{description}
 
-Cada Slave expone sus puertos de backend (8000) y frontend (8501) al host, permitiendo acceso directo desde usuarios externos.
+\subsubsection{Modos de endpoint para Service Discovery}
+Docker Swarm ofrece dos modos de endpoint para resolución de servicios:
+\begin{itemize}
+  \item \textbf{VIP (Virtual IP)}: Modo por defecto. El DNS interno resuelve el nombre del servicio a una IP virtual única. El balanceador IPVS distribuye el tráfico entre réplicas.
+  \item \textbf{DNSRR (DNS Round Robin)}: El DNS retorna todas las IPs de las réplicas. El cliente decide a cuál conectarse.
+\end{itemize}
 
-\subsection{Comandos de despliegue}
+El sistema utiliza \textbf{VIP} para los Slaves (balanceo automático) y permite acceso directo mediante tasks individuales: \texttt{slave.1.distrisearch-overlay}, \texttt{slave.2.distrisearch-overlay}, etc.
 
-\textbf{1. Crear red del clúster:}
+\subsection{Comandos de despliegue con Docker Swarm}
+
+\textbf{1. Inicializar Swarm y crear red overlay:}
 \begin{verbatim}
-docker network create cluster-network
+docker swarm init --advertise-addr <IP_MANAGER>
+docker network create --driver overlay \
+  --attachable distrisearch-overlay
 \end{verbatim}
 
-\textbf{2. Desplegar Master:}
+\textbf{2. Desplegar stack con docker-compose.swarm.yml:}
 \begin{verbatim}
-docker run -d --name master --network cluster-network \
-  -e NODE_ROLE=master \
-  -e NODE_ID=master-001 \
-  master-image:latest
+docker stack deploy -c docker-compose.swarm.yml distrisearch
 \end{verbatim}
 
-\textbf{3. Desplegar Slaves con MongoDB local:}
+\textbf{Configuración de servicio Master en docker-compose.swarm.yml:}
 \begin{verbatim}
-docker run -d --name mongo-slave1 --network cluster-network \
-  mongo:latest
-docker run -d --name slave-001 --network cluster-network \
-  -e NODE_ROLE=slave \
-  -e NODE_ID=slave-001 \
-  -e MASTER_HOST=master \
-  -p 8000:8000 -p 8501:8501 \
-  slave-image:latest
+master:
+  image: distrisearch/master:latest
+  networks:
+    - distrisearch-overlay
+  deploy:
+    replicas: 1
+    placement:
+      constraints: [node.role == manager]
+\end{verbatim}
+
+\textbf{3. Configuración de Slaves con MongoDB en Swarm:}
+\begin{verbatim}
+slave:
+  image: distrisearch/slave:latest
+  networks:
+    - distrisearch-overlay
+  environment:
+    - MASTER_HOST=master  # Resuelto por DNS interno
+  deploy:
+    replicas: 3
+    endpoint_mode: vip    # Balanceo automático
+  ports:
+    - target: 8000
+      published: 8000
+      mode: ingress       # Routing mesh
+
+mongo:
+  image: mongo:7
+  networks:
+    - distrisearch-overlay
+  deploy:
+    replicas: 3
+    placement:
+      max_replicas_per_node: 1
 \end{verbatim}
 
 \begin{figure}[H]
@@ -362,9 +445,26 @@ docker run -d --name slave-001 --network cluster-network \
 
 \section{Procesos y patrones de diseño}
 
-Cada nodo del clúster ejecuta procesos especializados según su rol. Los \textbf{Slaves} ejecutan: un servidor FastAPI para el backend, un servidor Streamlit para el frontend, un servicio de heartbeat UDP para detección de fallos, y un cliente MongoDB para persistencia local. El \textbf{Master} ejecuta adicionalmente: el índice semántico de ubicación, el balanceador de carga, y el coordinador de replicación.
+Cada nodo del clúster ejecuta procesos especializados según su rol, siguiendo los principios de diseño de sistemas distribuidos modernos (Tanenbaum \& Van Steen, 2017). Los \textbf{Slaves} ejecutan: un servidor FastAPI para el backend (procesos asíncronos con \texttt{uvicorn}), un servidor Nginx sirviendo la aplicación React para el frontend, un demonio de heartbeat UDP para detección de fallos, y un cliente Motor (async MongoDB) para persistencia local. El \textbf{Master} ejecuta adicionalmente: el índice semántico de ubicación basado en TF-IDF + MinHash, el balanceador de carga, y el coordinador de replicación.
 
-En términos de concurrencia, el sistema utiliza \texttt{asyncio} de Python para manejar múltiples conexiones y operaciones I/O sin bloqueos. Los heartbeats se procesan en un hilo separado usando UDP para minimizar latencia. El patrón adoptado combina arquitectura dirigida por eventos (event-driven) con paso de mensajes, ideal para sistemas distribuidos donde la latencia de red domina el tiempo de ejecución.
+\subsection{Tipos de procesos en el sistema}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{|l|l|X|}
+\hline
+\textbf{Proceso} & \textbf{Tipo} & \textbf{Descripción} \\ \hline
+FastAPI Server & Asíncrono (asyncio) & Event loop principal, maneja múltiples conexiones HTTP concurrentes \\ \hline
+React/Nginx & Estático + SPA & Aplicación React compilada servida por Nginx, cliente-side rendering \\ \hline
+Heartbeat Daemon & Thread dedicado & UDP broadcaster/listener en hilo separado \\ \hline
+Replication Worker & Asíncrono (asyncio) & Tareas de fondo para sincronización de réplicas \\ \hline
+MongoDB Client & Asíncrono (Motor) & Pool de conexiones async para operaciones I/O \\ \hline
+\end{tabularx}
+\caption{Tipos de procesos por componente}
+\label{tab:process-types}
+\end{table}
+
+En términos de concurrencia, el sistema utiliza \texttt{asyncio} de Python para manejar múltiples conexiones y operaciones I/O sin bloqueos, siguiendo el modelo de programación basada en eventos (Tanenbaum \& Van Steen, 2017). Los heartbeats se procesan en un hilo separado usando UDP para minimizar latencia. El patrón adoptado combina arquitectura dirigida por eventos (event-driven) con paso de mensajes, ideal para sistemas distribuidos donde la latencia de red domina el tiempo de ejecución.
 
 \subsection{Arquitectura interna de un Slave}
 
@@ -378,8 +478,8 @@ En términos de concurrencia, el sistema utiliza \texttt{asyncio} de Python para
   \node[component] (api) at (0,4) {FastAPI Backend\\(REST endpoints)};
   \node[component] (search) at (0,2.5) {Search Service\\(semántica + nombre)};
   \node[component] (cluster) at (0,1) {Cluster Services\\(heartbeat/elección)};
-  \node[component] (frontend) at (5,4) {Streamlit Frontend\\(interfaz web)};
-  \node[component] (embed) at (5,2.5) {Embedding Service\\(sentence-transformers)};
+  \node[component] (frontend) at (5,4) {React Frontend\\(SPA + Nginx)};
+  \node[component] (embed) at (5,2.5) {Vectorization Service\\(TF-IDF + MinHash)};
   
   % Almacenamiento
   \node[storage] (mongo) at (2.5,-0.5) {MongoDB\\Local};
@@ -402,12 +502,15 @@ En términos de concurrencia, el sistema utiliza \texttt{asyncio} de Python para
 
 \subsection{Patrones de diseño aplicados}
 
+Los siguientes patrones de diseño se aplican siguiendo las mejores prácticas de sistemas distribuidos (Tanenbaum \& Van Steen, 2017):
+
 \begin{description}
-  \item[Event-Driven Architecture] — Cada componente reacciona a eventos (llegada de mensajes, timeouts, cambios de estado)
-  \item[Message Passing] — Comunicación entre componentes mediante colas de mensajes asíncronas
-  \item[Reactor Pattern] — Event loop que multiplexea I/O de múltiples sockets
-  \item[Strategy Pattern] — Algoritmos de routing y replicación intercambiables
-  \item[Observer Pattern] — Notificación de cambios de estado de red a componentes interesados
+  \item[Event-Driven Architecture] \textemdash\ Cada componente reacciona a eventos (llegada de mensajes, timeouts, cambios de estado). FastAPI utiliza un event loop \texttt{asyncio} para multiplexar I/O.
+  \item[Message Passing] \textemdash\ Comunicación entre componentes mediante colas de mensajes asíncronas (\texttt{asyncio.Queue}).
+  \item[Reactor Pattern] \textemdash\ Event loop que multiplexea I/O de múltiples sockets usando \texttt{uvloop} o \texttt{selectors}.
+  \item[Strategy Pattern] \textemdash\ Algoritmos de routing y replicación intercambiables (VIP vs DNSRR, afinidad vs round-robin).
+  \item[Observer Pattern] \textemdash\ Notificación de cambios de estado de red a componentes interesados mediante callbacks async.
+  \item[Circuit Breaker] \textemdash\ Protección contra cascadas de fallos en llamadas entre servicios.
 \end{description}
 
 \subsection{Modelo de concurrencia}
@@ -442,22 +545,39 @@ En términos de concurrencia, el sistema utiliza \texttt{asyncio} de Python para
 
 \subsection{Modelo de comunicación por capas}
 
-El sistema implementa una \textbf{arquitectura en capas} para la comunicación que separa las responsabilidades en tres niveles. La \textbf{capa de aplicación} define un protocolo de mensajería de alto nivel con mensajes como \texttt{REGISTER}, \texttt{HEARTBEAT}, \texttt{ELECTION}, \texttt{REPLICATE} y \texttt{QUERY}. Esta capa contiene la lógica de coordinación Master-Slave, ubicación semántica de recursos y gestión de estado del clúster.
+El sistema implementa una \textbf{arquitectura en capas} para la comunicación siguiendo el modelo OSI adaptado a sistemas distribuidos (Tanenbaum \& Van Steen, 2017). La \textbf{capa de aplicación} define un protocolo de mensajería de alto nivel con mensajes como \texttt{REGISTER}, \texttt{HEARTBEAT}, \texttt{ELECTION}, \texttt{REPLICATE} y \texttt{QUERY}. Esta capa contiene la lógica de coordinación Master-Slave, ubicación semántica de recursos y gestión de estado del clúster.
 
-La \textbf{capa de transporte} utiliza HTTP/REST (TCP) para operaciones de API como registro de documentos, consultas y replicación. Para heartbeats entre nodos se emplea UDP, optimizado para baja latencia y tolerancia a pérdidas ocasionales. Esta capa también gestiona conexiones persistentes mediante pools de conexiones HTTP.
+La \textbf{capa de transporte} utiliza:
+\begin{itemize}
+  \item \textbf{HTTP/REST (TCP)}: Para operaciones de API síncronas (registro de documentos, consultas)
+  \item \textbf{gRPC (HTTP/2)}: Para comunicación inter-nodo de alta eficiencia con Protocol Buffers
+  \item \textbf{UDP}: Para heartbeats con baja latencia y tolerancia a pérdidas ocasionales
+\end{itemize}
 
-La \textbf{capa de red} utiliza routing IP estándar sobre la red Docker interna. El dominio \texttt{distrisearch.local} se resuelve mediante CoreDNS a cualquier Slave saludable, proporcionando descubrimiento automático de servicios.
+La \textbf{capa de red} utiliza las redes overlay de Docker Swarm con VXLAN. El \textbf{DNS interno de Docker} (\texttt{127.0.0.11}) resuelve nombres de servicio automáticamente:
+\begin{itemize}
+  \item \texttt{master} $\rightarrow$ VIP del servicio Master
+  \item \texttt{slave} $\rightarrow$ VIP balanceada entre réplicas de Slaves
+  \item \texttt{tasks.slave} $\rightarrow$ Todas las IPs individuales (modo DNSRR)
+\end{itemize}
 
 \subsection{Tipos de comunicación}
 
-\subsubsection{Comunicación Master-Slave}
-Los Slaves se comunican con el Master mediante REST API para: registrar nuevos documentos (el Master actualiza su índice semántico), recibir instrucciones de replicación, y reportar estado de salud. El Master inicia comunicación con Slaves para: enrutar consultas a nodos relevantes, coordinar replicación, y verificar disponibilidad.
+\subsubsection{Comunicación Master-Slave (RPC y REST)}
+Los Slaves se comunican con el Master mediante \textbf{REST API} (JSON sobre HTTP) para operaciones estándar y \textbf{gRPC} para operaciones de alto rendimiento:
+\begin{itemize}
+  \item \texttt{POST /register}: Registrar nuevos documentos (el Master actualiza su índice TF-IDF)
+  \item \texttt{gRPC ReplicateStream}: Streaming bidireccional para sincronización de réplicas
+  \item \texttt{GET /health}: Health checks para el balanceador de Swarm
+\end{itemize}
+
+El Master utiliza el DNS de Docker Swarm para descubrir Slaves: \texttt{dns.resolver.query('tasks.slave', 'A')} retorna todas las IPs de réplicas activas.
 
 \subsubsection{Comunicación Slave-Slave}
-Los Slaves se comunican entre sí para: heartbeats UDP (detección de fallos), mensajes de elección (algoritmo Bully cuando el Master falla), y transferencia directa de réplicas. Esta comunicación no pasa por el Master, garantizando continuidad ante fallos del coordinador.
+Los Slaves se comunican entre sí para: heartbeats UDP (detección de fallos), mensajes de elección (algoritmo Bully cuando el Master falla), y transferencia directa de réplicas mediante gRPC streams. Esta comunicación no pasa por el Master, garantizando continuidad ante fallos del coordinador.
 
 \subsubsection{Comunicación Cliente-Sistema}
-Los usuarios acceden directamente a cualquier Slave mediante su interfaz web Streamlit. El DNS resuelve \texttt{distrisearch.local} a Slaves disponibles, proporcionando balanceo de carga implícito. No existe gateway centralizado; cada Slave es autónomo para atender usuarios.
+Los usuarios acceden al sistema a través del \textbf{ingress network} de Docker Swarm. El routing mesh recibe peticiones en cualquier nodo del Swarm y las enruta automáticamente a un Slave disponible mediante IPVS. Externamente se puede configurar un load balancer (HAProxy, Traefik) que resuelve \texttt{distrisearch.local}.
 
 \subsection{Protocolo de mensajería}
 Se definen los siguientes tipos de mensajes:
@@ -510,6 +630,8 @@ Cuando un Slave detecta que el Master no responde (timeout en heartbeats):
 
 \subsection{Modelo de coordinación}
 
+La coordinación en sistemas distribuidos aborda dos problemas fundamentales: el ordenamiento de eventos y la toma de decisiones colectivas (Tanenbaum \& Van Steen, 2017). El sistema DistriSearch implementa mecanismos específicos para cada uno.
+
 \subsubsection{Desacoplamiento temporal y referencial}
 
 El sistema implementa diferentes niveles de acoplamiento según el tipo de operación:
@@ -536,49 +658,239 @@ Por otro lado, la \textbf{comunicación basada en eventos} es temporalmente desa
 
 \subsubsection{Protocolo de sincronización para operaciones distribuidas}
 
-\textbf{Protocolo de timestamps de Lamport:} El sistema utiliza relojes lógicos para establecer un ordenamiento parcial de eventos distribuidos. Cada nodo mantiene un contador $L_i$ que se incrementa en cada evento local. Cuando un nodo envía un mensaje, primero incrementa su reloj ($L_i := L_i + 1$) y adjunta este timestamp al mensaje. Al recibir un mensaje con timestamp $T$, el nodo receptor actualiza su reloj tomando el máximo entre su valor actual y el recibido, luego lo incrementa: $L_i := \max(L_i, T) + 1$. Este mecanismo garantiza que si un evento $a$ causalmente precede a un evento $b$, entonces el timestamp de $a$ será menor que el de $b$. Para resolver empates cuando dos eventos tienen el mismo timestamp, se utiliza el identificador del nodo como criterio de desempate: $(T_1, node_1) < (T_2, node_2)$ si $T_1 < T_2$, o si $T_1 = T_2$ y $node_1 < node_2$.
+\textbf{Relojes Lógicos de Lamport (1978):} El sistema utiliza relojes lógicos para establecer un ordenamiento parcial de eventos distribuidos, fundamental para la consistencia de operaciones (Tanenbaum \& Van Steen, 2017). Cada nodo mantiene un contador $L_i$ que se incrementa en cada evento local según las siguientes reglas:
+
+\begin{enumerate}
+  \item \textbf{Evento local}: $L_i := L_i + 1$
+  \item \textbf{Envío de mensaje}: Incrementar $L_i$, adjuntar timestamp $T = L_i$ al mensaje
+  \item \textbf{Recepción de mensaje} con timestamp $T$: $L_i := \max(L_i, T) + 1$
+\end{enumerate}
+
+Este mecanismo garantiza la propiedad de \textbf{causalidad}: si un evento $a$ causalmente precede a un evento $b$ (notado $a \rightarrow b$), entonces $L(a) < L(b)$. Para resolver empates cuando dos eventos tienen el mismo timestamp, se utiliza el identificador del nodo como criterio de desempate: $(T_1, node_1) < (T_2, node_2)$ si $T_1 < T_2$, o si $T_1 = T_2$ y $node_1 < node_2$.
+
+\textbf{Aplicación en DistriSearch:} Los timestamps de Lamport se utilizan para:
+\begin{itemize}
+  \item Ordenar operaciones de replicación concurrentes
+  \item Detectar mensajes de elección obsoletos
+  \item Resolver conflictos en actualizaciones del índice semántico
+\end{itemize}
 
 \subsection{Toma de decisiones distribuidas}
 
-\subsubsection{Consenso para operaciones críticas}
+\subsubsection{Algoritmo Bully para elección de líder}
 
-\textbf{Escenario:} Decidir qué nodo se encarga de una tarea (ej: convertirse en coordinador de zona).
+El algoritmo Bully (Garcia-Molina, 1982) se utiliza para elegir un nuevo Master cuando el actual falla. Es un algoritmo de elección que garantiza que el nodo con mayor ID (prioridad) se convierte en líder.
 
-\textbf{Algoritmo de elección de líder (simplificado):}
+\subsubsection{Consenso Raft-Lite para operaciones críticas}
+
+Para operaciones que requieren acuerdo entre múltiples nodos, el sistema implementa una versión simplificada del algoritmo \textbf{Raft} (Ongaro \& Ousterhout, 2014), adaptada para el contexto Master-Slave:
+
 \begin{enumerate}
-  \item Cuando se detecta ausencia de coordinador, cada nodo calcula prioridad: \\
-  $P_i = h(\text{node\_id}_i, \text{load}_i, \text{uptime}_i)$
-  \item Cada nodo anuncia su prioridad a sus vecinos
-  \item Nodo con mayor prioridad y confirmación de $\geq 2/3$ vecinos se designa líder
-  \item Líder anuncia su rol a toda la red mediante flooding
+  \item \textbf{Términos (Terms)}: Cada período de liderazgo tiene un número de término monotonamente creciente
+  \item \textbf{Heartbeats del líder}: El Master envía heartbeats periódicos a todos los Slaves
+  \item \textbf{Timeout de elección}: Si un Slave no recibe heartbeat en $T_{election}$, inicia elección
+  \item \textbf{Votación}: Cada Slave vota por el primer candidato que solicita voto en un término
+  \item \textbf{Mayoría}: Candidato con $> N/2$ votos se convierte en líder
 \end{enumerate}
 
 \textbf{Consenso para cambios de configuración:}
 \begin{itemize}
   \item Cambios críticos (ej: modificar factor de replicación) requieren consenso
-  \item Se usa votación de mayoría simple o algoritmo Raft simplificado
-  \item Solo se aplica cambio si $> 50\%$ de nodos activos aprueban
+  \item Se usa votación de mayoría simple: solo se aplica cambio si $> 50\%$ de nodos activos aprueban
+  \item Los cambios se registran en un log replicado para recuperación ante fallos
 \end{itemize}
 
 \section{Localización y nombrado de datos / recursos}
 
-Cada documento en el sistema tiene un identificador único (UUID generado al subir) y un \textbf{embedding semántico} de 384 dimensiones que representa su contenido. El mecanismo de localización se basa en \textbf{similitud semántica} en lugar de funciones hash, lo que permite ubicar documentos según su significado y no según propiedades arbitrarias de su identificador.
+El sistema de nombrado y localización combina dos mecanismos complementarios (Tanenbaum \& Van Steen, 2017):
 
-El Master mantiene un \textbf{índice de ubicación semántica} que mapea cada Slave a un perfil semántico agregado de sus documentos. Cuando llega una consulta, el Master calcula su embedding y determina qué Slaves tienen contenido semánticamente similar.
+\subsection{Nombrado basado en DNS de Docker Swarm}
+
+Docker Swarm proporciona un sistema de nombrado jerárquico automático:
+\begin{itemize}
+  \item \textbf{Nombres de servicio}: \texttt{master}, \texttt{slave}, \texttt{mongo} resueltos por DNS interno
+  \item \textbf{Nombres de tareas}: \texttt{slave.1}, \texttt{slave.2}, etc. para acceso a réplicas específicas
+  \item \textbf{DNS queries}: \texttt{tasks.slave} retorna todas las IPs (DNSRR)
+\end{itemize}
+
+\subsection{Localización semántica con TF-IDF + MinHash}
+
+Cada documento tiene un identificador único (UUID) y un \textbf{vector TF-IDF} que representa su contenido. A diferencia de embeddings de redes neuronales pre-entrenadas, TF-IDF ofrece:
+\begin{itemize}
+  \item \textbf{Interpretabilidad}: Pesos directamente relacionados con términos del documento
+  \item \textbf{Eficiencia}: Cálculo local sin dependencia de modelos externos
+  \item \textbf{Extensibilidad}: Fácil actualización del vocabulario global
+\end{itemize}
+
+Para detección rápida de similitud, se utiliza \textbf{MinHash} (Broder, 1997) que genera firmas compactas de 128 hashes para cada documento, permitiendo estimar similitud Jaccard en $O(1)$.
+
+El Master mantiene un \textbf{índice de ubicación semántica} que mapea cada Slave a un perfil TF-IDF agregado de sus documentos. Cuando llega una consulta, el Master calcula su vector TF-IDF y determina qué Slaves tienen contenido semánticamente similar usando similitud coseno.
+
+\subsection{Particionamiento con VP-Tree y Centroides}
+
+El sistema utiliza un \textbf{VP-Tree} (Vantage-Point Tree) para particionar el espacio semántico de documentos (Yianilos, 1993). A diferencia de estructuras como KD-Trees que trabajan bien en espacios de baja dimensión, VP-Tree escala eficientemente en espacios métricos de alta dimensión típicos de representaciones TF-IDF.
+
+\subsubsection{Estructura del VP-Tree}
+
+El VP-Tree divide recursivamente el espacio de documentos:
+\begin{enumerate}
+  \item Se selecciona un \textbf{vantage point} (punto de referencia) como pivote
+  \item Se calcula la \textbf{distancia mediana} $\mu$ de todos los documentos al pivote
+  \item Los documentos con $d(x, vp) \leq \mu$ van al subárbol izquierdo
+  \item Los documentos con $d(x, vp) > \mu$ van al subárbol derecho
+  \item Se repite recursivamente hasta que cada hoja contiene $\leq$ threshold documentos
+\end{enumerate}
+
+\begin{algorithm}[H]
+\caption{Construcción de VP-Tree para particionamiento}
+\begin{algorithmic}[1]
+\Function{BuildVPTree}{$documents$}
+  \If{$|documents| \leq threshold$}
+    \State \Return \textbf{Leaf}($documents$, centroid=\Call{ComputeCentroid}{$documents$})
+  \EndIf
+  \State $vp \gets$ \Call{SelectVantagePoint}{$documents$}  \Comment{Maximiza varianza de distancias}
+  \State $distances \gets [d(doc, vp)$ for $doc$ in $documents]$
+  \State $\mu \gets$ median($distances$)
+  \State $left \gets \{doc : d(doc, vp) \leq \mu\}$
+  \State $right \gets \{doc : d(doc, vp) > \mu\}$
+  \State \Return \textbf{Node}($vp$, $\mu$, \Call{BuildVPTree}{$left$}, \Call{BuildVPTree}{$right$})
+\EndFunction
+\end{algorithmic}
+\end{algorithm}
+
+\subsubsection{Centroides de partición}
+
+Cada partición (hoja del VP-Tree) tiene un \textbf{centroide} que representa el perfil semántico agregado de sus documentos. El centroide se calcula como la media de los vectores TF-IDF normalizados:
+
+$$\text{centroid}_p = \frac{1}{|D_p|} \sum_{d \in D_p} \frac{\mathbf{v}_d}{\|\mathbf{v}_d\|_2}$$
+
+donde $D_p$ es el conjunto de documentos en la partición $p$ y $\mathbf{v}_d$ es el vector TF-IDF del documento $d$.
+
+\textbf{Recomputación de centroides}: Cuando la distribución de documentos en una partición cambia significativamente (drift semántico), se ejecuta un algoritmo de \textbf{k-medoids} para recomputar centroides óptimos:
+
+\begin{algorithm}[H]
+\caption{Recomputación de centroides con k-medoids}
+\begin{algorithmic}[1]
+\Function{RecomputeCentroids}{$partitions$, $k$}
+  \For{$partition$ in $partitions$}
+    \If{$partition.drift\_score > threshold$}
+      \State $medoids \gets$ \Call{KMedoids}{$partition.documents$, $k=1$}
+      \State $partition.centroid \gets medoids[0]$
+      \State $partition.drift\_score \gets 0$
+    \EndIf
+  \EndFor
+\EndFunction
+\end{algorithmic}
+\end{algorithm}
+
+\subsubsection{LSH para agrupamiento de documentos similares}
+
+\textbf{Locality-Sensitive Hashing (LSH)} se utiliza para pre-agrupar documentos similares antes de su asignación a particiones (Indyk \& Motwani, 1998). LSH garantiza que documentos con alta similitud Jaccard tengan alta probabilidad de colisionar en el mismo bucket:
+
+$$P[\text{hash}(a) = \text{hash}(b)] = J(a, b)$$
+
+donde $J(a,b)$ es la similitud Jaccard entre documentos $a$ y $b$.
+
+El sistema implementa LSH con \textbf{bandas} (banding technique):
+\begin{itemize}
+  \item Las 128 firmas MinHash se dividen en $b=16$ bandas de $r=8$ hashes cada una
+  \item Dos documentos son \textbf{candidatos similares} si coinciden en al menos una banda completa
+  \item Probabilidad de ser candidatos: $P = 1 - (1 - s^r)^b$ donde $s$ es la similitud real
+  \item Con $b=16, r=8$: documentos con $s \geq 0.5$ tienen $>96\%$ de probabilidad de ser candidatos
+\end{itemize}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=0.85]
+  \tikzstyle{doc}=[circle, draw, fill=blue!20, minimum size=0.3cm]
+  \tikzstyle{centroid}=[star, star points=5, draw, fill=red!50, minimum size=0.4cm]
+  \tikzstyle{partition}=[rectangle, draw, dashed, rounded corners]
+  
+  % Partición 1 (IA/ML)
+  \node[partition, minimum width=2.5cm, minimum height=2cm, fill=green!10] (p1) at (0,0) {};
+  \node[centroid] (c1) at (0,0) {};
+  \node[doc] at (-0.6,0.5) {};
+  \node[doc] at (0.4,0.6) {};
+  \node[doc] at (-0.3,-0.4) {};
+  \node[doc] at (0.5,-0.3) {};
+  \node[font=\tiny, below] at (0,-1.3) {Partición 1: IA/ML};
+  
+  % Partición 2 (Algoritmos)
+  \node[partition, minimum width=2.5cm, minimum height=2cm, fill=yellow!10] (p2) at (4,0) {};
+  \node[centroid] (c2) at (4,0) {};
+  \node[doc] at (3.5,0.5) {};
+  \node[doc] at (4.5,0.4) {};
+  \node[doc] at (3.7,-0.5) {};
+  \node[font=\tiny, below] at (4,-1.3) {Partición 2: Algoritmos};
+  
+  % Partición 3 (Redes)
+  \node[partition, minimum width=2.5cm, minimum height=2cm, fill=purple!10] (p3) at (8,0) {};
+  \node[centroid] (c3) at (8,0) {};
+  \node[doc] at (7.6,0.4) {};
+  \node[doc] at (8.4,0.3) {};
+  \node[doc] at (8,-0.5) {};
+  \node[font=\tiny, below] at (8,-1.3) {Partición 3: Redes};
+  
+  % Leyenda
+  \node[font=\footnotesize] at (4,-2.2) {$\bigstar$ = Centroide, $\bullet$ = Documento};
+\end{tikzpicture}
+\caption{Particiones VP-Tree con centroides representando regiones semánticas}
+\label{fig:vptree-partitions}
+\end{figure}
+
+\subsection{Rebalanceo activo de particiones}
+
+Cuando un nodo se une o abandona el clúster, el sistema ejecuta un \textbf{rebalanceo activo} para redistribuir documentos. El algoritmo utiliza la técnica \textbf{"Power of Two Choices"} con afinidad semántica:
+
+\begin{algorithm}[H]
+\caption{Rebalanceo activo con Power of Two Choices}
+\begin{algorithmic}[1]
+\Function{Rebalance}{$cluster$, $event$}
+  \If{$event.type = $ NODE\_JOIN}
+    \State $overloaded \gets$ \Call{GetOverloadedNodes}{$cluster$}
+    \For{$node$ in $overloaded$}
+      \State $docs\_to\_migrate \gets$ \Call{SelectMigrationCandidates}{$node$}
+      \For{$doc$ in $docs\_to\_migrate$}
+        \State $choice1, choice2 \gets$ \Call{RandomSample}{$cluster.nodes$, 2}
+        \State $best \gets$ node con menor carga Y mayor afinidad semántica con $doc$
+        \State \Call{Migrate}{$doc$, $node$, $best$}
+      \EndFor
+    \EndFor
+  \ElsIf{$event.type = $ NODE\_LEAVE}
+    \State $orphan\_docs \gets event.node.documents$
+    \For{$doc$ in $orphan\_docs$}
+      \State $target \gets$ \Call{FindBestNode}{$doc$, $cluster$}  \Comment{Por afinidad}
+      \State \Call{RestoreFromReplica}{$doc$, $target$}
+    \EndFor
+  \EndIf
+\EndFunction
+\end{algorithmic}
+\end{algorithm}
+
+\textbf{Métricas para selección de nodo destino}:
+\begin{itemize}
+  \item \textbf{Score de afinidad}: $\text{affinity}(doc, node) = \cos(\mathbf{v}_{doc}, \text{centroid}_{node})$
+  \item \textbf{Score de carga}: $\text{load}(node) = \frac{\text{docs\_count}}{\text{capacity}}$
+  \item \textbf{Score combinado}: $\alpha \cdot \text{affinity} + (1-\alpha) \cdot (1 - \text{load})$ con $\alpha = 0.6$
+\end{itemize}
 
 \subsection{Estrategias de localización de datos}
 
-\subsubsection{Estrategia 1: Búsqueda semántica centralizada}
+\subsubsection{Estrategia 1: Búsqueda semántica centralizada con TF-IDF}
 \begin{algorithm}[H]
-\caption{Búsqueda semántica en Master}
+\caption{Búsqueda semántica en Master usando TF-IDF + MinHash}
 \begin{algorithmic}[1]
 \State \textbf{Input:} $query$ (texto de consulta), $top\_k$ (número de resultados)
 \State \textbf{Output:} lista de documentos relevantes
-\State $q\_embedding \gets$ calcular\_embedding($query$)
-\State $slaves \gets$ ordenar\_slaves\_por\_similitud($q\_embedding$)
+\State $q\_tfidf \gets$ calcular\_tfidf($query$, $vocabulario\_global$)
+\State $q\_minhash \gets$ calcular\_minhash($query$)
+\State \Comment{Fase 1: Filtrado rápido con MinHash}
+\State $candidatos \gets$ filtrar\_por\_minhash($q\_minhash$, $umbral\_jaccard=0.3$)
+\State \Comment{Fase 2: Ranking preciso con TF-IDF}
+\State $slaves \gets$ ordenar\_slaves\_por\_similitud\_coseno($q\_tfidf$, $candidatos$)
 \State $results \gets []$
 \For{$slave$ en $slaves[:3]$}  \Comment{Top 3 Slaves más relevantes}
-    \State $local\_results \gets$ enviar\_query($slave$, $query$)
+    \State $local\_results \gets$ enviar\_query\_grpc($slave$, $query$)
     \State $results \gets results \cup local\_results$
 \EndFor
 \State \Return ordenar\_por\_relevancia($results$)[:$top\_k$]
@@ -586,11 +898,11 @@ El Master mantiene un \textbf{índice de ubicación semántica} que mapea cada S
 \end{algorithm}
 
 \subsubsection{Estrategia 2: Asignación por afinidad semántica}
-Asignar cada documento al Slave cuyo perfil semántico es más similar:
-$$\text{slave\_destino} = \arg\max_{s \in \text{slaves}} \cos(embedding_{doc}, profile_s)$$
-donde $\cos$ es la similitud coseno entre vectores.
+Asignar cada documento al Slave cuyo perfil TF-IDF es más similar:
+$$\text{slave\_destino} = \arg\max_{s \in \text{slaves}} \cos(tfidf_{doc}, profile_s)$$
+donde $\cos$ es la similitud coseno entre vectores TF-IDF.
 
-\textbf{Ejemplo}: Un documento sobre "algoritmos de ordenamiento" tiene un embedding que el Master compara con los perfiles de cada Slave. Si Slave-2 ya contiene documentos sobre "estructuras de datos" y "complejidad algorítmica", su perfil será semánticamente cercano, por lo que el nuevo documento se almacena allí.
+\textbf{Ejemplo}: Un documento sobre "algoritmos de ordenamiento" tiene un vector TF-IDF que el Master compara con los perfiles de cada Slave. Si Slave-2 ya contiene documentos sobre "estructuras de datos" y "complejidad algorítmica", su perfil TF-IDF tendrá términos similares, por lo que el nuevo documento se almacena allí.
 
 \begin{figure}[H]
 \centering
@@ -626,16 +938,16 @@ donde $\cos$ es la similitud coseno entre vectores.
 
 \section{Distribución, replicación y consistencia de datos}
 
-El sistema implementa replicación de datos donde cada documento puede tener $k$ réplicas en diferentes Slaves (por defecto $k = 2$) para garantizar tolerancia a fallos y alta disponibilidad. El coordinador de replicación en el Master selecciona Slaves con \textbf{afinidad semántica}: documentos similares se replican en Slaves que ya contienen contenido relacionado, mejorando la localidad de las consultas.
+La replicación es fundamental para garantizar disponibilidad y tolerancia a fallos en sistemas distribuidos (Tanenbaum \& Van Steen, 2017). El sistema implementa replicación donde cada documento puede tener $k$ réplicas en diferentes Slaves (por defecto $k = 2$). El coordinador de replicación en el Master selecciona Slaves con \textbf{afinidad semántica basada en TF-IDF}: documentos similares se replican en Slaves que ya contienen contenido relacionado, mejorando la localidad de las consultas.
 
-Respecto a la consistencia, los documentos son inmutables una vez subidos, simplificando el modelo al eliminar la necesidad de sincronizar actualizaciones.
+Respecto a la consistencia, los documentos son inmutables una vez subidos, simplificando el modelo al eliminar la necesidad de sincronizar actualizaciones (modelo WORM: Write Once, Read Many).
 
-\subsection{Estrategia de replicación}
+\subsection{Estrategia de replicación por afinidad semántica}
 Para un factor de replicación $k=2$, al almacenar un documento en el Slave primario $S_p$, el Master selecciona $k-1 = 1$ Slaves adicionales para réplicas. Los criterios de selección son:
 \begin{itemize}
-  \item \textbf{Afinidad semántica}: Preferir Slaves cuyo perfil sea similar al embedding del documento
-  \item \textbf{Carga actual}: Balancear distribución de almacenamiento entre Slaves
-  \item \textbf{Disponibilidad}: Priorizar Slaves con historial de uptime alto
+  \item \textbf{Afinidad semántica}: Preferir Slaves cuyo perfil TF-IDF sea similar al vector del documento
+  \item \textbf{Carga actual}: Balancear distribución de almacenamiento entre Slaves (métrica: GB usados)
+  \item \textbf{Disponibilidad}: Priorizar Slaves con historial de uptime alto (ventana de 24h)
 \end{itemize}
 
 \begin{figure}[H]
@@ -677,25 +989,45 @@ Para un factor de replicación $k=2$, al almacenar un documento en el Slave prim
 
 \subsection{Modelo de consistencia}
 
-El sistema adopta un modelo de \textbf{consistencia eventual} con las siguientes características:
+El sistema adopta un modelo de \textbf{consistencia eventual} (Tanenbaum \& Van Steen, 2017), priorizando disponibilidad y tolerancia a particiones (teorema CAP):
+
 \begin{itemize}
-  \item \textbf{Escrituras}: Documentos nuevos se escriben primero en el Slave que recibe la subida, luego se replican
-  \item \textbf{Lecturas}: Cualquier Slave con una réplica puede responder consultas
+  \item \textbf{Escrituras}: Documentos nuevos se escriben primero en el Slave que recibe la subida (\textit{primary}), luego se replican asíncronamente a réplicas secundarias
+  \item \textbf{Lecturas}: Cualquier Slave con una réplica puede responder consultas (\textit{read-any})
   \item \textbf{Convergencia}: Garantizada por la naturaleza inmutable de los documentos
+  \item \textbf{Ventana de inconsistencia}: Típicamente $< 5s$ bajo condiciones normales de red
+\end{itemize}
+
+\subsubsection{Garantías de durabilidad}
+\begin{itemize}
+  \item \textbf{At-least-once delivery}: Replicación con ACKs y reintentos automáticos
+  \item \textbf{Quorum writes}: Opcionalmente, escritura confirmada solo si $\geq k/2 + 1$ réplicas confirman
+  \item \textbf{Anti-entropy}: Reconciliación periódica entre réplicas usando MinHash para detección de divergencias
 \end{itemize}
 
 \section{Tolerancia a fallos, robustez y dinámicas de red}
 
-El sistema proporciona soporte integral para fallos parciales, incluyendo: Slaves que se desconectan temporalmente, fallo del Master (recuperado mediante elección Bully), y reincorporación de nodos nuevos o recuperados.
+La tolerancia a fallos parciales es una característica esencial de los sistemas distribuidos (Tanenbaum \& Van Steen, 2017). El sistema DistriSearch proporciona soporte integral para: Slaves que se desconectan temporalmente, fallo del Master (recuperado mediante elección Bully), particiones de red, y reincorporación de nodos nuevos o recuperados.
+
+\subsection{Modelo de fallos}
+El sistema asume un modelo de \textbf{fail-stop} donde los nodos fallan deteniendo su ejecución completamente (no hay comportamiento bizantino). Los fallos se clasifican en:
+\begin{itemize}
+  \item \textbf{Crash failures}: El nodo deja de responder y no se recupera
+  \item \textbf{Omission failures}: Pérdida de mensajes (mitigado con reintentos)
+  \item \textbf{Timing failures}: Respuestas fuera de timeout (detectado por heartbeats)
+\end{itemize}
 
 La arquitectura Master-Slave con elección de líder garantiza continuidad: si el Master falla, los Slaves detectan la ausencia de heartbeats y ejecutan el algoritmo Bully para elegir un nuevo coordinador.
 
-Cuando un Slave nuevo se une a la red o un Slave existente falla:
+\subsection{Dinámicas de red en Docker Swarm}
+Cuando un Slave nuevo se une a la red o un Slave existente falla, Docker Swarm gestiona automáticamente parte del proceso:
 \begin{itemize}
-  \item \textbf{Nuevo Slave}: Se registra con el Master enviando su perfil semántico inicial
-  \item \textbf{Fallo de Slave}: El Master detecta ausencia de heartbeats y marca el nodo como no disponible
+  \item \textbf{Nuevo Slave}: Swarm lo añade a la red overlay, DNS interno actualiza registros automáticamente
+  \item \textbf{Registro con Master}: El nuevo Slave envía su perfil TF-IDF inicial vía REST API
+  \item \textbf{Fallo de Slave}: El Master detecta ausencia de heartbeats (timeout 15s) y marca el nodo como no disponible
+  \item \textbf{Health checks de Swarm}: Docker también detecta fallos y puede reiniciar contenedores automáticamente
   \item \textbf{Fallo de Master}: Slaves detectan timeout, inician elección Bully, nuevo Master asume coordinación
-  \item \textbf{Rerreplicación}: Si un Slave con réplicas falla, el Master coordina crear nuevas réplicas en otros Slaves
+  \item \textbf{Re-replicación}: Si un Slave con réplicas falla permanentemente, el Master coordina crear nuevas réplicas
 \end{itemize}
 
 \subsection{Detección de fallos mediante Heartbeat}
@@ -821,9 +1153,40 @@ Para un clúster con $N$ Slaves, el sistema presenta características de resilie
 
 \section{Seguridad, autenticación y autorización}
 
-El sistema implementa múltiples capas de seguridad para proteger tanto los datos como la integridad de la red. Cada nodo posee una identidad única basada en criptografía de clave pública (par de claves pública/privada), lo que permite autenticación mutua entre peers antes de establecer comunicación. Toda la comunicación entre nodos se realiza mediante canales cifrados usando TLS (Transport Layer Security), protegiendo los datos en tránsito contra escuchas y manipulación.
+La seguridad en sistemas distribuidos abarca múltiples dimensiones: confidencialidad, integridad, disponibilidad y autenticación (Tanenbaum \& Van Steen, 2017). El sistema DistriSearch implementa múltiples capas de seguridad aprovechando las capacidades nativas de Docker Swarm.
 
-El sistema implementa control de acceso mediante permisos que definen qué nodos pueden leer o escribir ciertos datos. Esto se logra usando firmas digitales para verificar autoriz ación, listas de control de acceso (ACLs) basadas en identidad de nodo, y certificados digitales que vinculan identidades con permisos específicos. Para mitigar la presencia de nodos maliciosos, el sistema emplea múltiples mecanismos: verificación de integridad mediante hashes criptográficos (SHA-256) y firmas digitales, sistemas de reputación que rastrean el comportamiento histórico de los nodos, validación de datos mediante consenso entre múltiples peers, limitación de privilegios siguiendo el principio de mínimo privilegio, y protección contra ataques Sybil mediante pruebas de identidad y restricción de nuevas incorporaciones.
+\subsection{Seguridad en Docker Swarm}
+
+Docker Swarm proporciona mecanismos de seguridad integrados:
+
+\begin{itemize}
+  \item \textbf{Cifrado de overlay networks}: Habilitado con \texttt{--opt encrypted}, utiliza IPSec para cifrar todo el tráfico entre nodos del Swarm
+  \item \textbf{Mutual TLS (mTLS)}: Comunicación entre nodos del Swarm automáticamente cifrada y autenticada
+  \item \textbf{Docker Secrets}: Almacenamiento seguro de credenciales, API keys y certificados, accesibles solo por servicios autorizados
+  \item \textbf{Rotación automática de certificados}: Swarm rota certificados TLS cada 90 días (configurable)
+\end{itemize}
+
+\begin{verbatim}
+# Crear red overlay cifrada
+docker network create --driver overlay --opt encrypted \
+  distrisearch-secure
+
+# Crear secret para API key
+echo "my-api-key" | docker secret create api_key -
+
+# Usar secret en servicio
+docker service create --name slave --secret api_key \
+  distrisearch/slave:latest
+\end{verbatim}
+
+\subsection{Autenticación y autorización a nivel de aplicación}
+
+Cada nodo posee una identidad única basada en criptografía de clave pública (par de claves pública/privada), lo que permite autenticación mutua entre nodos antes de establecer comunicación. El sistema implementa control de acceso mediante:
+\begin{itemize}
+  \item \textbf{JWT tokens}: Para autenticación de clientes en la API REST
+  \item \textbf{API Keys}: Para comunicación inter-servicio con Docker Secrets
+  \item \textbf{ACLs}: Listas de control de acceso para operaciones administrativas
+\end{itemize}
 
 \subsection{Modelo de seguridad por capas}
 
@@ -960,24 +1323,30 @@ MTTR & Tiempo promedio de recuperación tras fallo & $< 30$s \\ \hline
 
 \section{Conclusión}
 
-Este documento ha presentado la especificación arquitectónica completa de un sistema distribuido Master-Slave con ubicación de recursos por vectorización semántica. El diseño prioriza cinco aspectos fundamentales:
+Este documento ha presentado la especificación arquitectónica completa de un sistema distribuido Master-Slave desplegado sobre Docker Swarm con ubicación de recursos por vectorización semántica basada en TF-IDF y MinHash. El diseño prioriza cinco aspectos fundamentales según los principios de sistemas distribuidos (Tanenbaum \& Van Steen, 2017):
 
-\textbf{Coordinación centralizada con tolerancia a fallos}: El Master coordina el clúster manteniendo el índice semántico de ubicación y el balanceo de carga. Si el Master falla, el algoritmo Bully garantiza elección automática de un nuevo líder entre los Slaves candidatos, eliminando puntos únicos de fallo permanentes.
+\textbf{Coordinación centralizada con tolerancia a fallos}: El Master coordina el clúster manteniendo el índice semántico de ubicación basado en TF-IDF y el balanceo de carga. Si el Master falla, el algoritmo Bully garantiza elección automática de un nuevo líder entre los Slaves candidatos, eliminando puntos únicos de fallo permanentes. El consenso Raft-Lite se utiliza para operaciones críticas.
 
-\textbf{Ubicación semántica de recursos}: En lugar de funciones hash (DHT), el sistema utiliza embeddings de 384 dimensiones generados por sentence-transformers para representar documentos. Esto permite localización basada en similitud de contenido, mejorando la relevancia de búsquedas y la localidad de datos relacionados.
+\textbf{Ubicación semántica de recursos}: En lugar de funciones hash (DHT) o embeddings de redes neuronales costosos, el sistema utiliza vectores TF-IDF combinados con firmas MinHash para representar documentos. Esto permite localización basada en similitud de contenido con alta eficiencia computacional, mejorando la relevancia de búsquedas y la localidad de datos relacionados.
 
-\textbf{Alta disponibilidad}: Cada Slave es autónomo con su propio backend, frontend y base de datos MongoDB. Los usuarios pueden acceder a cualquier Slave directamente, y la replicación por afinidad semántica garantiza que los datos sobrevivan fallos individuales.
+\textbf{Alta disponibilidad mediante Docker Swarm}: El despliegue sobre Docker Swarm proporciona redes overlay con VXLAN, service discovery automático vía DNS interno, y balanceo de carga mediante routing mesh. Cada Slave es autónomo con su propio backend FastAPI, frontend React (servido por Nginx) y base de datos MongoDB.
 
-\textbf{Escalabilidad horizontal}: Agregar Slaves es trivial: el nuevo nodo se registra con el Master, reporta su perfil semántico, y comienza a recibir consultas y datos. El Master actualiza dinámicamente su índice de ubicación.
+\textbf{Escalabilidad horizontal}: Agregar Slaves es trivial gracias a Docker Swarm: \texttt{docker service scale slave=N}. El nuevo nodo se registra automáticamente en la red overlay, el DNS interno actualiza sus registros, y el Master incorpora el perfil TF-IDF del nuevo Slave.
 
-\textbf{Simplicidad operativa}: La arquitectura Master-Slave es conceptualmente más simple que topologías P2P complejas como hipercubo, facilitando debugging, monitoreo y mantenimiento del sistema en producción.
+\textbf{Seguridad integrada}: Docker Swarm proporciona mTLS automático entre nodos, cifrado opcional de overlay networks, y Docker Secrets para gestión segura de credenciales. La aplicación añade JWT para autenticación de clientes y ACLs para autorización.
 
 \section*{Referencias}
 \begin{itemize}
-  \item Sentence-Transformers: documentación oficial para generación de embeddings semánticos.
-  \item Algoritmo Bully: Garcia-Molina, H. ``Elections in a Distributed Computing System'' (1982).
-  \item CoreDNS: documentación oficial para resolución DNS en entornos containerizados.
-  \item FastAPI y Streamlit: frameworks utilizados para backend y frontend respectivamente.
+  \item Tanenbaum, A. S., \& Van Steen, M. (2017). \textit{Distributed Systems: Principles and Paradigms} (4th ed.). Pearson Education.
+  \item Lamport, L. (1978). ``Time, Clocks, and the Ordering of Events in a Distributed System''. \textit{Communications of the ACM}, 21(7), 558-565.
+  \item Garcia-Molina, H. (1982). ``Elections in a Distributed Computing System''. \textit{IEEE Transactions on Computers}, C-31(1), 48-59.
+  \item Ongaro, D., \& Ousterhout, J. (2014). ``In Search of an Understandable Consensus Algorithm (Raft)''. \textit{USENIX Annual Technical Conference}.
+  \item Broder, A. Z. (1997). ``On the resemblance and containment of documents''. \textit{Compression and Complexity of Sequences}, 21-29.
+  \item Yianilos, P. N. (1993). ``Data structures and algorithms for nearest neighbor search in general metric spaces''. \textit{Proceedings of the Fourth Annual ACM-SIAM Symposium on Discrete Algorithms (SODA)}, 311-321.
+  \item Indyk, P., \& Motwani, R. (1998). ``Approximate nearest neighbors: towards removing the curse of dimensionality''. \textit{Proceedings of the Thirtieth Annual ACM Symposium on Theory of Computing (STOC)}, 604-613.
+  \item Docker, Inc. (2024). Docker Swarm networking documentation. \url{https://docs.docker.com/network/drivers/overlay/}
+  \item FastAPI: Modern, fast web framework for building APIs with Python 3.7+. \url{https://fastapi.tiangolo.com/}
+  \item React: A JavaScript library for building user interfaces. \url{https://react.dev/}
 \end{itemize}
 
 \end{document}
