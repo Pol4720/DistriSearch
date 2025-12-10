@@ -1,0 +1,274 @@
+// DistriSearch Search Protocol Buffers
+// Defines messages for distributed search operations
+
+syntax = "proto3";
+
+package distrisearch.search;
+
+option python_generic_services = true;
+
+import "google/protobuf/timestamp.proto";
+
+// =======================
+// Vector Messages
+// =======================
+
+message DocumentVector {
+    repeated float tfidf = 1;
+    repeated int32 minhash = 2;
+    repeated float lda = 3;
+    repeated string textrank_keywords = 4;
+}
+
+message QueryVector {
+    repeated float tfidf = 1;
+    repeated int32 minhash = 2;
+    repeated float lda = 3;
+    repeated string terms = 4;
+}
+
+// =======================
+// Search Request Messages
+// =======================
+
+enum SearchType {
+    SEARCH_TYPE_UNKNOWN = 0;
+    SEARCH_TYPE_KEYWORD = 1;
+    SEARCH_TYPE_SEMANTIC = 2;
+    SEARCH_TYPE_HYBRID = 3;
+}
+
+message SearchRequest {
+    string query_id = 1;
+    string query_text = 2;
+    QueryVector query_vector = 3;
+    SearchType search_type = 4;
+    int32 top_k = 5;
+    SearchFilters filters = 6;
+    int32 timeout_ms = 7;
+    bool include_vectors = 8;
+}
+
+message SearchFilters {
+    repeated string tags = 1;
+    google.protobuf.Timestamp created_after = 2;
+    google.protobuf.Timestamp created_before = 3;
+    repeated string node_ids = 4;
+    repeated string partition_ids = 5;
+    map<string, string> metadata_filters = 6;
+}
+
+// =======================
+// Search Response Messages
+// =======================
+
+message SearchResponse {
+    string query_id = 1;
+    repeated SearchResult results = 2;
+    int64 total_results = 3;
+    int32 searched_partitions = 4;
+    float search_time_ms = 5;
+    string node_id = 6;
+    SearchStatus status = 7;
+    string error_message = 8;
+}
+
+message SearchResult {
+    string document_id = 1;
+    string title = 2;
+    string content_preview = 3;
+    float score = 4;
+    string node_id = 5;
+    string partition_id = 6;
+    map<string, string> metadata = 7;
+    repeated string matched_terms = 8;
+    DocumentVector vectors = 9;
+    google.protobuf.Timestamp created_at = 10;
+}
+
+enum SearchStatus {
+    SEARCH_STATUS_UNKNOWN = 0;
+    SEARCH_STATUS_SUCCESS = 1;
+    SEARCH_STATUS_PARTIAL = 2;
+    SEARCH_STATUS_TIMEOUT = 3;
+    SEARCH_STATUS_ERROR = 4;
+}
+
+// =======================
+// Distributed Search Messages
+// =======================
+
+// Request sent to coordinator to initiate distributed search
+message DistributedSearchRequest {
+    string query_id = 1;
+    string query_text = 2;
+    SearchType search_type = 3;
+    int32 top_k = 4;
+    SearchFilters filters = 5;
+    int32 timeout_ms = 6;
+    bool include_vectors = 7;
+}
+
+// Response from distributed search coordinator
+message DistributedSearchResponse {
+    string query_id = 1;
+    repeated SearchResult results = 2;
+    int64 total_results = 3;
+    int32 nodes_searched = 4;
+    int32 partitions_searched = 5;
+    float total_time_ms = 6;
+    repeated NodeSearchSummary node_summaries = 7;
+    SearchStatus status = 8;
+    string error_message = 9;
+}
+
+// Summary of search on a single node
+message NodeSearchSummary {
+    string node_id = 1;
+    int32 results_returned = 2;
+    int32 partitions_searched = 3;
+    float search_time_ms = 4;
+    SearchStatus status = 5;
+}
+
+// =======================
+// Vectorization Messages
+// =======================
+
+message VectorizeRequest {
+    string text = 1;
+    bool include_tfidf = 2;
+    bool include_minhash = 3;
+    bool include_lda = 4;
+    bool include_textrank = 5;
+}
+
+message VectorizeResponse {
+    DocumentVector vector = 1;
+    float processing_time_ms = 2;
+}
+
+// =======================
+// Similarity Search Messages
+// =======================
+
+message SimilarDocumentsRequest {
+    string document_id = 1;
+    DocumentVector reference_vector = 2;
+    int32 top_k = 3;
+    float min_similarity = 4;
+    repeated string exclude_ids = 5;
+}
+
+message SimilarDocumentsResponse {
+    repeated SimilarDocument results = 1;
+    int32 total_candidates = 2;
+    float search_time_ms = 3;
+}
+
+message SimilarDocument {
+    string document_id = 1;
+    string title = 2;
+    float similarity_score = 3;
+    float tfidf_similarity = 4;
+    float minhash_similarity = 5;
+    float lda_similarity = 6;
+    string node_id = 7;
+}
+
+// =======================
+// VP-Tree Query Messages
+// =======================
+
+message VPTreeQueryRequest {
+    DocumentVector query_vector = 1;
+    int32 k_nearest = 2;
+    float max_distance = 3;
+}
+
+message VPTreeQueryResponse {
+    repeated VPTreeResult results = 1;
+    int32 nodes_visited = 2;
+    float query_time_ms = 3;
+}
+
+message VPTreeResult {
+    string partition_id = 1;
+    string node_id = 2;
+    float distance = 3;
+    int64 document_count = 4;
+}
+
+// =======================
+// Search Index Messages
+// =======================
+
+message IndexDocumentRequest {
+    string document_id = 1;
+    string title = 2;
+    string content = 3;
+    DocumentVector vectors = 4;
+    map<string, string> metadata = 5;
+    repeated string tags = 6;
+}
+
+message IndexDocumentResponse {
+    bool success = 1;
+    string message = 2;
+    string partition_id = 3;
+}
+
+message RemoveFromIndexRequest {
+    string document_id = 1;
+}
+
+message RemoveFromIndexResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+message UpdateIndexRequest {
+    string document_id = 1;
+    DocumentVector new_vectors = 2;
+    map<string, string> metadata_updates = 3;
+}
+
+message UpdateIndexResponse {
+    bool success = 1;
+    string message = 2;
+    bool partition_changed = 3;
+    string new_partition_id = 4;
+}
+
+// =======================
+// Services
+// =======================
+
+// Search service on each node
+service SearchService {
+    // Local search on this node
+    rpc Search(SearchRequest) returns (SearchResponse);
+    
+    // Vectorize text
+    rpc Vectorize(VectorizeRequest) returns (VectorizeResponse);
+    
+    // Find similar documents
+    rpc FindSimilar(SimilarDocumentsRequest) returns (SimilarDocumentsResponse);
+    
+    // Index operations
+    rpc IndexDocument(IndexDocumentRequest) returns (IndexDocumentResponse);
+    rpc RemoveFromIndex(RemoveFromIndexRequest) returns (RemoveFromIndexResponse);
+    rpc UpdateIndex(UpdateIndexRequest) returns (UpdateIndexResponse);
+}
+
+// Distributed search coordinator service (on master)
+service SearchCoordinatorService {
+    // Distributed search across all nodes
+    rpc DistributedSearch(DistributedSearchRequest) returns (DistributedSearchResponse);
+    
+    // Query VP-Tree to find relevant partitions
+    rpc QueryVPTree(VPTreeQueryRequest) returns (VPTreeQueryResponse);
+    
+    // Streaming search for real-time results
+    rpc StreamingSearch(DistributedSearchRequest) returns (stream SearchResult);
+}
