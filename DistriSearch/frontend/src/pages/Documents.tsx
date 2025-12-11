@@ -18,7 +18,7 @@ import {
   useDocuments,
   useUploadDocument,
   useDeleteDocument,
-} from '../../hooks';
+} from '../hooks';
 import {
   DocumentCard,
   SearchBar,
@@ -26,9 +26,9 @@ import {
   EmptyState,
   ErrorMessage,
   Badge,
-} from '../../components/common';
-import { documentService } from '../../services';
-import type { Document } from '../../types';
+} from '../components/common';
+import { documentService } from '../services';
+import type { Document } from '../types';
 
 type ViewMode = 'grid' | 'list';
 

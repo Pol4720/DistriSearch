@@ -18,7 +18,7 @@ import {
   useRebalance,
   useRemoveNode,
   useClusterUpdates,
-} from '../../hooks';
+} from '../hooks';
 import {
   NodeCard,
   LoadingSpinner,
@@ -26,8 +26,8 @@ import {
   ErrorMessage,
   Badge,
   ProgressBar,
-} from '../../components/common';
-import type { NodeInfo } from '../../types';
+} from '../components/common';
+import type { NodeInfo } from '../types';
 
 export const Cluster: React.FC = () => {
   const [selectedNode, setSelectedNode] = useState<NodeInfo | null>(null);

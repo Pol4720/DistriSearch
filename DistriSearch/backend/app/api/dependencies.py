@@ -57,12 +57,11 @@ async def init_dependencies(settings: Settings):
     )
     await _mongodb_client.connect()
     
-    # Initialize repositories
-    db = _mongodb_client.database
-    _document_repository = DocumentRepository(db)
-    _node_repository = NodeRepository(db)
-    _search_history_repository = SearchHistoryRepository(db)
-    _cluster_repository = ClusterRepository(db)
+    # Initialize repositories with the MongoDB client
+    _document_repository = DocumentRepository(_mongodb_client)
+    _node_repository = NodeRepository(_mongodb_client)
+    _search_history_repository = SearchHistoryRepository(_mongodb_client)
+    _cluster_repository = ClusterRepository(_mongodb_client)
     
     # Ensure indexes are created
     await _document_repository.ensure_indexes()
@@ -73,12 +72,10 @@ async def init_dependencies(settings: Settings):
     # Initialize search engine
     _search_engine = SearchEngine()
     
-    # Initialize cluster manager
-    _cluster_manager = ClusterManager(
-        node_id=settings.node_id,
-        node_address=settings.node_address,
-        node_port=settings.node_port
-    )
+    # Skip cluster manager initialization for local development
+    # ClusterManager requires Raft, Heartbeat, and MessageBroker services
+    # For full cluster functionality, use Docker Compose deployment
+    logger.info("Running in development mode - cluster manager disabled")
     
     logger.info("Dependencies initialized successfully")
 
@@ -91,9 +88,10 @@ async def shutdown_dependencies():
         await _mongodb_client.disconnect()
         _mongodb_client = None
     
-    if _cluster_manager:
-        await _cluster_manager.shutdown()
-        _cluster_manager = None
+    # Cluster manager cleanup commented for development mode
+    # if _cluster_manager:
+    #     await _cluster_manager.shutdown()
+    #     _cluster_manager = None
     
     logger.info("Dependencies cleaned up")
 

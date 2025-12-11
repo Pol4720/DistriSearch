@@ -22,8 +22,8 @@ import {
   Pie,
   Cell,
 } from 'recharts';
-import { useClusterStatus, useDocuments, useHealth, useNodes } from '../../hooks';
-import { LoadingSpinner, ErrorMessage, Badge } from '../../components/common';
+import { useClusterStatus, useDocuments, useHealth, useNodes } from '../hooks';
+import { LoadingSpinner, ErrorMessage, Badge } from '../components/common';
 
 // Mock data for charts (replace with real metrics)
 const searchMetricsData = [

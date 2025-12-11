@@ -12,11 +12,13 @@ from app.distributed.communication.rest_client import (
     RESTClient,
     NodeClient,
     MasterClient,
+    NodeClientPool,
 )
 from app.distributed.communication.heartbeat import (
     HeartbeatService,
     HeartbeatClient,
     NodeHeartbeat,
+    NodeStatus,
 )
 from app.distributed.communication.message_broker import (
     MessageBroker,
@@ -33,10 +35,12 @@ __all__ = [
     "RESTClient",
     "NodeClient",
     "MasterClient",
+    "NodeClientPool",
     # Heartbeat
     "HeartbeatService",
     "HeartbeatClient",
     "NodeHeartbeat",
+    "NodeStatus",
     # Message Broker
     "MessageBroker",
     "Message",

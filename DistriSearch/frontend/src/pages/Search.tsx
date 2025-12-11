@@ -14,7 +14,7 @@ import {
   useSearchHistory,
   useSearchSuggestions,
   useClearSearchHistory,
-} from '../../hooks';
+} from '../hooks';
 import {
   SearchBar,
   DocumentCard,
@@ -22,8 +22,8 @@ import {
   EmptyState,
   ErrorMessage,
   Badge,
-} from '../../components/common';
-import type { SearchRequest, SearchResult } from '../../types';
+} from '../components/common';
+import type { SearchRequest, SearchResult } from '../types';
 
 export const SearchPage: React.FC = () => {
   const navigate = useNavigate();

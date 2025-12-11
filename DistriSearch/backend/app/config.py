@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     node_id: str = Field(default="node-1", alias="NODE_ID")
     node_role: str = Field(default="slave", alias="NODE_ROLE")
     cluster_id: str = Field(default="distrisearch-cluster", alias="CLUSTER_ID")
+    node_address: str = Field(default="localhost", alias="NODE_ADDRESS")
+    node_port: int = Field(default=8000, alias="NODE_PORT")
     
     # API Server
     api_host: str = Field(default="0.0.0.0", alias="API_HOST")

@@ -103,9 +103,14 @@ class MongoDBClient:
     @property
     def db(self) -> AsyncIOMotorDatabase:
         """Get database instance."""
-        if not self._db:
+        if self._db is None:
             raise RuntimeError("Not connected to MongoDB")
         return self._db
+    
+    @property
+    def database(self) -> AsyncIOMotorDatabase:
+        """Get database instance (alias for db)."""
+        return self.db
     
     async def _create_indexes(self):
         """Create database indexes."""
@@ -249,6 +254,15 @@ class DocumentRepository(BaseRepository[DocumentModel]):
     def __init__(self, client: MongoDBClient):
         super().__init__(client, "documents")
     
+    async def ensure_indexes(self):
+        """Ensure indexes exist for the documents collection."""
+        await self.collection.create_indexes([
+            IndexModel([("status", ASCENDING)]),
+            IndexModel([("primary_node_id", ASCENDING)]),
+            IndexModel([("partition_id", ASCENDING)]),
+            IndexModel([("created_at", DESCENDING)]),
+        ])
+    
     async def create(self, document: DocumentModel) -> str:
         """Create a new document."""
         try:
@@ -348,6 +362,12 @@ class ClusterRepository:
         self._nodes = BaseRepository[NodeModel](client, "nodes")
         self._partitions = BaseRepository[PartitionModel](client, "partitions")
     
+    async def ensure_indexes(self):
+        """Ensure indexes exist for cluster-related collections."""
+        # Indexes are already created by MongoDBClient._create_indexes
+        # This method exists for consistency with other repositories
+        pass
+    
     # Node operations
     
     async def create_node(self, node: NodeModel) -> str:
@@ -431,6 +451,81 @@ class ClusterRepository:
         return await self._partitions.delete_one(id)
 
 
+class NodeRepository(BaseRepository[NodeModel]):
+    """
+    Repository for node operations.
+    
+    Provides direct access to node CRUD operations.
+    """
+    
+    def __init__(self, client: MongoDBClient):
+        super().__init__(client, "nodes")
+    
+    async def ensure_indexes(self):
+        """Ensure indexes exist for the nodes collection."""
+        await self.collection.create_indexes([
+            IndexModel([("address", ASCENDING)], unique=True),
+            IndexModel([("role", ASCENDING)]),
+            IndexModel([("status", ASCENDING)]),
+        ])
+    
+    async def create(self, node: NodeModel) -> str:
+        """Create a new node."""
+        try:
+            return await self.insert_one(node.to_dict())
+        except DuplicateKeyError:
+            logger.warning(f"Node {node.id} already exists")
+            return node.id
+    
+    async def get(self, id: str) -> Optional[NodeModel]:
+        """Get node by ID."""
+        data = await self.find_by_id(id)
+        return NodeModel.from_dict(data) if data else None
+    
+    async def get_by_address(self, address: str) -> Optional[NodeModel]:
+        """Get node by address."""
+        docs = await self.find_many({"address": address}, limit=1)
+        return NodeModel.from_dict(docs[0]) if docs else None
+    
+    async def get_all(self) -> List[NodeModel]:
+        """Get all nodes."""
+        docs = await self.find_many({}, limit=1000)
+        return [NodeModel.from_dict(d) for d in docs]
+    
+    async def get_active(self) -> List[NodeModel]:
+        """Get all active nodes."""
+        docs = await self.find_many(
+            {"status": NodeStatus.ACTIVE.value},
+            limit=1000,
+        )
+        return [NodeModel.from_dict(d) for d in docs]
+    
+    async def update(self, id: str, update: Dict[str, Any]) -> bool:
+        """Update node."""
+        return await self.update_one(id, update)
+    
+    async def update_heartbeat(
+        self,
+        id: str,
+        load: float,
+        documents_count: int,
+    ):
+        """Update node heartbeat info."""
+        await self.update(id, {
+            "last_heartbeat": datetime.now(),
+            "load": load,
+            "documents_count": documents_count,
+        })
+    
+    async def delete(self, id: str) -> bool:
+        """Delete node."""
+        return await self.delete_one(id)
+    
+    async def count_active(self) -> int:
+        """Count active nodes."""
+        return await self.count({"status": NodeStatus.ACTIVE.value})
+
+
 class MetricsRepository(BaseRepository[MetricsModel]):
     """Repository for metrics operations."""
     
@@ -507,4 +602,116 @@ class MetricsRepository(BaseRepository[MetricsModel]):
             "total_queries": 0,
             "avg_time_ms": 0,
             "total_results": 0,
+        }
+
+
+class SearchHistoryRepository:
+    """
+    Repository for search history operations.
+    
+    Tracks search queries and their results for analytics.
+    """
+    
+    def __init__(self, client: MongoDBClient):
+        self.client = client
+        self.collection_name = "search_history"
+    
+    @property
+    def collection(self) -> AsyncIOMotorCollection:
+        """Get collection."""
+        return self.client.get_collection(self.collection_name)
+    
+    async def ensure_indexes(self):
+        """Ensure indexes exist for the search history collection."""
+        await self.collection.create_indexes([
+            IndexModel([("created_at", DESCENDING)]),
+            IndexModel([("user_id", ASCENDING)]),
+            IndexModel([("query", TEXT)]),
+        ])
+    
+    async def record_search(
+        self,
+        query: str,
+        user_id: Optional[str] = None,
+        results_count: int = 0,
+        response_time_ms: float = 0,
+        filters: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Record a search query."""
+        document = {
+            "query": query,
+            "user_id": user_id,
+            "results_count": results_count,
+            "response_time_ms": response_time_ms,
+            "filters": filters or {},
+            "created_at": datetime.now(),
+        }
+        result = await self.collection.insert_one(document)
+        return str(result.inserted_id)
+    
+    async def get_recent_searches(
+        self,
+        user_id: Optional[str] = None,
+        limit: int = 10,
+    ) -> List[Dict[str, Any]]:
+        """Get recent searches, optionally for a specific user."""
+        filter_query = {}
+        if user_id:
+            filter_query["user_id"] = user_id
+        
+        cursor = self.collection.find(filter_query).sort(
+            "created_at", DESCENDING
+        ).limit(limit)
+        
+        return await cursor.to_list(length=limit)
+    
+    async def get_popular_queries(
+        self,
+        since: datetime,
+        limit: int = 10,
+    ) -> List[Dict[str, Any]]:
+        """Get most popular search queries."""
+        pipeline = [
+            {"$match": {"created_at": {"$gte": since}}},
+            {"$group": {
+                "_id": "$query",
+                "count": {"$sum": 1},
+                "avg_results": {"$avg": "$results_count"},
+                "avg_time_ms": {"$avg": "$response_time_ms"},
+            }},
+            {"$sort": {"count": -1}},
+            {"$limit": limit},
+        ]
+        
+        return await self.collection.aggregate(pipeline).to_list(length=limit)
+    
+    async def get_search_stats(
+        self,
+        since: datetime,
+    ) -> Dict[str, Any]:
+        """Get search statistics."""
+        pipeline = [
+            {"$match": {"created_at": {"$gte": since}}},
+            {"$group": {
+                "_id": None,
+                "total_searches": {"$sum": 1},
+                "avg_response_time_ms": {"$avg": "$response_time_ms"},
+                "avg_results_count": {"$avg": "$results_count"},
+                "unique_users": {"$addToSet": "$user_id"},
+            }},
+        ]
+        
+        result = await self.collection.aggregate(pipeline).to_list(length=1)
+        
+        if result:
+            stats = result[0]
+            stats["unique_users_count"] = len([u for u in stats.get("unique_users", []) if u])
+            del stats["unique_users"]
+            return stats
+        
+        return {
+            "total_searches": 0,
+            "avg_response_time_ms": 0,
+            "avg_results_count": 0,
+            "unique_users_count": 0,
         }

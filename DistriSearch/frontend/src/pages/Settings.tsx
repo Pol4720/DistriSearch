@@ -9,7 +9,7 @@ import {
   Save,
   RotateCcw,
 } from 'lucide-react';
-import { Badge } from '../../components/common';
+import { Badge } from '../components/common';
 
 interface SettingsSection {
   id: string;

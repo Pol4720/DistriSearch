@@ -24,8 +24,8 @@ import {
   BarChart,
   Bar,
 } from 'recharts';
-import { useMetrics, useClusterStatus, useNodes } from '../../hooks';
-import { LoadingSpinner, ErrorMessage, Badge } from '../../components/common';
+import { useMetrics, useClusterStatus, useNodes } from '../hooks';
+import { LoadingSpinner, ErrorMessage, Badge } from '../components/common';
 
 // Mock metrics data (replace with real metrics from backend)
 const generateMockData = () => {

@@ -11,6 +11,7 @@ Components:
 - LogReplicator: Log replication between nodes
 - LeaderElection: Leader election mechanism
 - StateMachine: State machine for applying committed entries
+- PartitionTolerantConsensus: AP-mode partition-tolerant consensus (CAP theorem)
 """
 
 from app.distributed.consensus.raft_state import (
@@ -24,6 +25,16 @@ from app.distributed.consensus.log_entry import LogEntry, LogStore
 from app.distributed.consensus.log_replication import LogReplicator
 from app.distributed.consensus.leader_election import LeaderElection
 from app.distributed.consensus.state_machine import StateMachine, Command, CommandType
+from app.distributed.consensus.partition_tolerant import (
+    PartitionTolerantConsensus,
+    PartitionState,
+    PartitionStatus,
+    ConsistencyLevel,
+    DataFreshness,
+    VersionedData,
+    APReadResult,
+    APWriteResult,
+)
 
 __all__ = [
     "RaftState",
@@ -38,4 +49,13 @@ __all__ = [
     "StateMachine",
     "Command",
     "CommandType",
+    # AP-Mode Partition Tolerance (CAP)
+    "PartitionTolerantConsensus",
+    "PartitionState",
+    "PartitionStatus",
+    "ConsistencyLevel",
+    "DataFreshness",
+    "VersionedData",
+    "APReadResult",
+    "APWriteResult",
 ]

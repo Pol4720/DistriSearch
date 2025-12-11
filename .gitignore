@@ -222,3 +222,5 @@ central_shared
 *.log
 *.lof
 *.lot
+
+DistriSearch/frontend/node_modules/

@@ -1381,7 +1381,179 @@ groups:
 
 ---
 
-## 10. Resumen
+## 10. Comportamiento Adaptativo del Cluster
+
+### 10.1 Arranque Incremental
+
+El sistema **NO arranca con n nodos predefinidos**. En su lugar, crece incrementalmente:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    CICLO DE VIDA DEL CLUSTER                       │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────────────┐  │
+│  │  SINGLE_NODE │───►│   GROWING    │───►│    MULTI_NODE        │  │
+│  │              │    │              │    │                      │  │
+│  │ • 1 nodo     │    │ • 2+ nodos   │    │ • n nodos objetivo   │  │
+│  │ • Sin réplica│    │ • Réplica=1  │    │ • Réplica=config     │  │
+│  │ • k=0        │    │ • k=0 o k=1  │    │ • k según quorum     │  │
+│  └──────────────┘    └──────────────┘    └──────────────────────┘  │
+│                                                                     │
+│  El sistema es FUNCIONAL en cada fase con las capacidades          │
+│  disponibles según el número de nodos activos.                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 10.2 Tolerancia a Fallos Adaptativa
+
+**Regla fundamental**: La tolerancia de nivel k solo aplica si hay al menos k+1 instancias operando.
+
+| Nodos Activos | Factor Replicación | Quorum | Tolerancia k | Capacidades |
+|--------------|-------------------|--------|--------------|-------------|
+| 1 | 0 (sin réplica) | 1 | 0 | Lectura/Escritura local |
+| 2 | 1 | 2 | 0 | Replicación básica |
+| 3 | 2 | 2 | 1 | Tolerancia a 1 fallo |
+| 4 | 2 | 3 | 1 | Tolerancia a 1 fallo |
+| 5 | 2 | 3 | 2 | Tolerancia a 2 fallos |
+
+### 10.3 Particiones de Red - Enfoque AP (CAP Theorem)
+
+DistriSearch implementa un **enfoque AP (Availability + Partition tolerance)** del teorema CAP:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    TEOREMA CAP - ENFOQUE AP                         │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│     ┌───────────────────┐                                          │
+│     │   Consistencia    │                                          │
+│     │       (C)         │  ← Sacrificamos consistencia estricta    │
+│     └───────────────────┘                                          │
+│              △                                                      │
+│             ╱ ╲                                                     │
+│            ╱   ╲                                                    │
+│           ╱     ╲                                                   │
+│          ╱  AP   ╲  ← DistriSearch opera aquí                      │
+│         ╱         ╲                                                 │
+│  ┌─────▼───────┐   ┌──────▼─────┐                                  │
+│  │Disponibilidad│   │ Tolerancia │                                  │
+│  │     (A)     │   │ Partición  │                                  │
+│  │             │   │    (P)     │                                  │
+│  │  ✓ SIEMPRE  │   │  ✓ SIEMPRE │                                  │
+│  │  RESPONDE   │   │  SOPORTA   │                                  │
+│  └─────────────┘   └────────────┘                                  │
+│                                                                     │
+│  GARANTÍA: El sistema SIEMPRE procesa consultas y devuelve         │
+│  la versión más reciente disponible de la información.             │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Comportamiento durante particiones de red:**
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                      PARTICIÓN DE RED (AP MODE)                     │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  ┌─────────────────────┐         ┌─────────────────────┐           │
+│  │   PARTICIÓN A       │   ╳╳╳   │   PARTICIÓN B       │           │
+│  │                     │   ╳╳╳   │                     │           │
+│  │  Node 1, Node 2     │   ╳╳╳   │  Node 3, Node 4     │           │
+│  │                     │         │                     │           │
+│  │  ✓ Lecturas OK      │         │  ✓ Lecturas OK      │           │
+│  │  ✓ Escrituras OK    │         │  ✓ Escrituras OK    │           │
+│  │  ⚠ Datos pueden     │         │  ⚠ Datos pueden     │           │
+│  │    estar stale      │         │    estar stale      │           │
+│  └─────────────────────┘         └─────────────────────┘           │
+│                                                                     │
+│  AMBAS PARTICIONES OPERAN COMPLETAMENTE                            │
+│                                                                     │
+│  Respuesta incluye indicadores de frescura:                        │
+│  • CONFIRMED: Datos confirmados por quorum                         │
+│  • LIKELY_CURRENT: Reciente pero no confirmado                     │
+│  • POTENTIALLY_STALE: Puede estar desactualizado                   │
+│  • STALE: Se sabe que está desactualizado                          │
+│                                                                     │
+│  Cuando se restaura la conexión:                                    │
+│  1. Anti-entropy sync automático                                   │
+│  2. Vector clocks para detectar conflictos                         │
+│  3. Last-write-wins para resolución                                │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Ejemplo de respuesta durante partición:**
+
+```python
+from app.distributed.consensus import PartitionTolerantConsensus
+
+# Ejecutar búsqueda con garantía AP
+result = await consensus.query(
+    query_func=lambda: search_engine.search("machine learning"),
+    query_id="search-123"
+)
+
+# Respuesta SIEMPRE se entrega:
+{
+    "success": True,
+    "data": [...resultados...],
+    "freshness": "potentially_stale",
+    "availability_mode": "AP",
+    "partition_status": "partitioned",
+    "staleness_warning": "Resultados obtenidos durante partición de red (duración: 45s). Los datos pueden no reflejar actualizaciones recientes de nodos inalcanzables: ['node-3', 'node-4']",
+    "source_nodes": ["node-1", "node-2"],
+    "unavailable_nodes": ["node-3", "node-4"]
+}
+```
+
+### 10.4 Niveles de Degradación
+
+El sistema reporta su estado de degradación:
+
+| Nivel | Estado | Descripción |
+|-------|--------|-------------|
+| NONE | Óptimo | Todos los nodos activos, replicación completa |
+| MINIMAL | Bueno | Ligera reducción de redundancia |
+| MODERATE | Degradado | Replicación reducida, quorum mínimo |
+| SIGNIFICANT | Limitado | Modo single-node o partición minoritaria |
+| CRITICAL | Crítico | Solo lectura o severamente limitado |
+
+### 10.5 Componentes de Adaptación
+
+```python
+# Uso del coordinador adaptativo
+from app.distributed.coordination import (
+    AdaptiveClusterCoordinator,
+    create_adaptive_coordinator
+)
+
+# Crear coordinador
+coordinator = create_adaptive_coordinator(
+    node_id="node-1",
+    node_address="localhost:8001",
+    target_nodes=3,
+    target_replication=2
+)
+
+# Iniciar (funciona incluso solo)
+await coordinator.start()
+
+# Verificar operaciones permitidas
+check = coordinator.check_operation("write")
+if check["allowed"]:
+    # Realizar operación
+    pass
+else:
+    print(f"Operación no disponible: {check['reason']}")
+
+# Obtener salud del cluster
+health = coordinator.get_cluster_health()
+print(f"Estado: {health['status']}, Score: {health['health_score']}")
+```
+
+---
+
+## 11. Resumen
 
 Esta arquitectura proporciona:
 
@@ -1394,10 +1566,13 @@ Esta arquitectura proporciona:
 | **Tolerancia a Fallos** | Self-healing + Raft (masters) |
 | **Actualizaciones sin Downtime** | Rolling updates |
 | **Seguridad** | Secrets management + overlay networks |
+| **Arranque Incremental** | Single-node bootstrap + crecimiento |
+| **Degradación Grácil** | Adaptación automática a recursos |
+| **Tolerancia a Particiones** | Operación independiente por partición |
 
 ### Flujo de Fallback DNS:
 1. **Docker DNS (127.0.0.11)** → Principal, automático
 2. **CoreDNS Backup (10.0.10.50)** → Sincronizado con Swarm
 3. **Archivo hosts estático** → Último recurso
 
-Esta arquitectura garantiza que el sistema DistriSearch mantenga conectividad entre servicios incluso en escenarios de fallo del DNS interno de Docker.
+Esta arquitectura garantiza que el sistema DistriSearch mantenga conectividad entre servicios incluso en escenarios de fallo del DNS interno de Docker, y se adapte dinámicamente al número de nodos disponibles.
