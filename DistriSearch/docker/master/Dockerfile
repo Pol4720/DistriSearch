@@ -11,16 +11,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Copy and install Python dependencies
-COPY master/requirements.txt ./requirements-master.txt
-COPY backend/requirements.txt ./requirements-backend.txt
+COPY backend/requirements.txt ./requirements.txt
 
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements-backend.txt && \
-    pip install --no-cache-dir -r requirements-master.txt
+    pip install --no-cache-dir -r requirements.txt
 
 # Copy source code
 COPY backend/ ./backend/
-COPY master/ ./master/
 COPY shared/ ./shared/
 
 # Copy entrypoint script
@@ -45,4 +42,4 @@ HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
     CMD curl -f http://localhost:8001/health || exit 1
 
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["python", "-m", "uvicorn", "master.app.main:app", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["python", "-m", "uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8001"]
