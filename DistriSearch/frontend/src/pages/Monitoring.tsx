@@ -1,9 +1,6 @@
 import React, { useState } from 'react';
 import {
   Activity,
-  Cpu,
-  HardDrive,
-  Clock,
   TrendingUp,
   RefreshCw,
   Zap,
@@ -54,8 +51,8 @@ const nodeMetrics = [
 
 export const Monitoring: React.FC = () => {
   const [timeRange, setTimeRange] = useState('24h');
-  const { data: metrics, isLoading, error, refetch } = useMetrics();
-  const { data: clusterStatus } = useClusterStatus();
+  const { data: _metrics, isLoading, error, refetch } = useMetrics();
+  const { data: _clusterStatus } = useClusterStatus();
   const { data: nodes } = useNodes();
 
   if (isLoading) {
@@ -280,9 +277,9 @@ export const Monitoring: React.FC = () => {
                   <td className="py-3 px-4">
                     <Badge
                       variant={
-                        node.status === 'active'
+                        node.status === 'healthy'
                           ? 'success'
-                          : node.status === 'syncing'
+                          : node.status === 'degraded'
                           ? 'warning'
                           : 'error'
                       }
@@ -323,7 +320,7 @@ export const Monitoring: React.FC = () => {
                     </div>
                   </td>
                   <td className="py-3 px-4 text-right text-gray-700">
-                    {node.partitions?.length || 0}
+                    {node.partition_count ?? (node.partitions?.length || 0)}
                   </td>
                 </tr>
               ))}

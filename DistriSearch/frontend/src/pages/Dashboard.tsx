@@ -52,10 +52,11 @@ export const Dashboard: React.FC = () => {
   // Calculate partition distribution for pie chart
   const partitionData = nodes?.reduce((acc, node) => {
     const existing = acc.find(a => a.name === node.role);
+    const partitionCount = node.partition_count ?? (node.partitions?.length || 0);
     if (existing) {
-      existing.value += node.partitions?.length || 0;
+      existing.value += partitionCount;
     } else {
-      acc.push({ name: node.role, value: node.partitions?.length || 0 });
+      acc.push({ name: node.role, value: partitionCount });
     }
     return acc;
   }, [] as { name: string; value: number }[]) || [];
@@ -102,7 +103,7 @@ export const Dashboard: React.FC = () => {
         />
         <StatCard
           title="Active Nodes"
-          value={clusterStatus?.active_nodes || 0}
+          value={clusterStatus?.active_nodes ?? clusterStatus?.healthy_nodes ?? 0}
           subtitle={`of ${clusterStatus?.total_nodes || 0} total`}
           icon={<Server className="w-6 h-6" />}
           color="green"
@@ -176,7 +177,7 @@ export const Dashboard: React.FC = () => {
                     outerRadius={80}
                     paddingAngle={5}
                     dataKey="value"
-                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                    label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
                   >
                     {partitionData.map((_, index) => (
                       <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -205,8 +206,8 @@ export const Dashboard: React.FC = () => {
           <div className="space-y-3">
             {docsLoading ? (
               <LoadingSpinner size="sm" />
-            ) : documents?.items?.length ? (
-              documents.items.slice(0, 5).map((doc) => (
+            ) : documents?.documents?.length ? (
+              documents.documents.slice(0, 5).map((doc: { id: string; title?: string; filename?: string; partition_id?: string; created_at: string }) => (
                 <div
                   key={doc.id}
                   className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
@@ -214,9 +215,9 @@ export const Dashboard: React.FC = () => {
                   <div className="flex items-center gap-3">
                     <FileText className="w-5 h-5 text-gray-400" />
                     <div>
-                      <p className="font-medium text-gray-900">{doc.title || doc.filename}</p>
+                      <p className="font-medium text-gray-900">{doc.title || doc.filename || 'Untitled'}</p>
                       <p className="text-sm text-gray-500">
-                        Partition {doc.partition_id}
+                        Partition {doc.partition_id || 'N/A'}
                       </p>
                     </div>
                   </div>

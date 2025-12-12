@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { documentService } from '../services';
-import type { Document, DocumentCreate, DocumentUpdate, PaginatedResponse } from '../types';
+import type { DocumentCreate, DocumentUpdate } from '../types';
 
 // Query keys
 export const documentKeys = {
@@ -26,11 +26,11 @@ interface UseDocumentsOptions {
  * Hook to fetch paginated documents
  */
 export function useDocuments(options: UseDocumentsOptions = {}) {
-  const { page = 1, limit = 20, partition, node, enabled = true } = options;
+  const { page = 1, limit = 20, node, enabled = true } = options;
 
   return useQuery({
-    queryKey: documentKeys.list({ page, limit, partition, node }),
-    queryFn: () => documentService.getAll({ page, limit, partition, node }),
+    queryKey: documentKeys.list({ page, limit, node }),
+    queryFn: () => documentService.list({ page, page_size: limit, node_id: node }),
     enabled,
     staleTime: 30000, // 30 seconds
     placeholderData: (previousData) => previousData,
@@ -45,7 +45,7 @@ export function useDocument(id: string, options: { enabled?: boolean } = {}) {
 
   return useQuery({
     queryKey: documentKeys.detail(id),
-    queryFn: () => documentService.getById(id),
+    queryFn: () => documentService.get(id),
     enabled: enabled && !!id,
     staleTime: 60000, // 1 minute
   });
@@ -62,7 +62,7 @@ export function useDocumentContent(
 
   return useQuery({
     queryKey: documentKeys.content(id),
-    queryFn: () => documentService.getContent(id),
+    queryFn: () => documentService.get(id, false),
     enabled: enabled && !!id,
     staleTime: 300000, // 5 minutes
   });
@@ -144,13 +144,13 @@ export function useUploadDocument() {
   return useMutation({
     mutationFn: ({
       file,
-      metadata,
-      onProgress,
+      title,
+      tags,
     }: {
       file: File;
-      metadata?: Record<string, string>;
-      onProgress?: (progress: number) => void;
-    }) => documentService.upload(file, metadata, onProgress),
+      title?: string;
+      tags?: string[];
+    }) => documentService.upload(file, title, tags),
     onSuccess: () => {
       // Invalidate all document lists
       queryClient.invalidateQueries({ queryKey: documentKeys.lists() });
@@ -167,7 +167,7 @@ export function usePrefetchDocument() {
   return (id: string) => {
     queryClient.prefetchQuery({
       queryKey: documentKeys.detail(id),
-      queryFn: () => documentService.getById(id),
+      queryFn: () => documentService.get(id),
       staleTime: 60000,
     });
   };

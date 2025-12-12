@@ -17,7 +17,6 @@ import {
 } from '../hooks';
 import {
   SearchBar,
-  DocumentCard,
   LoadingSpinner,
   EmptyState,
   ErrorMessage,
@@ -79,7 +78,7 @@ export const SearchPage: React.FC = () => {
   );
 
   const handleDocumentClick = (result: SearchResult) => {
-    navigate(`/documents/${result.document.id}`);
+    navigate(`/documents/${result.document_id}`);
   };
 
   const handleHistoryClick = (historyQuery: string) => {
@@ -224,7 +223,7 @@ export const SearchPage: React.FC = () => {
               <div className="flex gap-2">
                 <input
                   type="date"
-                  value={filters.date_from || ''}
+                  value={filters?.date_from || ''}
                   onChange={(e) =>
                     setFilters({ ...filters, date_from: e.target.value || undefined })
                   }
@@ -233,7 +232,7 @@ export const SearchPage: React.FC = () => {
                 />
                 <input
                   type="date"
-                  value={filters.date_to || ''}
+                  value={filters?.date_to || ''}
                   onChange={(e) =>
                     setFilters({ ...filters, date_to: e.target.value || undefined })
                   }
@@ -335,9 +334,9 @@ export const SearchPage: React.FC = () => {
               Clear History
             </button>
           </div>
-          {history?.length ? (
+          {history?.history?.length ? (
             <div className="space-y-2">
-              {history.map((item, index) => (
+              {history.history.map((item: { query: string; results_count: number }, index: number) => (
                 <button
                   key={index}
                   onClick={() => handleHistoryClick(item.query)}
@@ -396,7 +395,7 @@ export const SearchPage: React.FC = () => {
               <div className="space-y-4">
                 {searchMutation.data.results.map((result) => (
                   <SearchResultCard
-                    key={result.document.id}
+                    key={result.document_id}
                     result={result}
                     onClick={() => handleDocumentClick(result)}
                   />
@@ -441,21 +440,23 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({ result, onClick }) 
           <FileText className="w-5 h-5 text-blue-600" />
           <div>
             <h3 className="font-semibold text-gray-900 hover:text-blue-600">
-              {result.document.title || result.document.filename}
+              {result.title || result.document?.title || 'Untitled'}
             </h3>
-            <p className="text-sm text-gray-500">{result.document.filename}</p>
+            {result.content_preview && (
+              <p className="text-sm text-gray-500 line-clamp-1">{result.content_preview}</p>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2">
           <Badge variant="info">Score: {result.score.toFixed(3)}</Badge>
-          <Badge variant="default">P{result.document.partition_id}</Badge>
+          <Badge variant="default">Node: {result.node_id}</Badge>
         </div>
       </div>
 
       {/* Highlights */}
       {result.highlights && result.highlights.length > 0 && (
         <div className="mt-3 space-y-2">
-          {result.highlights.slice(0, 2).map((highlight, index) => (
+          {result.highlights.slice(0, 2).map((highlight: string, index: number) => (
             <p
               key={index}
               className="text-sm text-gray-600 line-clamp-2"
@@ -468,14 +469,14 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({ result, onClick }) 
       {/* Score breakdown */}
       {result.score_breakdown && (
         <div className="mt-3 pt-3 border-t border-gray-100 flex gap-4 text-xs text-gray-500">
-          {result.score_breakdown.tfidf !== undefined && (
-            <span>TF-IDF: {result.score_breakdown.tfidf.toFixed(3)}</span>
+          {result.score_breakdown.keyword_score !== undefined && (
+            <span>Keyword: {result.score_breakdown.keyword_score.toFixed(3)}</span>
           )}
-          {result.score_breakdown.minhash !== undefined && (
-            <span>MinHash: {result.score_breakdown.minhash.toFixed(3)}</span>
+          {result.score_breakdown.semantic_score !== undefined && (
+            <span>Semantic: {result.score_breakdown.semantic_score.toFixed(3)}</span>
           )}
-          {result.score_breakdown.lda !== undefined && (
-            <span>LDA: {result.score_breakdown.lda.toFixed(3)}</span>
+          {result.score_breakdown.hybrid_score !== undefined && (
+            <span>Hybrid: {result.score_breakdown.hybrid_score.toFixed(3)}</span>
           )}
         </div>
       )}

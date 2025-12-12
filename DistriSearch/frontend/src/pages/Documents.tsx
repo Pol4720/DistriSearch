@@ -3,10 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import {
   FileText,
   Upload,
-  Search,
   Grid,
   List,
-  Filter,
   Plus,
   X,
   Download,
@@ -63,7 +61,7 @@ export const Documents: React.FC = () => {
 
   const handleDelete = useCallback(
     async (doc: Document) => {
-      if (window.confirm(`Delete "${doc.title || doc.filename}"?`)) {
+      if (window.confirm(`Delete "${doc.title || doc.filename || 'this document'}"?`)) {
         await deleteMutation.mutateAsync(doc.id);
       }
     },
@@ -82,11 +80,12 @@ export const Documents: React.FC = () => {
 
   const handleDownload = async (doc: Document) => {
     try {
-      const blob = await documentService.downloadFile(doc.id);
+      const response = await documentService.get(doc.id);
+      const blob = new Blob([response.content], { type: 'text/plain' });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = doc.filename;
+      a.download = doc.filename || doc.title || 'document.txt';
       a.click();
       window.URL.revokeObjectURL(url);
     } catch (error) {
@@ -104,11 +103,11 @@ export const Documents: React.FC = () => {
     setSelectedDocs(newSelection);
   };
 
-  const filteredDocs = documents?.items?.filter(
-    (doc) =>
+  const filteredDocs = documents?.documents?.filter(
+    (doc: Document) =>
       !searchQuery ||
       doc.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      doc.filename.toLowerCase().includes(searchQuery.toLowerCase())
+      doc.filename?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   if (error) {
@@ -260,9 +259,11 @@ export const Documents: React.FC = () => {
                           <FileText className="w-5 h-5 text-gray-400" />
                           <div>
                             <p className="font-medium text-gray-900">
-                              {doc.title || doc.filename}
+                              {doc.title || doc.filename || 'Untitled'}
                             </p>
-                            <p className="text-sm text-gray-500">{doc.filename}</p>
+                            {doc.filename && (
+                              <p className="text-sm text-gray-500">{doc.filename}</p>
+                            )}
                           </div>
                         </div>
                       </td>

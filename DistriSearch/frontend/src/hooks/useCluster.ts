@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { clusterService, healthService } from '../services';
-import type { ClusterStatus, NodeInfo, RebalanceRequest, RebalanceResponse } from '../types';
+import type { RebalanceRequest } from '../types';
 
 // Query keys
 export const clusterKeys = {

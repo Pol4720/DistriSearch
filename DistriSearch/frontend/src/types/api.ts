@@ -5,6 +5,9 @@ export interface Document {
   id: string;
   title: string;
   content: string;
+  filename?: string;
+  size?: number;
+  content_type?: string;
   metadata: Record<string, unknown>;
   tags: string[];
   node_id?: string;
@@ -62,9 +65,13 @@ export interface SearchRequest {
   query: string;
   search_type?: SearchType;
   top_k?: number;
+  limit?: number;
+  offset?: number;
   filters?: SearchFilters;
   include_vectors?: boolean;
   timeout_ms?: number;
+  semantic_options?: Record<string, unknown>;
+  highlight_options?: Record<string, unknown>;
 }
 
 export interface SearchFilters {
@@ -72,6 +79,8 @@ export interface SearchFilters {
   node_ids?: string[];
   partition_ids?: string[];
   metadata?: Record<string, unknown>;
+  date_from?: string;
+  date_to?: string;
 }
 
 export interface SearchResult {
@@ -83,6 +92,13 @@ export interface SearchResult {
   metadata: Record<string, unknown>;
   matched_terms: string[];
   vectors?: DocumentVectors;
+  document?: Document;
+  highlights?: string[];
+  score_breakdown?: {
+    keyword_score?: number;
+    semantic_score?: number;
+    hybrid_score?: number;
+  };
 }
 
 export interface SearchResponse {
@@ -91,6 +107,7 @@ export interface SearchResponse {
   results: SearchResult[];
   total_results: number;
   searched_nodes: number;
+  nodes_queried?: number;
   search_time_ms: number;
   query_id: string;
 }
@@ -116,6 +133,8 @@ export interface NodeInfo {
   status: NodeStatus;
   document_count: number;
   partition_count: number;
+  partitions?: PartitionInfo[];
+  load_score?: number;
   cpu_usage: number;
   memory_usage: number;
   disk_usage: number;
@@ -129,7 +148,9 @@ export interface ClusterStatus {
   master_node_id?: string;
   master_address?: string;
   total_nodes: number;
+  active_nodes?: number;
   healthy_nodes: number;
+  healthy?: boolean;
   unhealthy_nodes: number;
   total_documents: number;
   total_partitions: number;

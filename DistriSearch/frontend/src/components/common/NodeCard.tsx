@@ -15,11 +15,11 @@ export const NodeCard: React.FC<NodeCardProps> = ({
 }) => {
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'active':
+      case 'healthy':
         return 'bg-green-500';
-      case 'syncing':
+      case 'degraded':
         return 'bg-yellow-500';
-      case 'inactive':
+      case 'unhealthy':
         return 'bg-red-500';
       default:
         return 'bg-gray-400';
@@ -30,12 +30,25 @@ export const NodeCard: React.FC<NodeCardProps> = ({
     switch (role) {
       case 'master':
         return 'bg-purple-100 text-purple-700';
-      case 'leader':
+      case 'slave':
         return 'bg-blue-100 text-blue-700';
-      case 'follower':
+      case 'candidate':
         return 'bg-gray-100 text-gray-700';
       default:
         return 'bg-gray-100 text-gray-600';
+    }
+  };
+
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case 'healthy':
+        return 'Online';
+      case 'degraded':
+        return 'Degraded';
+      case 'unhealthy':
+        return 'Offline';
+      default:
+        return status;
     }
   };
 
@@ -77,7 +90,7 @@ export const NodeCard: React.FC<NodeCardProps> = ({
               <HardDrive className="w-4 h-4 text-gray-400" />
             </div>
             <p className="text-lg font-semibold text-gray-900">
-              {node.partitions?.length ?? 0}
+              {node.partition_count ?? (node.partitions?.length ?? 0)}
             </p>
             <p className="text-xs text-gray-500">Partitions</p>
           </div>
@@ -95,7 +108,7 @@ export const NodeCard: React.FC<NodeCardProps> = ({
               <Cpu className="w-4 h-4 text-gray-400" />
             </div>
             <p className="text-lg font-semibold text-gray-900">
-              {node.status === 'active' ? 'Online' : node.status}
+              {getStatusLabel(node.status)}
             </p>
             <p className="text-xs text-gray-500">Status</p>
           </div>

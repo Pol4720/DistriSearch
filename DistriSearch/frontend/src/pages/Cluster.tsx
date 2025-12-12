@@ -4,8 +4,6 @@ import {
   Activity,
   HardDrive,
   RefreshCw,
-  Plus,
-  Settings,
   AlertTriangle,
   CheckCircle,
   XCircle,
@@ -166,9 +164,9 @@ export const Cluster: React.FC = () => {
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-lg font-semibold text-gray-900">Cluster Nodes</h2>
           <div className="flex items-center gap-2">
-            <Badge variant="success">{nodes?.filter(n => n.status === 'active').length || 0} Active</Badge>
-            <Badge variant="warning">{nodes?.filter(n => n.status === 'syncing').length || 0} Syncing</Badge>
-            <Badge variant="error">{nodes?.filter(n => n.status === 'inactive').length || 0} Inactive</Badge>
+            <Badge variant="success">{nodes?.filter(n => n.status === 'healthy').length || 0} Healthy</Badge>
+            <Badge variant="warning">{nodes?.filter(n => n.status === 'degraded').length || 0} Degraded</Badge>
+            <Badge variant="error">{nodes?.filter(n => n.status === 'unhealthy').length || 0} Unhealthy</Badge>
           </div>
         </div>
 
@@ -200,26 +198,33 @@ export const Cluster: React.FC = () => {
 
         {partitionsLoading ? (
           <LoadingSpinner />
-        ) : partitions?.partitions && Object.keys(partitions.partitions).length > 0 ? (
+        ) : partitions?.partitions && partitions.partitions.length > 0 ? (
           <div className="space-y-4">
-            {Object.entries(partitions.partitions).map(([nodeId, nodePartitions]) => (
-              <div key={nodeId} className="flex items-center gap-4">
-                <div className="w-32 text-sm font-medium text-gray-700 truncate">
-                  {nodeId}
+            {/* Group partitions by primary_node_id */}
+            {(() => {
+              const nodePartitionCounts: Record<string, number> = {};
+              partitions.partitions.forEach((p) => {
+                nodePartitionCounts[p.primary_node_id] = (nodePartitionCounts[p.primary_node_id] || 0) + 1;
+              });
+              return Object.entries(nodePartitionCounts).map(([nodeId, count]) => (
+                <div key={nodeId} className="flex items-center gap-4">
+                  <div className="w-32 text-sm font-medium text-gray-700 truncate">
+                    {nodeId}
+                  </div>
+                  <div className="flex-1">
+                    <ProgressBar
+                      value={count}
+                      max={clusterStatus?.total_partitions || 1}
+                      showLabel={false}
+                      color="blue"
+                    />
+                  </div>
+                  <div className="w-20 text-sm text-gray-500 text-right">
+                    {count} partitions
+                  </div>
                 </div>
-                <div className="flex-1">
-                  <ProgressBar
-                    value={(nodePartitions as number[]).length}
-                    max={clusterStatus?.total_partitions || 1}
-                    showLabel={false}
-                    color="blue"
-                  />
-                </div>
-                <div className="w-20 text-sm text-gray-500 text-right">
-                  {(nodePartitions as number[]).length} partitions
-                </div>
-              </div>
-            ))}
+              ));
+            })()}
           </div>
         ) : (
           <p className="text-gray-500 text-center py-4">No partition data available</p>
@@ -299,12 +304,12 @@ const NodeDetailModal: React.FC<NodeDetailModalProps> = ({
 }) => {
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case 'active':
-        return <Badge variant="success">Active</Badge>;
-      case 'syncing':
-        return <Badge variant="warning">Syncing</Badge>;
-      case 'inactive':
-        return <Badge variant="error">Inactive</Badge>;
+      case 'healthy':
+        return <Badge variant="success">Healthy</Badge>;
+      case 'degraded':
+        return <Badge variant="warning">Degraded</Badge>;
+      case 'unhealthy':
+        return <Badge variant="error">Unhealthy</Badge>;
       default:
         return <Badge variant="default">{status}</Badge>;
     }
@@ -369,8 +374,8 @@ const NodeDetailModal: React.FC<NodeDetailModalProps> = ({
             <h3 className="text-sm font-medium text-gray-700 mb-2">Assigned Partitions</h3>
             <div className="flex flex-wrap gap-2">
               {node.partitions.map((p) => (
-                <Badge key={p} variant="default">
-                  P{p}
+                <Badge key={p.partition_id} variant="default">
+                  P{p.partition_id}
                 </Badge>
               ))}
             </div>

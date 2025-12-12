@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { searchService } from '../services';
-import type { SearchRequest, SearchResponse, SearchHistory } from '../types';
+import type { SearchRequest } from '../types';
 
 // Query keys
 export const searchKeys = {
@@ -58,7 +58,7 @@ export function useAdvancedSearch(
         highlight_options: request?.highlight_options,
       },
     ],
-    queryFn: () => searchService.searchAdvanced(request!),
+    queryFn: () => searchService.search(request!),
     enabled: enabled && !!request?.query,
     staleTime,
   });
@@ -93,7 +93,7 @@ export function useAdvancedSearchMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (request: SearchRequest) => searchService.searchAdvanced(request),
+    mutationFn: (request: SearchRequest) => searchService.search(request),
     onSuccess: (data, variables) => {
       // Cache the results
       queryClient.setQueryData(
@@ -120,7 +120,7 @@ export function useSearchHistory(options: { limit?: number; enabled?: boolean } 
 
   return useQuery({
     queryKey: [...searchKeys.history(), limit],
-    queryFn: () => searchService.getHistory(limit),
+    queryFn: () => searchService.getHistory(1, limit),
     enabled,
     staleTime: 30000, // 30 seconds
   });
