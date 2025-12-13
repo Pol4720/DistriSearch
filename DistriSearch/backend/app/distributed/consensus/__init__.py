@@ -14,18 +14,18 @@ Components:
 - PartitionTolerantConsensus: AP-mode partition-tolerant consensus (CAP theorem)
 """
 
-from app.distributed.consensus.raft_state import (
+from .raft_state import (
     RaftState,
     NodeRole,
     PersistentState,
     VolatileState,
 )
-from app.distributed.consensus.raft_node import RaftNode
-from app.distributed.consensus.log_entry import LogEntry, LogStore
-from app.distributed.consensus.log_replication import LogReplicator
-from app.distributed.consensus.leader_election import LeaderElection
-from app.distributed.consensus.state_machine import StateMachine, Command, CommandType
-from app.distributed.consensus.partition_tolerant import (
+from .raft_node import RaftNode
+from .log_entry import LogEntry, LogStore
+from .log_replication import LogReplicator
+from .leader_election import LeaderElection
+from .state_machine import StateMachine, Command, CommandType
+from .partition_tolerant import (
     PartitionTolerantConsensus,
     PartitionState,
     PartitionStatus,

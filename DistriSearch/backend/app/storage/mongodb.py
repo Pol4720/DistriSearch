@@ -14,7 +14,7 @@ from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncI
 from pymongo import IndexModel, ASCENDING, DESCENDING, TEXT
 from pymongo.errors import DuplicateKeyError, ConnectionFailure
 
-from app.storage.models import (
+from .models import (
     DocumentModel,
     NodeModel,
     PartitionModel,

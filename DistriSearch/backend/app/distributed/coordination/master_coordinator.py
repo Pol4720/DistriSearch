@@ -14,21 +14,21 @@ from dataclasses import dataclass, field
 from typing import Optional, Dict, Any, List, Set
 from datetime import datetime
 
-from app.core.partitioning import PartitionManager, VPTree
-from app.core.rebalancing import ActiveRebalancer
-from app.core.replication import AffinityReplicator
-from app.core.recovery import RecoveryService
-from app.core.search import SearchEngine
+from .core.partitioning import PartitionManager, VPTree
+from .core.rebalancing import ActiveRebalancer
+from .core.replication import AffinityReplicator
+from .core.recovery import RecoveryService
+from .core.search import SearchEngine
 
-from app.distributed.consensus import RaftNode, Command, CommandType
-from app.distributed.communication import (
+from ..consensus import RaftNode, Command, CommandType
+from .communication import (
     MessageBroker,
     Message,
     MessageType,
     WebSocketManager,
     NodeClientPool,
 )
-from app.distributed.coordination.cluster_manager import (
+from .coordination.cluster_manager import (
     ClusterManager,
     NodeMembership,
     NodeRole,
@@ -270,7 +270,7 @@ class MasterCoordinator:
     async def _handle_rebalance_event(self, message: Message):
         """Handle rebalance event message."""
         # Forward to dashboard
-        from app.distributed.communication import WebSocketEventType
+        from .communication import WebSocketEventType
         await self.ws_manager.broadcast_to_subscribers(
             WebSocketEventType.REBALANCE_PROGRESS,
             message.payload,
@@ -556,7 +556,7 @@ class MasterCoordinator:
                 
                 if self._is_active_master:
                     # Broadcast cluster state to dashboard
-                    from app.distributed.communication import WebSocketEventType
+                    from .communication import WebSocketEventType
                     await self.ws_manager.broadcast_to_subscribers(
                         WebSocketEventType.CLUSTER_STATE,
                         self.get_status(),

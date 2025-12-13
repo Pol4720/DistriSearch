@@ -7,7 +7,7 @@ This module contains the distributed systems components:
 - coordination: Cluster coordination and service discovery
 """
 
-from app.distributed.consensus import (
+from .consensus import (
     RaftState,
     RaftNode,
     LogEntry,
@@ -18,7 +18,7 @@ from app.distributed.consensus import (
     CommandType,
 )
 
-from app.distributed.communication import (
+from .communication import (
     RESTClient,
     NodeClient,
     MasterClient,
@@ -32,7 +32,7 @@ from app.distributed.communication import (
     WebSocketConnection,
 )
 
-from app.distributed.coordination import (
+from .coordination import (
     ClusterManager,
     ClusterState,
     NodeMembership,

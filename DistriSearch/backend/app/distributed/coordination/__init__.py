@@ -12,40 +12,40 @@ This module contains the cluster coordination components:
 - adaptive_coordinator: Main adaptive cluster coordinator
 """
 
-from app.distributed.coordination.cluster_manager import (
+from .coordination.cluster_manager import (
     ClusterManager,
     ClusterState,
     NodeMembership,
     NodeRole,
 )
-from app.distributed.coordination.master_coordinator import (
+from .coordination.master_coordinator import (
     MasterCoordinator,
 )
-from app.distributed.coordination.slave_handler import (
+from .coordination.slave_handler import (
     SlaveHandler,
     SlaveState,
 )
-from app.distributed.coordination.service_discovery import (
+from .coordination.service_discovery import (
     ServiceDiscovery,
     ServiceEndpoint,
 )
-from app.distributed.coordination.adaptive_config import (
+from .coordination.adaptive_config import (
     AdaptiveClusterConfig,
     AdaptiveClusterManager,
     OperationMode,
     ConsistencyLevel,
 )
-from app.distributed.coordination.bootstrap import (
+from .coordination.bootstrap import (
     SingleNodeBootstrap,
     BootstrapConfig,
     BootstrapPhase,
 )
-from app.distributed.coordination.graceful_degradation import (
+from .coordination.graceful_degradation import (
     GracefulDegradationManager,
     DegradationLevel,
     SystemCapabilities,
 )
-from app.distributed.coordination.adaptive_coordinator import (
+from .coordination.adaptive_coordinator import (
     AdaptiveClusterCoordinator,
     create_adaptive_coordinator,
 )

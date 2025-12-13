@@ -16,10 +16,10 @@ from enum import Enum
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 
-from app.core.vectorization import DocumentVectorizer
-from app.core.search import QueryProcessor, ResultAggregator, SearchResult
+from .core.vectorization import DocumentVectorizer
+from .core.search import QueryProcessor, ResultAggregator, SearchResult
 
-from app.distributed.communication import (
+from .communication import (
     HeartbeatClient,
     MasterClient,
     MessageBroker,
@@ -459,7 +459,7 @@ class SlaveHandler:
             True if replicated successfully
         """
         try:
-            from app.distributed.communication import NodeClient
+            from .communication import NodeClient
             
             client = NodeClient(node_address=source_node_address)
             response = await client.get_document(doc_id)

@@ -13,19 +13,19 @@ import logging
 from pathlib import Path
 from typing import Optional, Dict, Any, Callable, Awaitable
 
-from app.distributed.consensus.raft_state import RaftState, NodeRole
-from app.distributed.consensus.log_entry import LogStore, LogEntry
-from app.distributed.consensus.leader_election import (
+from .raft_state import RaftState, NodeRole
+from .log_entry import LogStore, LogEntry
+from .leader_election import (
     LeaderElection,
     RequestVoteArgs,
     RequestVoteReply,
 )
-from app.distributed.consensus.log_replication import (
+from .log_replication import (
     LogReplicator,
     AppendEntriesArgs,
     AppendEntriesReply,
 )
-from app.distributed.consensus.state_machine import StateMachine, Command
+from .state_machine import StateMachine, Command
 
 logger = logging.getLogger(__name__)
 
@@ -373,4 +373,4 @@ class RaftNode:
 
 
 # Import CommandType for convenience
-from app.distributed.consensus.state_machine import CommandType
+from .state_machine import CommandType

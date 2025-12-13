@@ -9,23 +9,23 @@ This module contains the data storage components:
 - cache: Caching layer
 """
 
-from app.storage.mongodb import (
+from .mongodb import (
     MongoDBClient,
     DocumentRepository,
     ClusterRepository,
     MetricsRepository,
 )
-from app.storage.models import (
+from .models import (
     DocumentModel,
     NodeModel,
     PartitionModel,
     SearchQueryModel,
 )
-from app.storage.file_handler import (
+from .file_handler import (
     FileHandler,
     UploadedFile,
 )
-from app.storage.content_extractor import (
+from .content_extractor import (
     ContentExtractor,
     ExtractedContent,
 )

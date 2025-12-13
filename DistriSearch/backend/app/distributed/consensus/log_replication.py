@@ -13,8 +13,8 @@ from dataclasses import dataclass
 from typing import Optional, Dict, List, Callable, Awaitable, Any
 from datetime import datetime
 
-from app.distributed.consensus.raft_state import RaftState, NodeRole
-from app.distributed.consensus.log_entry import LogStore, LogEntry
+from .raft_state import RaftState, NodeRole
+from .log_entry import LogStore, LogEntry
 
 logger = logging.getLogger(__name__)
 

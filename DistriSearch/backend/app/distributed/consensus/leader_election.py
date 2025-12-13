@@ -14,8 +14,8 @@ from dataclasses import dataclass
 from typing import Optional, Dict, Callable, Awaitable, Any, List
 from datetime import datetime
 
-from app.distributed.consensus.raft_state import RaftState, NodeRole
-from app.distributed.consensus.log_entry import LogStore
+from .raft_state import RaftState, NodeRole
+from .log_entry import LogStore
 
 logger = logging.getLogger(__name__)
 

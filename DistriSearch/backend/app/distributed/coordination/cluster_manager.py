@@ -12,8 +12,8 @@ from enum import Enum
 from typing import Optional, Dict, Any, List, Set, Callable, Awaitable
 from datetime import datetime
 
-from app.distributed.consensus import RaftNode, Command, CommandType
-from app.distributed.communication import (
+from ..consensus import RaftNode, Command, CommandType
+from .communication import (
     HeartbeatService,
     NodeHeartbeat,
     NodeStatus,

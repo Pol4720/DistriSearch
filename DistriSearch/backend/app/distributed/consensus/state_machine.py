@@ -12,8 +12,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Dict, Any, Optional, Callable, Awaitable, List
 
-from app.distributed.consensus.raft_state import RaftState
-from app.distributed.consensus.log_entry import LogStore, LogEntry
+from .raft_state import RaftState
+from .log_entry import LogStore, LogEntry
 
 logger = logging.getLogger(__name__)
 

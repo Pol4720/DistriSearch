@@ -1,5 +1,18 @@
 # Docker Stack for Docker Swarm Production Deployment
 # Deploy with: docker stack deploy -c docker-compose.swarm.yml distrisearch
+#
+# ARQUITECTURA DINÁMICA: Este compose está diseñado para funcionar con
+# cualquier número de nodos. Los servicios escalan automáticamente según
+# la cantidad de nodos disponibles en el Swarm.
+#
+# Imágenes requeridas (locales):
+#   - distrisearch/load-balancer:latest
+#   - distrisearch/master:latest
+#   - distrisearch/slave:latest
+#   - distrisearch/coredns:latest
+#   - distrisearch/dns-sync:latest
+#   - mongo:7.0
+#   - redis:7-alpine
 
 version: '3.8'
 
@@ -20,6 +33,8 @@ volumes:
     driver: local
   redis-data:
     driver: local
+  slave-data:
+    driver: local
 
 configs:
   nginx-config:
@@ -36,10 +51,13 @@ secrets:
     external: true
   tls-key:
     external: true
+  mongodb-keyfile:
+    external: true 
 
 services:
   # ═══════════════════════════════════════════════════════════════════════
   # LOAD BALANCER (Nginx)
+  # Desplegado en TODOS los managers para alta disponibilidad
   # ═══════════════════════════════════════════════════════════════════════
   load-balancer:
     image: distrisearch/load-balancer:latest
@@ -62,8 +80,7 @@ services:
       - tls-cert
       - tls-key
     deploy:
-      mode: replicated
-      replicas: 2
+      mode: global
       placement:
         constraints:
           - node.role == manager
@@ -94,12 +111,14 @@ services:
 
   # ═══════════════════════════════════════════════════════════════════════
   # MASTER NODE (Raft Consensus Leader)
+  # Se despliega UNA instancia en cada nodo manager disponible (modo global)
+  # Esto permite consenso Raft con N managers (mínimo 1, ideal 3+)
   # ═══════════════════════════════════════════════════════════════════════
   master:
     image: distrisearch/master:latest
     environment:
       - NODE_ROLE=master
-      - MONGODB_URI=mongodb://mongodb:27017/distrisearch?replicaSet=rs0
+      - MONGODB_URI=mongodb://mongodb:27017/distrisearch
       - REDIS_URL=redis://redis:6379
       - RAFT_ELECTION_TIMEOUT_MIN=150
       - RAFT_ELECTION_TIMEOUT_MAX=300
@@ -112,13 +131,10 @@ services:
       - mongodb-password
       - jwt-secret
     deploy:
-      mode: replicated
-      replicas: 3
+      mode: global
       placement:
         constraints:
           - node.role == manager
-        preferences:
-          - spread: node.id
       endpoint_mode: dnsrr
       update_config:
         parallelism: 1
@@ -141,13 +157,15 @@ services:
           memory: 256M
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
 
   # ═══════════════════════════════════════════════════════════════════════
   # SLAVE NODES (Frontend + Backend)
+  # Se despliega UNA instancia en CADA nodo del Swarm (modo global)
+  # Esto permite escalar automáticamente al agregar nodos
   # ═══════════════════════════════════════════════════════════════════════
   slave:
     image: distrisearch/slave:latest
@@ -155,7 +173,7 @@ services:
       - NODE_ROLE=slave
       - MASTER_SERVICE=master
       - MASTER_PORT=8001
-      - MONGODB_URI=mongodb://mongodb:27017/distrisearch?replicaSet=rs0
+      - MONGODB_URI=mongodb://mongodb:27017/distrisearch
       - REDIS_URL=redis://redis:6379
       - REPLICATION_FACTOR=2
       - DNS_FALLBACK_ENABLED=true
@@ -172,13 +190,7 @@ services:
         source: slave-data
         target: /app/data
     deploy:
-      mode: replicated
-      replicas: 3
-      placement:
-        constraints:
-          - node.role == worker
-        preferences:
-          - spread: node.id
+      mode: global
       endpoint_mode: vip
       update_config:
         parallelism: 1
@@ -208,29 +220,26 @@ services:
 
   # ═══════════════════════════════════════════════════════════════════════
   # MONGODB REPLICA SET
+  # Se despliega en cada manager disponible para formar el replica set
+  # Con 1 manager: standalone, con 3+: replica set completo
+  # Nota: Usando mongo:4.4 para compatibilidad con CPUs sin AVX
   # ═══════════════════════════════════════════════════════════════════════
   mongodb:
-    image: mongo:7.0
-    command: ["--replSet", "rs0", "--bind_ip_all", "--keyFile", "/run/secrets/mongodb-keyfile"]
+    image: mongo:4.4
+    command: ["--replSet", "rs0", "--bind_ip_all"]
     environment:
       - MONGO_INITDB_DATABASE=distrisearch
     networks:
       - distrisearch-network
     secrets:
       - mongodb-password
-      - source: mongodb-keyfile
-        target: /run/secrets/mongodb-keyfile
-        mode: 0400
     volumes:
       - mongodb-data:/data/db
     deploy:
-      mode: replicated
-      replicas: 3
+      mode: global
       placement:
         constraints:
           - node.role == manager
-        preferences:
-          - spread: node.id
       endpoint_mode: dnsrr
       update_config:
         parallelism: 1
@@ -245,7 +254,7 @@ services:
           cpus: '0.25'
           memory: 512M
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: ["CMD", "mongo", "--eval", "db.adminCommand('ping')"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -253,6 +262,7 @@ services:
 
   # ═══════════════════════════════════════════════════════════════════════
   # REDIS CACHE
+  # Servicio singleton en un manager (cache centralizado)
   # ═══════════════════════════════════════════════════════════════════════
   redis:
     image: redis:7-alpine
@@ -282,6 +292,7 @@ services:
 
   # ═══════════════════════════════════════════════════════════════════════
   # COREDNS BACKUP DNS SERVER
+  # Desplegado en todos los nodos para resolución DNS local
   # ═══════════════════════════════════════════════════════════════════════
   coredns:
     image: distrisearch/coredns:latest
@@ -291,11 +302,7 @@ services:
       - source: coredns-config
         target: /etc/coredns/Corefile
     deploy:
-      mode: replicated
-      replicas: 2
-      placement:
-        preferences:
-          - spread: node.id
+      mode: global
       resources:
         limits:
           cpus: '0.25'
