@@ -25,6 +25,7 @@ protobuf==4.25.2
 scikit-learn==1.4.0
 scipy==1.12.0
 numpy==1.26.3
+tqdm==4.66.1
 nltk==3.8.1
 datasketch==1.6.4
 gensim==4.3.2
