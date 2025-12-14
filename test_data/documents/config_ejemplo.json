@@ -1,0 +1,30 @@
+{
+  "aplicacion": {
+    "nombre": "DistriSearch",
+    "version": "1.0.0",
+    "descripcion": "Sistema de búsqueda distribuida"
+  },
+  "servidor": {
+    "host": "localhost",
+    "puerto": 8080,
+    "workers": 4,
+    "timeout": 30
+  },
+  "base_datos": {
+    "tipo": "mongodb",
+    "host": "localhost",
+    "puerto": 27017,
+    "nombre": "distrisearch_db",
+    "replica_set": "rs0"
+  },
+  "cache": {
+    "habilitado": true,
+    "tipo": "redis",
+    "ttl": 3600
+  },
+  "logging": {
+    "nivel": "INFO",
+    "formato": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    "archivo": "logs/app.log"
+  }
+}

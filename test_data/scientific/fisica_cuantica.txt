@@ -1,0 +1,38 @@
+INTRODUCCIÓN A LA MECÁNICA CUÁNTICA
+
+La mecánica cuántica es la rama de la física que estudia el comportamiento de la
+materia y la energía a escalas atómicas y subatómicas. Sus principios desafían
+nuestra intuición clásica sobre cómo funciona el universo.
+
+PRINCIPIOS FUNDAMENTALES
+
+1. Dualidad Onda-Partícula
+Las partículas subatómicas exhiben tanto propiedades de onda como de partícula.
+El experimento de la doble rendija demuestra este comportamiento dual.
+
+2. Principio de Incertidumbre de Heisenberg
+Es imposible conocer simultáneamente con precisión arbitraria la posición y el
+momento de una partícula. Matemáticamente: Δx · Δp ≥ ℏ/2
+
+3. Superposición Cuántica
+Un sistema cuántico puede existir en múltiples estados simultáneamente hasta
+que se realiza una medición, momento en el cual "colapsa" a un estado definido.
+
+4. Entrelazamiento Cuántico
+Dos partículas pueden estar correlacionadas de tal manera que el estado de una
+afecta instantáneamente al estado de la otra, independientemente de la distancia.
+
+ECUACIÓN DE SCHRÖDINGER
+
+La evolución temporal de un sistema cuántico está gobernada por la ecuación:
+
+iℏ ∂Ψ/∂t = ĤΨ
+
+donde Ψ es la función de onda y Ĥ es el operador hamiltoniano.
+
+APLICACIONES
+
+- Computación cuántica
+- Criptografía cuántica
+- Resonancia magnética nuclear (MRI)
+- Láseres y semiconductores

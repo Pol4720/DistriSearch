@@ -1,0 +1,25 @@
+2024-12-14 08:00:01 [INFO] Server starting on port 8080
+2024-12-14 08:00:02 [INFO] Loading configuration from /etc/app/config.yaml
+2024-12-14 08:00:03 [INFO] Connecting to database: mongodb://localhost:27017
+2024-12-14 08:00:04 [INFO] Database connection established successfully
+2024-12-14 08:00:05 [INFO] Initializing cache layer (Redis)
+2024-12-14 08:00:05 [INFO] Cache connection established: redis://localhost:6379
+2024-12-14 08:00:06 [INFO] Loading 15 API routes
+2024-12-14 08:00:06 [INFO] Server ready to accept connections
+2024-12-14 08:15:23 [INFO] GET /api/v1/health - 200 OK (3ms)
+2024-12-14 08:15:45 [INFO] POST /api/v1/documents - 201 Created (145ms)
+2024-12-14 08:16:02 [INFO] GET /api/v1/search?q=python - 200 OK (89ms)
+2024-12-14 08:20:15 [WARN] High memory usage detected: 78% of available RAM
+2024-12-14 08:25:33 [INFO] GET /api/v1/documents/123 - 200 OK (12ms)
+2024-12-14 08:30:00 [INFO] Scheduled task: cleanup_temp_files started
+2024-12-14 08:30:02 [INFO] Cleaned 45 temporary files (128MB freed)
+2024-12-14 08:45:12 [ERROR] Failed to process request: Connection timeout to replica node-2
+2024-12-14 08:45:13 [WARN] Retrying connection to node-2 (attempt 1/3)
+2024-12-14 08:45:15 [INFO] Connection to node-2 restored
+2024-12-14 09:00:00 [INFO] Hourly metrics report: 1,234 requests, avg response 45ms
+2024-12-14 09:15:22 [INFO] New node joined cluster: node-4 (192.168.1.104)
+2024-12-14 09:15:23 [INFO] Rebalancing partitions across 4 nodes
+2024-12-14 09:15:45 [INFO] Rebalancing complete: 256 partitions distributed
+2024-12-14 09:30:00 [INFO] Health check: all nodes responding
+2024-12-14 10:00:00 [INFO] Daily backup initiated
+2024-12-14 10:05:33 [INFO] Backup completed: 2.3GB compressed to 890MB

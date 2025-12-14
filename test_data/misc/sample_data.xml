@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<catalogo>
+    <libros>
+        <libro id="1">
+            <titulo>Cien años de soledad</titulo>
+            <autor>Gabriel García Márquez</autor>
+            <genero>Realismo mágico</genero>
+            <año>1967</año>
+            <precio moneda="EUR">18.50</precio>
+            <disponible>true</disponible>
+        </libro>
+        <libro id="2">
+            <titulo>Don Quijote de la Mancha</titulo>
+            <autor>Miguel de Cervantes</autor>
+            <genero>Novela</genero>
+            <año>1605</año>
+            <precio moneda="EUR">22.00</precio>
+            <disponible>true</disponible>
+        </libro>
+        <libro id="3">
+            <titulo>1984</titulo>
+            <autor>George Orwell</autor>
+            <genero>Distopía</genero>
+            <año>1949</año>
+            <precio moneda="EUR">15.99</precio>
+            <disponible>false</disponible>
+        </libro>
+        <libro id="4">
+            <titulo>El Principito</titulo>
+            <autor>Antoine de Saint-Exupéry</autor>
+            <genero>Fábula</genero>
+            <año>1943</año>
+            <precio moneda="EUR">12.50</precio>
+            <disponible>true</disponible>
+        </libro>
+    </libros>
+    <metadata>
+        <ultima_actualizacion>2024-12-14</ultima_actualizacion>
+        <total_libros>4</total_libros>
+        <version>1.0</version>
+    </metadata>
+</catalogo>

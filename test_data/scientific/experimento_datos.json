@@ -1,0 +1,27 @@
+{
+  "experimento": {
+    "id": "EXP-2024-001",
+    "titulo": "Análisis de rendimiento en sistemas distribuidos",
+    "fecha_inicio": "2024-01-15",
+    "fecha_fin": "2024-03-20",
+    "investigador_principal": "Dr. María García"
+  },
+  "parametros": {
+    "num_nodos": [2, 4, 8, 16, 32],
+    "tamano_datos_gb": [1, 10, 50, 100],
+    "algoritmo": "consistent_hashing",
+    "replicacion": 3
+  },
+  "resultados": [
+    {"nodos": 2, "datos_gb": 1, "tiempo_ms": 245, "throughput": 4082},
+    {"nodos": 4, "datos_gb": 1, "tiempo_ms": 128, "throughput": 7812},
+    {"nodos": 8, "datos_gb": 10, "tiempo_ms": 890, "throughput": 11235},
+    {"nodos": 16, "datos_gb": 50, "tiempo_ms": 2340, "throughput": 21367},
+    {"nodos": 32, "datos_gb": 100, "tiempo_ms": 3120, "throughput": 32051}
+  ],
+  "conclusiones": [
+    "El throughput escala de manera casi lineal con el número de nodos",
+    "La latencia se mantiene estable gracias al balanceo de carga",
+    "El factor de replicación 3 ofrece buen balance entre disponibilidad y rendimiento"
+  ]
+}

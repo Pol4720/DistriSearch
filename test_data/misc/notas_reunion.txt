@@ -1,0 +1,73 @@
+NOTAS DE REUNIÓN - REVISIÓN TRIMESTRAL Q4 2024
+
+Fecha: 14 de diciembre de 2024
+Hora: 10:00 - 12:00
+Lugar: Sala de conferencias principal / Zoom
+Asistentes: 
+- Ana García (CEO)
+- Carlos López (CTO)
+- María Fernández (Product Manager)
+- Pedro Sánchez (Lead Developer)
+- Laura Martín (UX Designer)
+
+AGENDA
+======
+
+1. Revisión de objetivos Q4
+2. Estado del proyecto DistriSearch
+3. Feedback del cliente
+4. Planificación Q1 2025
+5. Varios
+
+PUNTOS TRATADOS
+===============
+
+1. REVISIÓN DE OBJETIVOS Q4
+
+   Objetivo 1: Lanzar versión beta - COMPLETADO ✓
+   - Beta lanzada el 1 de noviembre
+   - 150 usuarios activos en la beta
+   - NPS score: 72 (muy positivo)
+
+   Objetivo 2: Alcanzar 1000 registros - EN PROGRESO
+   - Actualmente: 823 registros
+   - Proyección para fin de mes: 950-1000
+   - Acción: intensificar campaña de marketing
+
+   Objetivo 3: Zero bugs críticos - COMPLETADO ✓
+   - Todos los bugs P0 y P1 resueltos
+   - Tiempo medio de resolución: 2.3 días
+
+2. ESTADO DEL PROYECTO
+
+   Carlos presentó el estado técnico:
+   - Infraestructura estable en AWS
+   - Uptime del 99.95% en el último mes
+   - Tiempo de respuesta medio: 45ms
+   
+   Próximas mejoras técnicas:
+   - Implementar búsqueda semántica (Q1)
+   - Migrar a arquitectura de microservicios
+   - Añadir soporte multi-región
+
+3. FEEDBACK DEL CLIENTE
+
+   María compartió insights de las entrevistas:
+   - Los usuarios valoran la velocidad de búsqueda
+   - Solicitan más opciones de filtrado
+   - La interfaz es considerada "limpia pero básica"
+   
+ACCIONES ACORDADAS
+==================
+
+| Acción | Responsable | Fecha límite |
+|--------|-------------|--------------|
+| Preparar campaña marketing | Ana | 20/12 |
+| Diseñar nuevos filtros | Laura | 15/01 |
+| Documentar API pública | Pedro | 10/01 |
+| Evaluar proveedores IA | Carlos | 31/12 |
+
+PRÓXIMA REUNIÓN
+===============
+Fecha: 11 de enero de 2025, 10:00
+Tema: Kick-off Q1 2025
