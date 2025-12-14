@@ -22,18 +22,8 @@ import {
   Pie,
   Cell,
 } from 'recharts';
-import { useClusterStatus, useDocuments, useHealth, useNodes } from '../hooks';
+import { useClusterStatus, useDocuments, useHealth, useNodes, useMetrics } from '../hooks';
 import { LoadingSpinner, ErrorMessage, Badge } from '../components/common';
-
-// Mock data for charts (replace with real metrics)
-const searchMetricsData = [
-  { time: '00:00', searches: 45 },
-  { time: '04:00', searches: 23 },
-  { time: '08:00', searches: 156 },
-  { time: '12:00', searches: 289 },
-  { time: '16:00', searches: 198 },
-  { time: '20:00', searches: 87 },
-];
 
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444'];
 
@@ -42,6 +32,20 @@ export const Dashboard: React.FC = () => {
   const { data: documents, isLoading: docsLoading } = useDocuments({ limit: 5 });
   const { data: health } = useHealth();
   const { data: nodes } = useNodes();
+  const { data: metrics } = useMetrics();
+
+  // Generate search metrics from real data
+  const searchMetricsData = React.useMemo(() => {
+    const totalSearches = Number(metrics?.total_searches || 0);
+    const now = new Date();
+    return Array.from({ length: 6 }, (_, i) => {
+      const hour = new Date(now.getTime() - (5 - i) * 4 * 3600000);
+      return {
+        time: hour.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+        searches: i === 5 ? totalSearches : 0,
+      };
+    });
+  }, [metrics]);
 
   const getStatusIcon = (status?: string) => {
     if (status === 'healthy') return <CheckCircle className="w-5 h-5 text-green-500" />;
@@ -118,8 +122,8 @@ export const Dashboard: React.FC = () => {
         />
         <StatCard
           title="Searches Today"
-          value={1247}
-          trend={{ value: 12, positive: true }}
+          value={Number(metrics?.total_searches || 0)}
+          trend={{ value: 0, positive: true }}
           icon={<Search className="w-6 h-6" />}
           color="orange"
           link="/search"

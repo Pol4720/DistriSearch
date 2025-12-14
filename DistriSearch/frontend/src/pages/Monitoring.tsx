@@ -24,36 +24,41 @@ import {
 import { useMetrics, useClusterStatus, useNodes } from '../hooks';
 import { LoadingSpinner, ErrorMessage, Badge } from '../components/common';
 
-// Mock metrics data (replace with real metrics from backend)
-const generateMockData = () => {
-  const now = Date.now();
-  return Array.from({ length: 24 }, (_, i) => ({
-    time: new Date(now - (23 - i) * 3600000).toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit',
-    }),
-    searches: Math.floor(Math.random() * 200) + 50,
-    latency: Math.floor(Math.random() * 100) + 20,
-    cpu: Math.floor(Math.random() * 40) + 30,
-    memory: Math.floor(Math.random() * 30) + 50,
-    documents: Math.floor(Math.random() * 50) + 10,
-  }));
-};
-
-const metricsData = generateMockData();
-
-const nodeMetrics = [
-  { name: 'node-1', searches: 1234, avgLatency: 45, cpu: 65, memory: 72 },
-  { name: 'node-2', searches: 1156, avgLatency: 52, cpu: 58, memory: 68 },
-  { name: 'node-3', searches: 987, avgLatency: 38, cpu: 45, memory: 55 },
-  { name: 'node-4', searches: 1089, avgLatency: 48, cpu: 52, memory: 62 },
-];
-
 export const Monitoring: React.FC = () => {
   const [timeRange, setTimeRange] = useState('24h');
-  const { data: _metrics, isLoading, error, refetch } = useMetrics();
-  const { data: _clusterStatus } = useClusterStatus();
+  const { data: metrics, isLoading, error, refetch } = useMetrics();
+  const { data: clusterStatus } = useClusterStatus();
   const { data: nodes } = useNodes();
+
+  // Generate chart data from real metrics
+  const metricsData = React.useMemo(() => {
+    if (!metrics) return [];
+    const now = Date.now();
+    // Create time series based on current metrics (single point for now)
+    return Array.from({ length: 12 }, (_, i) => ({
+      time: new Date(now - (11 - i) * 300000).toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+      searches: i === 11 ? Number(metrics.total_searches || 0) : 0,
+      latency: i === 11 ? Number(metrics.average_latency_ms || 0) : 0,
+      cpu: i === 11 ? Number(metrics.cpu_usage_percent || 0) : 0,
+      memory: i === 11 ? Number(metrics.memory_usage_percent || 0) : 0,
+      documents: i === 11 ? Number(metrics.total_documents || 0) : 0,
+    }));
+  }, [metrics]);
+
+  // Generate node metrics from real nodes data
+  const nodeMetrics = React.useMemo(() => {
+    if (!nodes) return [];
+    return nodes.map(node => ({
+      name: node.node_id,
+      searches: node.document_count || 0,
+      avgLatency: 0,
+      cpu: node.cpu_usage || 0,
+      memory: node.memory_usage || 0,
+    }));
+  }, [nodes]);
 
   if (isLoading) {
     return (
@@ -106,31 +111,31 @@ export const Monitoring: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <MetricCard
           title="Search Requests"
-          value="4,521"
-          change={12.5}
+          value={Number(metrics?.total_searches || 0).toLocaleString()}
+          change={0}
           positive={true}
           icon={<Search className="w-6 h-6" />}
           color="blue"
         />
         <MetricCard
           title="Avg Latency"
-          value="45ms"
-          change={-8.3}
+          value={`${Number(metrics?.average_latency_ms || 0).toFixed(1)}ms`}
+          change={0}
           positive={true}
           icon={<Zap className="w-6 h-6" />}
           color="green"
         />
         <MetricCard
           title="Documents Indexed"
-          value="12,847"
-          change={3.2}
+          value={Number(metrics?.total_documents || 0).toLocaleString()}
+          change={0}
           positive={true}
           icon={<FileText className="w-6 h-6" />}
           color="purple"
         />
         <MetricCard
-          title="Active Connections"
-          value="127"
+          title="Active Nodes"
+          value={(clusterStatus?.healthy_nodes || nodes?.length || 0).toString()}
           icon={<Activity className="w-6 h-6" />}
           color="orange"
         />
@@ -266,7 +271,7 @@ export const Monitoring: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {nodes?.map((node, index) => (
+              {nodes?.map((node) => (
                 <tr key={node.node_id} className="hover:bg-gray-50">
                   <td className="py-3 px-4">
                     <div className="flex items-center gap-2">
@@ -288,21 +293,21 @@ export const Monitoring: React.FC = () => {
                     </Badge>
                   </td>
                   <td className="py-3 px-4 text-right text-gray-700">
-                    {nodeMetrics[index]?.searches.toLocaleString() || '-'}
+                    {(node.document_count || 0).toLocaleString()}
                   </td>
                   <td className="py-3 px-4 text-right text-gray-700">
-                    {nodeMetrics[index]?.avgLatency || '-'}ms
+                    {Number(metrics?.average_latency_ms || 0).toFixed(1)}ms
                   </td>
                   <td className="py-3 px-4 text-right">
                     <div className="flex items-center justify-end gap-2">
                       <div className="w-16 bg-gray-200 rounded-full h-2">
                         <div
                           className="bg-purple-500 h-2 rounded-full"
-                          style={{ width: `${nodeMetrics[index]?.cpu || 0}%` }}
+                          style={{ width: `${node.cpu_usage || 0}%` }}
                         />
                       </div>
                       <span className="text-gray-700 text-sm">
-                        {nodeMetrics[index]?.cpu || 0}%
+                        {(node.cpu_usage || 0).toFixed(1)}%
                       </span>
                     </div>
                   </td>
@@ -311,11 +316,11 @@ export const Monitoring: React.FC = () => {
                       <div className="w-16 bg-gray-200 rounded-full h-2">
                         <div
                           className="bg-orange-500 h-2 rounded-full"
-                          style={{ width: `${nodeMetrics[index]?.memory || 0}%` }}
+                          style={{ width: `${node.memory_usage || 0}%` }}
                         />
                       </div>
                       <span className="text-gray-700 text-sm">
-                        {nodeMetrics[index]?.memory || 0}%
+                        {(node.memory_usage || 0).toFixed(1)}%
                       </span>
                     </div>
                   </td>
