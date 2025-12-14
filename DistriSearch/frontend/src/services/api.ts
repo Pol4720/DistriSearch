@@ -12,6 +12,19 @@ const api: AxiosInstance = axios.create({
   },
 });
 
+// Generate UUID fallback for browsers without crypto.randomUUID
+function generateUUID(): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  // Fallback for older browsers
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 // Request interceptor
 api.interceptors.request.use(
   (config) => {
@@ -22,7 +35,7 @@ api.interceptors.request.use(
     }
     
     // Add request ID for tracking
-    config.headers['X-Request-ID'] = crypto.randomUUID();
+    config.headers['X-Request-ID'] = generateUUID();
     
     return config;
   },
