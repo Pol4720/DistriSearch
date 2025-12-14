@@ -1,5 +1,18 @@
-# Docker Compose for Local Development
-# Use docker-compose.swarm.yml for production deployment
+# ═══════════════════════════════════════════════════════════════════════════
+# Docker Compose for Local Development ONLY
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# ⚠️  NO USAR EN PRODUCCIÓN ⚠️
+#
+# Este archivo tiene slaves estáticos (slave-1, slave-2) y NO soporta
+# el crecimiento dinámico de nodos requerido en producción.
+#
+# Para despliegue dinámico use: ./scripts/deploy.sh
+#   - Soporta N nodos que crecen/decrecen dinámicamente
+#   - El sistema arranca con 0 slaves y crece según necesidad
+#   - Usa solo 'docker run' (no docker-compose)
+#
+# ═══════════════════════════════════════════════════════════════════════════
 
 version: '3.8'
 

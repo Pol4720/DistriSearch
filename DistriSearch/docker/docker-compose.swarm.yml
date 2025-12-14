@@ -1,4 +1,17 @@
+# ═══════════════════════════════════════════════════════════════════════════
 # Docker Stack for Docker Swarm Production Deployment
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# ⚠️  ALTERNATIVA: Para despliegue sin Swarm use: ./scripts/deploy.sh ⚠️
+#
+# Este archivo usa Docker Swarm y 'docker stack deploy'.
+# Si necesita desplegar solo con 'docker run', use el script deploy.sh
+# que soporta:
+#   - N nodos que crecen/decrecen dinámicamente
+#   - Sistema arranca con 0 slaves
+#   - Tolerancia k solo aplica con k+1 instancias
+#   - Partición de red (opera con nodos disponibles)
+#
 # Deploy with: docker stack deploy -c docker-compose.swarm.yml distrisearch
 #
 # ARQUITECTURA DINÁMICA: Este compose está diseñado para funcionar con
@@ -13,6 +26,7 @@
 #   - distrisearch/dns-sync:latest
 #   - mongo:7.0
 #   - redis:7-alpine
+# ═══════════════════════════════════════════════════════════════════════════
 
 version: '3.8'
 

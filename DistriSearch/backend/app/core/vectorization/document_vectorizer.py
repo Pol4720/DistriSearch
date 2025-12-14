@@ -16,17 +16,17 @@ from shared.models.document import (
     ContentVector,
     StructuralFeatures
 )
-from .core.vectorization.tfidf_processor import (
+from .tfidf_processor import (
     TFIDFProcessor,
     FilenameTFIDFProcessor
 )
-from .core.vectorization.minhash_signature import (
+from .minhash_signature import (
     MinHashSignature,
     ContentMinHasher
 )
-from .core.vectorization.textrank_keywords import TextRankKeywordExtractor
-from .core.vectorization.lda_topics import LDATopicModeler
-from .core.vectorization.char_ngrams import (
+from .textrank_keywords import TextRankKeywordExtractor
+from .lda_topics import LDATopicModeler
+from .char_ngrams import (
     CharNGramProcessor,
     infer_category
 )

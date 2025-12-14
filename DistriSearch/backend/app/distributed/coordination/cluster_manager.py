@@ -13,7 +13,7 @@ from typing import Optional, Dict, Any, List, Set, Callable, Awaitable
 from datetime import datetime
 
 from ..consensus import RaftNode, Command, CommandType
-from .communication import (
+from ..communication import (
     HeartbeatService,
     NodeHeartbeat,
     NodeStatus,

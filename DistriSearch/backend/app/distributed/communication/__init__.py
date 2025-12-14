@@ -8,24 +8,24 @@ This module contains the communication layers:
 - heartbeat: Heartbeat mechanism for node health monitoring
 """
 
-from .communication.rest_client import (
+from .rest_client import (
     RESTClient,
     NodeClient,
     MasterClient,
     NodeClientPool,
 )
-from .communication.heartbeat import (
+from .heartbeat import (
     HeartbeatService,
     HeartbeatClient,
     NodeHeartbeat,
     NodeStatus,
 )
-from .communication.message_broker import (
+from .message_broker import (
     MessageBroker,
     Message,
     MessageType,
 )
-from .communication.websocket_manager import (
+from .websocket_manager import (
     WebSocketManager,
     WebSocketConnection,
 )
