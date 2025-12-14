@@ -60,11 +60,8 @@ async def get_cluster_status(
     - Replication factor
     """
     try:
-        # Get cluster info from manager
+        # Get cluster info from manager (includes nodes from memory)
         cluster_info = await cluster_manager.get_cluster_status()
-        
-        # Get all nodes from database
-        nodes_data = await node_repo.find(filters={}, skip=0, limit=100)
         
         nodes = []
         healthy_count = 0
@@ -72,29 +69,48 @@ async def get_cluster_status(
         total_documents = 0
         total_partitions = 0
         
+        # Use nodes from cluster manager memory
+        nodes_data = cluster_info.get("nodes", [])
+        
         for node in nodes_data:
-            node_status = NodeStatus(node.get("status", "unknown"))
+            node_status_str = node.get("status", "unknown")
+            try:
+                node_status = NodeStatus(node_status_str)
+            except ValueError:
+                node_status = NodeStatus.UNKNOWN
+                
             if node_status == NodeStatus.HEALTHY:
                 healthy_count += 1
             else:
                 unhealthy_count += 1
             
-            total_documents += node.get("document_count", 0)
-            total_partitions += node.get("partition_count", 0)
+            total_documents += node.get("documents_count", 0)
+            total_partitions += len(node.get("partitions", []))
+            
+            # Parse address for host and port
+            address = node.get("address", "")
+            port = 8001
+            if ":" in address:
+                parts = address.split(":")
+                address = parts[0]
+                try:
+                    port = int(parts[1])
+                except ValueError:
+                    pass
             
             nodes.append(NodeInfo(
-                node_id=str(node["_id"]),
-                address=node.get("address", ""),
-                port=node.get("port", 8000),
+                node_id=node.get("node_id", ""),
+                address=address,
+                port=port,
                 role=NodeRole(node.get("role", "slave")),
                 status=node_status,
-                document_count=node.get("document_count", 0),
-                partition_count=node.get("partition_count", 0),
-                cpu_usage=node.get("cpu_usage", 0.0),
-                memory_usage=node.get("memory_usage", 0.0),
-                disk_usage=node.get("disk_usage", 0.0),
-                last_heartbeat=node.get("last_heartbeat"),
-                joined_at=node.get("joined_at", datetime.utcnow()),
+                document_count=node.get("documents_count", 0),
+                partition_count=len(node.get("partitions", [])),
+                cpu_usage=node.get("load", 0.0) * 100,
+                memory_usage=0.0,
+                disk_usage=0.0,
+                last_heartbeat=datetime.fromisoformat(node.get("last_seen", datetime.utcnow().isoformat())) if node.get("last_seen") else None,
+                joined_at=datetime.fromisoformat(node.get("joined_at", datetime.utcnow().isoformat())) if node.get("joined_at") else datetime.utcnow(),
                 metadata=node.get("metadata", {})
             ))
         
@@ -141,35 +157,62 @@ async def get_cluster_status(
 async def list_nodes(
     status_filter: Optional[NodeStatus] = Query(default=None, description="Filter by status"),
     role_filter: Optional[NodeRole] = Query(default=None, description="Filter by role"),
+    cluster_manager: ClusterManager = Depends(get_cluster_manager),
     node_repo: NodeRepository = Depends(get_node_repository)
 ):
     """
     List all nodes in the cluster with optional filtering.
     """
     try:
-        filters = {}
-        if status_filter:
-            filters["status"] = status_filter.value
-        if role_filter:
-            filters["role"] = role_filter.value
-        
-        nodes_data = await node_repo.find(filters=filters, skip=0, limit=100)
+        # Get nodes from cluster manager memory
+        cluster_info = await cluster_manager.get_cluster_status()
+        nodes_data = cluster_info.get("nodes", [])
         
         nodes = []
         for node in nodes_data:
+            node_status_str = node.get("status", "unknown")
+            node_role_str = node.get("role", "slave")
+            
+            try:
+                node_status = NodeStatus(node_status_str)
+            except ValueError:
+                node_status = NodeStatus.UNKNOWN
+                
+            try:
+                node_role = NodeRole(node_role_str)
+            except ValueError:
+                node_role = NodeRole.SLAVE
+            
+            # Apply filters
+            if status_filter and node_status != status_filter:
+                continue
+            if role_filter and node_role != role_filter:
+                continue
+            
+            # Parse address for host and port
+            address = node.get("address", "")
+            port = 8001
+            if ":" in address:
+                parts = address.split(":")
+                address = parts[0]
+                try:
+                    port = int(parts[1])
+                except ValueError:
+                    pass
+            
             nodes.append(NodeInfo(
-                node_id=str(node["_id"]),
-                address=node.get("address", ""),
-                port=node.get("port", 8000),
-                role=NodeRole(node.get("role", "slave")),
-                status=NodeStatus(node.get("status", "unknown")),
-                document_count=node.get("document_count", 0),
-                partition_count=node.get("partition_count", 0),
-                cpu_usage=node.get("cpu_usage", 0.0),
-                memory_usage=node.get("memory_usage", 0.0),
-                disk_usage=node.get("disk_usage", 0.0),
-                last_heartbeat=node.get("last_heartbeat"),
-                joined_at=node.get("joined_at", datetime.utcnow()),
+                node_id=node.get("node_id", ""),
+                address=address,
+                port=port,
+                role=node_role,
+                status=node_status,
+                document_count=node.get("documents_count", 0),
+                partition_count=len(node.get("partitions", [])),
+                cpu_usage=node.get("load", 0.0) * 100,
+                memory_usage=0.0,
+                disk_usage=0.0,
+                last_heartbeat=datetime.fromisoformat(node.get("last_seen", datetime.utcnow().isoformat())) if node.get("last_seen") else None,
+                joined_at=datetime.fromisoformat(node.get("joined_at", datetime.utcnow().isoformat())) if node.get("joined_at") else datetime.utcnow(),
                 metadata=node.get("metadata", {})
             ))
         

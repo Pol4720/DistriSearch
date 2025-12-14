@@ -112,6 +112,16 @@ class MongoDBClient:
         """Get database instance (alias for db)."""
         return self.db
     
+    @property
+    def client(self) -> Optional[AsyncIOMotorClient]:
+        """Get MongoDB client instance."""
+        return self._client
+    
+    @property
+    def is_connected(self) -> bool:
+        """Check if connected to MongoDB."""
+        return self._connected
+    
     async def _create_indexes(self):
         """Create database indexes."""
         # Documents collection indexes
@@ -216,6 +226,16 @@ class BaseRepository(Generic[T]):
         
         return await cursor.to_list(length=limit)
     
+    async def find(
+        self,
+        filters: Dict[str, Any] = None,
+        skip: int = 0,
+        limit: int = 100,
+        sort: Optional[List[tuple]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Find multiple documents (alias for find_many with filters param)."""
+        return await self.find_many(filters or {}, skip, limit, sort)
+    
     async def count(self, filter: Dict[str, Any] = None) -> int:
         """Count documents."""
         return await self.collection.count_documents(filter or {})
@@ -263,13 +283,20 @@ class DocumentRepository(BaseRepository[DocumentModel]):
             IndexModel([("created_at", DESCENDING)]),
         ])
     
-    async def create(self, document: DocumentModel) -> str:
+    async def create(self, document) -> str:
         """Create a new document."""
         try:
-            return await self.insert_one(document.to_dict())
+            # Accept both DocumentModel and dict
+            if hasattr(document, 'to_dict'):
+                doc_dict = document.to_dict()
+                doc_id = document.id
+            else:
+                doc_dict = document
+                doc_id = document.get('_id', document.get('id'))
+            return await self.insert_one(doc_dict)
         except DuplicateKeyError:
-            logger.warning(f"Document {document.id} already exists")
-            return document.id
+            logger.warning(f"Document {doc_id} already exists")
+            return doc_id
     
     async def get(self, id: str) -> Optional[DocumentModel]:
         """Get document by ID."""
@@ -628,6 +655,51 @@ class SearchHistoryRepository:
             IndexModel([("user_id", ASCENDING)]),
             IndexModel([("query", TEXT)]),
         ])
+    
+    async def create(self, document: Dict[str, Any]) -> str:
+        """Create a search history entry."""
+        result = await self.collection.insert_one(document)
+        return str(result.inserted_id)
+    
+    async def find(
+        self,
+        filters: Dict[str, Any] = None,
+        skip: int = 0,
+        limit: int = 20,
+        sort: Optional[List[tuple]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Find search history entries."""
+        cursor = self.collection.find(filters or {})
+        if sort:
+            cursor = cursor.sort(sort)
+        else:
+            cursor = cursor.sort("timestamp", DESCENDING)
+        cursor = cursor.skip(skip).limit(limit)
+        return await cursor.to_list(length=limit)
+    
+    async def count(self, filters: Dict[str, Any] = None) -> int:
+        """Count search history entries."""
+        return await self.collection.count_documents(filters or {})
+    
+    async def delete_all(self) -> int:
+        """Delete all search history."""
+        result = await self.collection.delete_many({})
+        return result.deleted_count
+    
+    async def get_suggestions(
+        self,
+        prefix: str,
+        limit: int = 10,
+    ) -> List[str]:
+        """Get search suggestions based on prefix."""
+        pipeline = [
+            {"$match": {"query": {"$regex": f"^{prefix}", "$options": "i"}}},
+            {"$group": {"_id": "$query", "count": {"$sum": 1}}},
+            {"$sort": {"count": -1}},
+            {"$limit": limit},
+        ]
+        results = await self.collection.aggregate(pipeline).to_list(length=limit)
+        return [r["_id"] for r in results]
     
     async def record_search(
         self,

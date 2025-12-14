@@ -399,6 +399,153 @@ class SearchEngine:
         self._cache.clear()
         return count
     
+    async def vectorize_document(self, content: str, title: str = "") -> Dict[str, Any]:
+        """
+        Vectorize a document for indexing.
+        
+        Args:
+            content: Document content
+            title: Document title (optional)
+            
+        Returns:
+            Dictionary with vector representations matching DocumentVectors schema
+        """
+        import hashlib
+        import re
+        
+        # Simple TF-IDF-like representation (word frequencies as float list)
+        words = re.findall(r'\b\w+\b', content.lower())
+        word_freq = {}
+        for word in words:
+            if len(word) > 2:  # Skip very short words
+                word_freq[word] = word_freq.get(word, 0) + 1
+        
+        # Top words as TF-IDF approximation - convert to float list
+        sorted_words = sorted(word_freq.items(), key=lambda x: x[1], reverse=True)[:50]
+        tfidf_vector = [float(c) / len(words) for _, c in sorted_words]
+        
+        # MinHash signature (simple hash-based approach) - list of ints
+        content_hash = hashlib.md5(content.encode()).hexdigest()
+        minhash_sig = [int(content_hash[i:i+2], 16) for i in range(0, min(32, len(content_hash)), 2)]
+        
+        # Simple keyword extraction - list of strings
+        textrank_keywords = [w for w, _ in sorted_words[:10]]
+        
+        # Pseudo-LDA topics - list of floats (topic probabilities)
+        topic_words = {
+            "technology": ["software", "computer", "system", "data", "code", "algorithm"],
+            "business": ["company", "market", "business", "revenue", "strategy", "customer"],
+            "science": ["research", "study", "experiment", "theory", "hypothesis", "analysis"],
+        }
+        lda_topics = []
+        for topic, keywords in topic_words.items():
+            score = sum(1 for kw in keywords if kw in word_freq)
+            lda_topics.append(float(score) / max(len(keywords), 1))
+        
+        # Normalize LDA to sum to 1
+        total = sum(lda_topics) or 1.0
+        lda_topics = [t / total for t in lda_topics]
+        
+        return {
+            "tfidf": tfidf_vector,
+            "minhash": minhash_sig,
+            "textrank": textrank_keywords,
+            "lda": lda_topics
+        }
+    
+    async def vectorize_query(self, query: str) -> Dict[str, Any]:
+        """
+        Vectorize a search query.
+        
+        Args:
+            query: Search query string
+            
+        Returns:
+            Dictionary with query vector representation
+        """
+        # Reuse document vectorization for query
+        return await self.vectorize_document(query)
+    
+    async def distributed_search(
+        self,
+        query: str,
+        query_vectors: Dict[str, Any],
+        search_type: str = "hybrid",
+        top_k: int = 10,
+        filters: Optional[Dict[str, Any]] = None,
+        target_partitions: Optional[List[str]] = None,
+        timeout_ms: int = 5000,
+        cluster_manager: Any = None,
+        document_repository: Any = None
+    ) -> Dict[str, Any]:
+        """
+        Execute distributed search across cluster.
+        
+        Args:
+            query: Search query string
+            query_vectors: Vectorized query
+            search_type: Type of search (keyword, semantic, hybrid)
+            top_k: Number of results to return
+            filters: Optional filters
+            target_partitions: Partitions to search
+            timeout_ms: Timeout in milliseconds
+            cluster_manager: Cluster manager for node communication
+            document_repository: Document repository for local search
+            
+        Returns:
+            Search results dictionary
+        """
+        import re
+        
+        results = []
+        query_terms = set(re.findall(r'\b\w+\b', query.lower()))
+        
+        if document_repository:
+            # Search locally using repository
+            all_docs = await document_repository.find_many({}, limit=1000)
+            
+            for doc in all_docs:
+                doc_dict = doc if isinstance(doc, dict) else doc.dict()
+                content = doc_dict.get("content", "").lower()
+                title = doc_dict.get("title", "").lower()
+                
+                # Calculate match score based on query terms
+                doc_terms = set(re.findall(r'\b\w+\b', content + " " + title))
+                matched_terms = query_terms & doc_terms
+                
+                if matched_terms:
+                    # Simple scoring: percentage of query terms matched
+                    score = len(matched_terms) / len(query_terms) if query_terms else 0
+                    
+                    # Get document ID (could be _id or id depending on source)
+                    doc_id = doc_dict.get("id") or doc_dict.get("_id", "")
+                    if hasattr(doc_id, '__str__'):
+                        doc_id = str(doc_id)
+                    
+                    results.append({
+                        "document_id": doc_id,
+                        "title": doc_dict.get("title", "Untitled"),
+                        "content": doc_dict.get("content", ""),
+                        "score": score,
+                        "node_id": doc_dict.get("node_id", ""),
+                        "metadata": doc_dict.get("metadata", {}),
+                        "matched_terms": list(matched_terms),
+                        "vectors": doc_dict.get("vectors", {})
+                    })
+            
+            # Sort by score descending
+            results.sort(key=lambda x: x["score"], reverse=True)
+            results = results[:top_k]
+        
+        return {
+            "results": results,
+            "query": query,
+            "search_type": search_type,
+            "total_results": len(results),
+            "partitions_searched": target_partitions or [],
+            "timeout_ms": timeout_ms
+        }
+    
     def get_statistics(self) -> Dict[str, Any]:
         """Get search engine statistics."""
         return {

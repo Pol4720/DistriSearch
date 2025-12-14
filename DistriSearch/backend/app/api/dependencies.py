@@ -3,11 +3,13 @@ API Dependencies
 FastAPI dependency injection for DistriSearch API
 """
 
-from typing import Optional, AsyncGenerator
+from typing import Optional, AsyncGenerator, Dict, Any
 from fastapi import Depends, HTTPException, status, Request
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
+from pathlib import Path
 import os
 import logging
+import aiohttp
 
 from ..storage.mongodb import (
     MongoDBClient,
@@ -18,6 +20,9 @@ from ..storage.mongodb import (
 )
 from ..core.search import SearchEngine
 from ..distributed.coordination import ClusterManager
+from ..distributed.coordination.cluster_manager import NodeRole
+from ..distributed.consensus import RaftNode
+from ..distributed.communication import HeartbeatService, MessageBroker
 from ..config import Settings
 
 logger = logging.getLogger(__name__)
@@ -31,6 +36,9 @@ _search_history_repository: Optional[SearchHistoryRepository] = None
 _cluster_repository: Optional[ClusterRepository] = None
 _search_engine: Optional[SearchEngine] = None
 _cluster_manager: Optional[ClusterManager] = None
+_raft_node: Optional[RaftNode] = None
+_heartbeat_service: Optional[HeartbeatService] = None
+_message_broker: Optional[MessageBroker] = None
 _settings: Optional[Settings] = None
 
 
@@ -42,11 +50,29 @@ def get_settings() -> Settings:
     return _settings
 
 
+async def _create_rpc_sender(settings: Settings):
+    """Create an RPC sender function for Raft communication."""
+    async def send_rpc(target_address: str, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Send RPC to target node."""
+        try:
+            async with aiohttp.ClientSession() as session:
+                url = f"http://{target_address}/api/v1/internal/raft"
+                async with session.post(url, json=data, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                    if resp.status == 200:
+                        return await resp.json()
+                    return None
+        except Exception as e:
+            logger.debug(f"RPC to {target_address} failed: {e}")
+            return None
+    return send_rpc
+
+
 async def init_dependencies(settings: Settings):
     """Initialize all dependencies at application startup"""
     global _mongodb_client, _document_repository, _node_repository
     global _search_history_repository, _cluster_repository
     global _search_engine, _cluster_manager, _settings
+    global _raft_node, _heartbeat_service, _message_broker
     
     _settings = settings
     
@@ -72,26 +98,83 @@ async def init_dependencies(settings: Settings):
     # Initialize search engine
     _search_engine = SearchEngine()
     
-    # Skip cluster manager initialization for local development
-    # ClusterManager requires Raft, Heartbeat, and MessageBroker services
-    # For full cluster functionality, use Docker Compose deployment
-    logger.info("Running in development mode - cluster manager disabled")
+    # Initialize distributed services
+    node_id = settings.node_id
+    node_address = f"{settings.node_address}:{settings.api_port}"
+    node_role = NodeRole.MASTER if settings.is_master else NodeRole.SLAVE
     
+    # Create storage path for Raft
+    storage_path = Path(settings.data_dir) / "raft" / node_id
+    storage_path.mkdir(parents=True, exist_ok=True)
+    
+    # Initialize RPC sender
+    rpc_sender = await _create_rpc_sender(settings)
+    
+    # Initialize Raft node
+    _raft_node = RaftNode(
+        node_id=node_id,
+        storage_path=storage_path,
+        rpc_sender=rpc_sender,
+        election_timeout_min=settings.raft_election_timeout_min / 1000.0,
+        election_timeout_max=settings.raft_election_timeout_max / 1000.0,
+        heartbeat_interval=settings.raft_heartbeat_interval / 1000.0,
+    )
+    
+    # Initialize HeartbeatService
+    _heartbeat_service = HeartbeatService(
+        heartbeat_interval=settings.heartbeat_interval,
+        suspect_threshold=settings.heartbeat_timeout,
+        dead_threshold=settings.heartbeat_timeout * settings.max_heartbeat_failures,
+    )
+    
+    # Initialize MessageBroker
+    _message_broker = MessageBroker(node_id=node_id)
+    
+    # Initialize ClusterManager with all services
+    _cluster_manager = ClusterManager(
+        node_id=node_id,
+        address=node_address,
+        role=node_role,
+        raft_node=_raft_node,
+        heartbeat_service=_heartbeat_service,
+        message_broker=_message_broker,
+        min_healthy_nodes=1,  # Start with 1, grows dynamically
+    )
+    
+    # Set additional attributes on cluster manager
+    _cluster_manager.cluster_id = settings.cluster_id
+    _cluster_manager.replication_factor = settings.replication_factor
+    
+    # Start the cluster manager
+    await _cluster_manager.start()
+    
+    logger.info(f"ClusterManager initialized for node {node_id} as {node_role.value}")
     logger.info("Dependencies initialized successfully")
 
 
 async def shutdown_dependencies():
     """Cleanup dependencies at application shutdown"""
-    global _mongodb_client, _cluster_manager
+    global _mongodb_client, _cluster_manager, _raft_node, _heartbeat_service, _message_broker
+    
+    if _cluster_manager:
+        await _cluster_manager.shutdown()
+        _cluster_manager = None
+    
+    if _raft_node:
+        await _raft_node.stop()
+        _raft_node = None
+    
+    if _heartbeat_service:
+        await _heartbeat_service.stop()
+        _heartbeat_service = None
+    
+    if _message_broker:
+        await _message_broker.stop()
+        _message_broker = None
     
     if _mongodb_client:
         await _mongodb_client.disconnect()
         _mongodb_client = None
-    
-    # Cluster manager cleanup commented for development mode
-    # if _cluster_manager:
-    #     await _cluster_manager.shutdown()
-    #     _cluster_manager = None
     
     logger.info("Dependencies cleaned up")
 

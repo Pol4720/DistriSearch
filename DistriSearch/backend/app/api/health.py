@@ -22,7 +22,6 @@ from .dependencies import (
     get_db,
     get_cluster_manager,
     get_current_node,
-    _mongodb_client
 )
 from ..distributed.coordination import ClusterManager
 
@@ -130,13 +129,19 @@ async def readiness_check(
     - Cluster is initialized
     - Node is registered
     """
+    # Import mongodb client getter
+    from .dependencies import _mongodb_client as get_mongodb_client_var
+    
     checks = {}
     all_ready = True
     
     # Check database connection
     try:
-        if _mongodb_client and _mongodb_client.client:
-            await _mongodb_client.client.admin.command('ping')
+        # Access the global variable directly from dependencies module
+        from . import dependencies
+        mongodb_client = dependencies._mongodb_client
+        if mongodb_client and mongodb_client.client:
+            await mongodb_client.client.admin.command('ping')
             checks["database"] = True
         else:
             checks["database"] = False
@@ -265,9 +270,12 @@ async def get_metrics(
 async def _check_mongodb_health() -> ComponentHealth:
     """Check MongoDB connection health"""
     try:
-        if _mongodb_client and _mongodb_client.client:
+        # Access the global variable directly from dependencies module
+        from . import dependencies
+        mongodb_client = dependencies._mongodb_client
+        if mongodb_client and mongodb_client.client:
             start = time.time()
-            await _mongodb_client.client.admin.command('ping')
+            await mongodb_client.client.admin.command('ping')
             latency = (time.time() - start) * 1000
             
             if latency < 100:

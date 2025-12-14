@@ -545,3 +545,160 @@ class ClusterManager:
                 for node_id, node in self._nodes.items()
             },
         }
+
+    # =========================================================================
+    # Additional methods required by API endpoints
+    # =========================================================================
+    
+    @property
+    def is_initialized(self) -> bool:
+        """Check if cluster manager is fully initialized."""
+        return self._running
+    
+    @property
+    def is_registered(self) -> bool:
+        """Check if this node is registered in the cluster."""
+        return self.node_id in self._nodes
+    
+    @property
+    def is_master(self) -> bool:
+        """Check if this node is the master."""
+        return self.role == NodeRole.MASTER
+    
+    async def get_cluster_status(self) -> Dict[str, Any]:
+        """Get comprehensive cluster status for API."""
+        return {
+            "cluster_id": getattr(self, 'cluster_id', 'default'),
+            "cluster_state": self._cluster_state.value,
+            "leader_id": self._leader_id,
+            "is_leader": self.is_leader,
+            "node_id": self.node_id,
+            "node_role": self.role.value,
+            "total_nodes": len(self._nodes),
+            "healthy_nodes": len(self.get_healthy_nodes()),
+            "nodes": [node.to_dict() for node in self._nodes.values()],
+        }
+    
+    async def get_cluster_stats(self) -> Dict[str, Any]:
+        """Get cluster statistics."""
+        healthy_nodes = self.get_healthy_nodes()
+        total_documents = sum(n.documents_count for n in self._nodes.values())
+        total_partitions = sum(len(n.partitions) for n in self._nodes.values())
+        avg_load = sum(n.load for n in self._nodes.values()) / max(len(self._nodes), 1)
+        
+        return {
+            "total_nodes": len(self._nodes),
+            "healthy_nodes": len(healthy_nodes),
+            "total_documents": total_documents,
+            "total_partitions": total_partitions,
+            "average_load": avg_load,
+            "cluster_state": self._cluster_state.value,
+            "replication_factor": getattr(self, 'replication_factor', 2),
+        }
+    
+    async def get_master_node_id(self) -> Optional[str]:
+        """Get the master node ID."""
+        for node in self._nodes.values():
+            if node.role == NodeRole.MASTER:
+                return node.node_id
+        return self._leader_id
+    
+    async def get_partitions(self, node_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Get partitions, optionally filtered by node."""
+        partitions = []
+        for node in self._nodes.values():
+            if node_id and node.node_id != node_id:
+                continue
+            for partition_id in node.partitions:
+                partitions.append({
+                    "partition_id": partition_id,
+                    "node_id": node.node_id,
+                    "node_address": node.address,
+                })
+        return partitions
+    
+    async def get_partitions_for_query(self, query_vector: Any, top_k: int = 10) -> List[str]:
+        """Get partitions relevant for a search query."""
+        # Return all partitions from healthy nodes for now
+        # In production, use VP-tree to find closest partitions
+        partitions = []
+        for node in self.get_healthy_nodes():
+            partitions.extend(node.partitions)
+        return partitions[:top_k] if partitions else ["default"]
+    
+    async def assign_partition(self, vectors: Any) -> str:
+        """Assign a partition for new document vectors."""
+        import hashlib
+        import json
+        
+        # Simple hash-based partition assignment
+        # In production, use VP-tree for semantic partitioning
+        vector_str = json.dumps(vectors, sort_keys=True, default=str)
+        hash_value = hashlib.md5(vector_str.encode()).hexdigest()[:8]
+        return f"partition-{hash_value}"
+    
+    async def get_node_for_partition(self, partition_id: str) -> str:
+        """Get the node responsible for a partition."""
+        # Find node that has this partition
+        for node in self.get_healthy_nodes():
+            if partition_id in node.partitions:
+                return node.node_id
+        
+        # If no node has it, assign to least loaded healthy node
+        healthy_nodes = self.get_healthy_nodes()
+        if healthy_nodes:
+            least_loaded = min(healthy_nodes, key=lambda n: n.load)
+            least_loaded.partitions.add(partition_id)
+            return least_loaded.node_id
+        
+        # Fallback to self
+        return self.node_id
+    
+    async def replicate_document(self, doc_id: str, primary_node_id: str):
+        """Initiate document replication to other nodes."""
+        replication_factor = getattr(self, 'replication_factor', 2)
+        healthy_nodes = [
+            n for n in self.get_healthy_nodes()
+            if n.node_id != primary_node_id
+        ]
+        
+        # Select replica nodes
+        replica_count = min(replication_factor - 1, len(healthy_nodes))
+        if replica_count <= 0:
+            logger.debug(f"No nodes available for replicating {doc_id}")
+            return
+        
+        # Sort by load to prefer less loaded nodes
+        replica_nodes = sorted(healthy_nodes, key=lambda n: n.load)[:replica_count]
+        
+        for node in replica_nodes:
+            try:
+                await self.message_broker.publish(Message(
+                    type=MessageType.REPLICA_CREATED,
+                    target=node.node_id,
+                    payload={
+                        "document_id": doc_id,
+                        "primary_node_id": primary_node_id,
+                    },
+                ))
+                logger.debug(f"Requested replication of {doc_id} to {node.node_id}")
+            except Exception as e:
+                logger.error(f"Failed to replicate {doc_id} to {node.node_id}: {e}")
+    
+    async def delete_document_replicas(self, doc_id: str):
+        """Delete document replicas from all nodes."""
+        for node in self.get_healthy_nodes():
+            try:
+                await self.message_broker.publish(Message(
+                    type=MessageType.REPLICA_DELETED,
+                    target=node.node_id,
+                    payload={"document_id": doc_id},
+                ))
+            except Exception as e:
+                logger.error(f"Failed to delete replica {doc_id} from {node.node_id}: {e}")
+    
+    async def shutdown(self):
+        """Shutdown the cluster manager gracefully."""
+        logger.info("Shutting down cluster manager...")
+        await self.stop()
+        logger.info("Cluster manager shutdown complete")

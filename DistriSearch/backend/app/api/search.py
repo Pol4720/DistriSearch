@@ -87,7 +87,8 @@ async def search_documents(
             filters=request.filters,
             target_partitions=target_partitions,
             timeout_ms=request.timeout_ms,
-            cluster_manager=cluster_manager
+            cluster_manager=cluster_manager,
+            document_repository=doc_repo
         )
         
         search_time_ms = (time.time() - start_time) * 1000
