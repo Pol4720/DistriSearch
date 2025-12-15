@@ -1,0 +1,17 @@
+; ═══════════════════════════════════════════════════════════════════════════
+; Services Zone File
+; ═══════════════════════════════════════════════════════════════════════════
+
+$ORIGIN services.distrisearch.local.
+$TTL 15
+
+@       IN      SOA     ns1.services.distrisearch.local. admin.distrisearch.local. (
+                        2024010101      ; Serial
+                        1800            ; Refresh
+                        300             ; Retry
+                        43200           ; Expire
+                        15              ; Minimum TTL
+                        )
+
+@       IN      NS      ns1.services.distrisearch.local.
+ns1     IN      A       10.0.10.2

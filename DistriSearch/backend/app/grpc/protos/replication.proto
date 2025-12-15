@@ -1,0 +1,348 @@
+// DistriSearch Replication Protocol Buffers
+// Defines messages for document replication and synchronization
+
+syntax = "proto3";
+
+package distrisearch.replication;
+
+option python_generic_services = true;
+
+import "google/protobuf/timestamp.proto";
+
+// =======================
+// Document Messages
+// =======================
+
+message Document {
+    string document_id = 1;
+    string title = 2;
+    string content = 3;
+    map<string, string> metadata = 4;
+    repeated string tags = 5;
+    DocumentVectors vectors = 6;
+    string partition_id = 7;
+    google.protobuf.Timestamp created_at = 8;
+    google.protobuf.Timestamp updated_at = 9;
+    int64 version = 10;
+}
+
+message DocumentVectors {
+    repeated float tfidf = 1;
+    repeated int32 minhash = 2;
+    repeated float lda = 3;
+    repeated string textrank = 4;
+}
+
+// =======================
+// Replication Messages
+// =======================
+
+// Request to replicate a document to a node
+message ReplicateDocumentRequest {
+    Document document = 1;
+    string source_node_id = 2;
+    string target_node_id = 3;
+    ReplicationType type = 4;
+    bool is_primary = 5;
+}
+
+message ReplicateDocumentResponse {
+    bool success = 1;
+    string message = 2;
+    string replica_id = 3;
+    int64 version = 4;
+}
+
+enum ReplicationType {
+    REPLICATION_TYPE_UNKNOWN = 0;
+    REPLICATION_TYPE_FULL = 1;
+    REPLICATION_TYPE_INCREMENTAL = 2;
+    REPLICATION_TYPE_RECOVERY = 3;
+}
+
+// Batch replication
+message BatchReplicateRequest {
+    repeated Document documents = 1;
+    string source_node_id = 2;
+    string target_node_id = 3;
+    ReplicationType type = 4;
+}
+
+message BatchReplicateResponse {
+    int32 total = 1;
+    int32 succeeded = 2;
+    int32 failed = 3;
+    repeated ReplicationResult results = 4;
+}
+
+message ReplicationResult {
+    string document_id = 1;
+    bool success = 2;
+    string error_message = 3;
+    int64 version = 4;
+}
+
+// =======================
+// Synchronization Messages
+// =======================
+
+// Request to sync a partition between nodes
+message SyncPartitionRequest {
+    string partition_id = 1;
+    string source_node_id = 2;
+    string target_node_id = 3;
+    int64 from_version = 4;  // Start syncing from this version
+    bool full_sync = 5;  // Force full sync regardless of version
+}
+
+message SyncPartitionResponse {
+    bool success = 1;
+    string message = 2;
+    string sync_id = 3;
+    int64 documents_synced = 4;
+    int64 current_version = 5;
+}
+
+// Get sync status
+message SyncStatusRequest {
+    string sync_id = 1;
+}
+
+message SyncStatusResponse {
+    string sync_id = 1;
+    SyncState state = 2;
+    int64 total_documents = 3;
+    int64 synced_documents = 4;
+    float progress = 5;
+    google.protobuf.Timestamp started_at = 6;
+    google.protobuf.Timestamp completed_at = 7;
+    string error_message = 8;
+}
+
+enum SyncState {
+    SYNC_STATE_UNKNOWN = 0;
+    SYNC_STATE_PENDING = 1;
+    SYNC_STATE_IN_PROGRESS = 2;
+    SYNC_STATE_COMPLETED = 3;
+    SYNC_STATE_FAILED = 4;
+    SYNC_STATE_CANCELLED = 5;
+}
+
+// =======================
+// Version Vector Messages
+// =======================
+
+// Version vector for conflict detection
+message VersionVector {
+    map<string, int64> versions = 1;  // node_id -> version
+    google.protobuf.Timestamp timestamp = 2;
+}
+
+// Compare versions between nodes
+message CompareVersionsRequest {
+    string partition_id = 1;
+    VersionVector local_version = 2;
+}
+
+message CompareVersionsResponse {
+    VersionComparison result = 1;
+    VersionVector remote_version = 2;
+    repeated string conflicting_documents = 3;
+    repeated string missing_documents = 4;
+}
+
+enum VersionComparison {
+    VERSION_COMPARISON_UNKNOWN = 0;
+    VERSION_COMPARISON_EQUAL = 1;
+    VERSION_COMPARISON_LOCAL_AHEAD = 2;
+    VERSION_COMPARISON_REMOTE_AHEAD = 3;
+    VERSION_COMPARISON_CONFLICT = 4;
+}
+
+// =======================
+// Conflict Resolution Messages
+// =======================
+
+message ConflictResolutionRequest {
+    string document_id = 1;
+    Document local_version = 2;
+    Document remote_version = 3;
+    ConflictResolutionStrategy strategy = 4;
+}
+
+message ConflictResolutionResponse {
+    bool success = 1;
+    Document resolved_document = 2;
+    string message = 3;
+}
+
+enum ConflictResolutionStrategy {
+    CONFLICT_STRATEGY_UNKNOWN = 0;
+    CONFLICT_STRATEGY_LAST_WRITE_WINS = 1;
+    CONFLICT_STRATEGY_FIRST_WRITE_WINS = 2;
+    CONFLICT_STRATEGY_MERGE = 3;
+    CONFLICT_STRATEGY_MANUAL = 4;
+}
+
+// =======================
+// Replica Management Messages
+// =======================
+
+// Create a new replica
+message CreateReplicaRequest {
+    string partition_id = 1;
+    string source_node_id = 2;
+    string target_node_id = 3;
+    bool async = 4;
+}
+
+message CreateReplicaResponse {
+    bool success = 1;
+    string replica_id = 2;
+    string message = 3;
+}
+
+// Delete a replica
+message DeleteReplicaRequest {
+    string partition_id = 1;
+    string node_id = 2;
+}
+
+message DeleteReplicaResponse {
+    bool success = 1;
+    string message = 2;
+    int64 documents_deleted = 3;
+}
+
+// Get replica status
+message GetReplicaStatusRequest {
+    string partition_id = 1;
+}
+
+message GetReplicaStatusResponse {
+    string partition_id = 1;
+    ReplicaInfo primary = 2;
+    repeated ReplicaInfo replicas = 3;
+    int32 replication_factor = 4;
+}
+
+message ReplicaInfo {
+    string node_id = 1;
+    bool is_primary = 2;
+    ReplicaState state = 3;
+    int64 document_count = 4;
+    int64 version = 5;
+    int64 lag = 6;  // How far behind the primary
+    google.protobuf.Timestamp last_sync = 7;
+}
+
+enum ReplicaState {
+    REPLICA_STATE_UNKNOWN = 0;
+    REPLICA_STATE_HEALTHY = 1;
+    REPLICA_STATE_SYNCING = 2;
+    REPLICA_STATE_STALE = 3;
+    REPLICA_STATE_OFFLINE = 4;
+}
+
+// =======================
+// Write Concern Messages
+// =======================
+
+// Write with replication
+message ReplicatedWriteRequest {
+    Document document = 1;
+    WriteOperation operation = 2;
+    WriteConcern concern = 3;
+}
+
+message ReplicatedWriteResponse {
+    bool success = 1;
+    string message = 2;
+    int32 replicas_written = 3;
+    int64 version = 4;
+    repeated string failed_nodes = 5;
+}
+
+enum WriteOperation {
+    WRITE_OPERATION_UNKNOWN = 0;
+    WRITE_OPERATION_INSERT = 1;
+    WRITE_OPERATION_UPDATE = 2;
+    WRITE_OPERATION_DELETE = 3;
+}
+
+message WriteConcern {
+    int32 min_replicas = 1;
+    int32 timeout_ms = 2;
+    bool wait_for_all = 3;
+}
+
+// =======================
+// Anti-Entropy Messages
+// =======================
+
+// Request merkle tree for a partition
+message GetMerkleTreeRequest {
+    string partition_id = 1;
+    int32 depth = 2;  // Depth of tree to return
+}
+
+message GetMerkleTreeResponse {
+    string partition_id = 1;
+    MerkleNode root = 2;
+    int64 document_count = 3;
+    google.protobuf.Timestamp generated_at = 4;
+}
+
+message MerkleNode {
+    string hash = 1;
+    repeated MerkleNode children = 2;
+    int64 document_count = 3;
+    string range_start = 4;
+    string range_end = 5;
+}
+
+// Compare merkle trees
+message CompareMerkleTreesRequest {
+    string partition_id = 1;
+    MerkleNode local_root = 2;
+}
+
+message CompareMerkleTreesResponse {
+    bool in_sync = 1;
+    repeated string divergent_ranges = 2;
+    int64 estimated_differences = 3;
+}
+
+// =======================
+// Services
+// =======================
+
+// Replication service on each node
+service ReplicationService {
+    // Document replication
+    rpc ReplicateDocument(ReplicateDocumentRequest) returns (ReplicateDocumentResponse);
+    rpc BatchReplicate(BatchReplicateRequest) returns (BatchReplicateResponse);
+    
+    // Partition synchronization
+    rpc SyncPartition(SyncPartitionRequest) returns (SyncPartitionResponse);
+    rpc GetSyncStatus(SyncStatusRequest) returns (SyncStatusResponse);
+    
+    // Version management
+    rpc CompareVersions(CompareVersionsRequest) returns (CompareVersionsResponse);
+    rpc ResolveConflict(ConflictResolutionRequest) returns (ConflictResolutionResponse);
+    
+    // Replica management
+    rpc CreateReplica(CreateReplicaRequest) returns (CreateReplicaResponse);
+    rpc DeleteReplica(DeleteReplicaRequest) returns (DeleteReplicaResponse);
+    rpc GetReplicaStatus(GetReplicaStatusRequest) returns (GetReplicaStatusResponse);
+    
+    // Write operations
+    rpc ReplicatedWrite(ReplicatedWriteRequest) returns (ReplicatedWriteResponse);
+    
+    // Anti-entropy
+    rpc GetMerkleTree(GetMerkleTreeRequest) returns (GetMerkleTreeResponse);
+    rpc CompareMerkleTrees(CompareMerkleTreesRequest) returns (CompareMerkleTreesResponse);
+    
+    // Streaming sync for large partitions
+    rpc StreamSync(SyncPartitionRequest) returns (stream Document);
+}

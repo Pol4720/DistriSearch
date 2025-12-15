@@ -1,0 +1,67 @@
+; ═══════════════════════════════════════════════════════════════════════════
+; DistriSearch Zone File
+; This file is auto-updated by the dns-sync daemon
+; ═══════════════════════════════════════════════════════════════════════════
+
+$ORIGIN distrisearch.local.
+$TTL 30
+
+@       IN      SOA     ns1.distrisearch.local. admin.distrisearch.local. (
+                        2024010101      ; Serial (YYYYMMDDNN)
+                        3600            ; Refresh (1 hour)
+                        600             ; Retry (10 minutes)
+                        86400           ; Expire (1 day)
+                        30              ; Minimum TTL
+                        )
+
+; Name servers
+@       IN      NS      ns1.distrisearch.local.
+ns1     IN      A       10.0.10.2
+
+; ═══════════════════════════════════════════════════════════════════════════
+; SERVICE RECORDS
+; These are updated dynamically by dns-sync daemon
+; ═══════════════════════════════════════════════════════════════════════════
+
+; Master nodes (Raft consensus cluster)
+master          IN      A       10.0.10.10
+master-1        IN      A       10.0.10.10
+master-2        IN      A       10.0.10.11
+master-3        IN      A       10.0.10.12
+
+; Slave nodes (Worker nodes)
+slave           IN      A       10.0.10.20
+slave-1         IN      A       10.0.10.20
+slave-2         IN      A       10.0.10.21
+slave-3         IN      A       10.0.10.22
+
+; Database services
+mongodb         IN      A       10.0.10.30
+mongodb-1       IN      A       10.0.10.30
+mongodb-2       IN      A       10.0.10.31
+mongodb-3       IN      A       10.0.10.32
+
+redis           IN      A       10.0.10.40
+
+; CoreDNS backup
+coredns         IN      A       10.0.10.50
+
+; Load balancer
+lb              IN      A       10.0.10.2
+www             IN      CNAME   lb.distrisearch.local.
+
+; ═══════════════════════════════════════════════════════════════════════════
+; SRV RECORDS for service discovery
+; ═══════════════════════════════════════════════════════════════════════════
+
+; Master API service
+_master._tcp    IN      SRV     10 50 8001 master.distrisearch.local.
+
+; Slave API service  
+_api._tcp       IN      SRV     10 50 8000 slave.distrisearch.local.
+
+; MongoDB
+_mongodb._tcp   IN      SRV     10 50 27017 mongodb.distrisearch.local.
+
+; Redis
+_redis._tcp     IN      SRV     10 50 6379 redis.distrisearch.local.
