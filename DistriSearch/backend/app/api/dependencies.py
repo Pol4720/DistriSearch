@@ -18,6 +18,7 @@ from ..storage.mongodb import (
     SearchHistoryRepository,
     ClusterRepository
 )
+from ..storage.user_repository import UserRepository
 from ..core.search import SearchEngine
 from ..distributed.coordination import ClusterManager
 from ..distributed.coordination.cluster_manager import NodeRole
@@ -34,6 +35,7 @@ _document_repository: Optional[DocumentRepository] = None
 _node_repository: Optional[NodeRepository] = None
 _search_history_repository: Optional[SearchHistoryRepository] = None
 _cluster_repository: Optional[ClusterRepository] = None
+_user_repository: Optional[UserRepository] = None
 _search_engine: Optional[SearchEngine] = None
 _cluster_manager: Optional[ClusterManager] = None
 _raft_node: Optional[RaftNode] = None
@@ -70,7 +72,7 @@ async def _create_rpc_sender(settings: Settings):
 async def init_dependencies(settings: Settings):
     """Initialize all dependencies at application startup"""
     global _mongodb_client, _document_repository, _node_repository
-    global _search_history_repository, _cluster_repository
+    global _search_history_repository, _cluster_repository, _user_repository
     global _search_engine, _cluster_manager, _settings
     global _raft_node, _heartbeat_service, _message_broker
     
@@ -88,12 +90,18 @@ async def init_dependencies(settings: Settings):
     _node_repository = NodeRepository(_mongodb_client)
     _search_history_repository = SearchHistoryRepository(_mongodb_client)
     _cluster_repository = ClusterRepository(_mongodb_client)
+    _user_repository = UserRepository(_mongodb_client.db)
     
     # Ensure indexes are created
     await _document_repository.ensure_indexes()
     await _node_repository.ensure_indexes()
     await _search_history_repository.ensure_indexes()
     await _cluster_repository.ensure_indexes()
+    await _user_repository.initialize()
+    
+    # Set user repository in auth module
+    from .auth import set_user_repository
+    set_user_repository(_user_repository)
     
     # Initialize search engine
     _search_engine = SearchEngine()

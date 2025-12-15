@@ -9,3 +9,4 @@ export {
   ProgressBar,
   Badge,
 } from './UIComponents';
+export { ProtectedRoute } from './ProtectedRoute';

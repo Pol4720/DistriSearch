@@ -22,7 +22,9 @@ from .dependencies import (
     get_db,
     get_cluster_manager,
     get_current_node,
+    get_search_engine,
 )
+from ..core.search import SearchEngine
 from ..distributed.coordination import ClusterManager
 
 logger = logging.getLogger(__name__)
@@ -212,7 +214,8 @@ async def liveness_check():
 )
 async def get_metrics(
     cluster_manager: ClusterManager = Depends(get_cluster_manager),
-    current_node: dict = Depends(get_current_node)
+    current_node: dict = Depends(get_current_node),
+    search_engine: SearchEngine = Depends(get_search_engine)
 ):
     """
     Get detailed metrics for monitoring and observability.
@@ -229,6 +232,9 @@ async def get_metrics(
         
         # Cluster metrics
         cluster_stats = await cluster_manager.get_cluster_stats()
+        
+        # Search engine statistics
+        search_stats = search_engine.get_statistics()
         
         return {
             "node_id": current_node["node_id"],
@@ -256,6 +262,14 @@ async def get_metrics(
                 "total_partitions": cluster_stats.get("total_partitions", 0),
                 "is_master": cluster_manager.is_master
             },
+            "search": {
+                "total_searches": search_stats.get("total_searches", 0),
+                "cache_hits": search_stats.get("cache_hits", 0),
+                "cache_hit_rate": search_stats.get("cache_hit_rate", 0.0),
+                "failed_searches": search_stats.get("failed_searches", 0),
+                "cache_size": search_stats.get("cache_size", 0)
+            },
+            "total_searches": search_stats.get("total_searches", 0),
             "timestamp": datetime.utcnow().isoformat()
         }
         

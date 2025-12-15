@@ -5,11 +5,41 @@ echo "=== DistriSearch Slave Node Starting ==="
 echo "NODE_ID: ${NODE_ID:-auto}"
 echo "NODE_ROLE: ${NODE_ROLE:-slave}"
 echo "MASTER_HOST: ${MASTER_HOST:-master}"
+echo "HTTPS_ENABLED: ${HTTPS_ENABLED:-true}"
 
 # Generate NODE_ID if not provided
 if [ -z "$NODE_ID" ]; then
     export NODE_ID="slave-$(hostname | cut -c1-8)"
     echo "Generated NODE_ID: $NODE_ID"
+fi
+
+# Generate SSL certificates if HTTPS is enabled
+if [ "${HTTPS_ENABLED:-true}" = "true" ]; then
+    echo "Generating SSL certificates..."
+    mkdir -p /etc/nginx/ssl
+    
+    # Only generate if certificates don't exist
+    if [ ! -f /etc/nginx/ssl/server.crt ] || [ ! -f /etc/nginx/ssl/server.key ]; then
+        openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+            -keyout /etc/nginx/ssl/server.key \
+            -out /etc/nginx/ssl/server.crt \
+            -subj "/C=ES/ST=Madrid/L=Madrid/O=DistriSearch/OU=Development/CN=localhost" \
+            -addext "subjectAltName=DNS:localhost,DNS:distrisearch.local,IP:127.0.0.1" 2>/dev/null || \
+        openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+            -keyout /etc/nginx/ssl/server.key \
+            -out /etc/nginx/ssl/server.crt \
+            -subj "/C=ES/ST=Madrid/L=Madrid/O=DistriSearch/OU=Development/CN=localhost"
+        
+        chmod 600 /etc/nginx/ssl/server.key
+        chmod 644 /etc/nginx/ssl/server.crt
+        echo "SSL certificates generated successfully!"
+    else
+        echo "SSL certificates already exist."
+    fi
+    
+    # Use HTTPS nginx configuration
+    cp /etc/nginx/sites-available/https /etc/nginx/sites-available/default
+    echo "HTTPS configuration enabled."
 fi
 
 # Wait for MongoDB to be ready

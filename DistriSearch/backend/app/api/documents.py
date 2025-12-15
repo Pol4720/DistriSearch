@@ -31,6 +31,7 @@ from ..storage.file_handler import FileHandler
 from ..storage.content_extractor import ContentExtractor
 from ..core.search import SearchEngine
 from ..distributed.coordination import ClusterManager
+from ..middleware.auth import require_auth, get_current_user
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,7 @@ content_extractor = ContentExtractor()
     responses={
         201: {"description": "Document created successfully"},
         400: {"model": ErrorResponse, "description": "Invalid input"},
+        401: {"description": "Authentication required"},
         500: {"model": ErrorResponse, "description": "Internal server error"}
     }
 )
@@ -58,7 +60,8 @@ async def create_document(
     doc_repo: DocumentRepository = Depends(get_document_repository),
     search_engine: SearchEngine = Depends(get_search_engine),
     cluster_manager: ClusterManager = Depends(get_cluster_manager),
-    current_node: dict = Depends(get_current_node)
+    current_node: dict = Depends(get_current_node),
+    auth_user: dict = Depends(require_auth)
 ):
     """
     Create a new document in the distributed search system.
@@ -138,6 +141,7 @@ async def create_document(
     responses={
         201: {"description": "File uploaded and processed successfully"},
         400: {"model": ErrorResponse, "description": "Invalid file"},
+        401: {"description": "Authentication required"},
         413: {"model": ErrorResponse, "description": "File too large"},
         500: {"model": ErrorResponse, "description": "Internal server error"}
     }
@@ -149,7 +153,8 @@ async def upload_document(
     doc_repo: DocumentRepository = Depends(get_document_repository),
     search_engine: SearchEngine = Depends(get_search_engine),
     cluster_manager: ClusterManager = Depends(get_cluster_manager),
-    current_node: dict = Depends(get_current_node)
+    current_node: dict = Depends(get_current_node),
+    auth_user: dict = Depends(require_auth)
 ):
     """
     Upload and process a document file.
@@ -176,16 +181,18 @@ async def upload_document(
         
         # Save file and get metadata
         file_metadata = await file_handler.save_file(
-            content=content,
+            file_data=content,
             filename=file.filename,
             content_type=file.content_type
         )
         
         # Extract text content
-        extracted_content = await content_extractor.extract_content(
-            file_path=file_metadata.path,
+        extraction_result = await content_extractor.extract(
+            file_data=content,
+            filename=file.filename,
             content_type=file.content_type
         )
+        extracted_content = extraction_result.text
         
         if not extracted_content or not extracted_content.strip():
             raise HTTPException(
@@ -214,7 +221,7 @@ async def upload_document(
                 "filename": file.filename,
                 "content_type": file.content_type,
                 "file_size": len(content),
-                "file_path": file_metadata.path
+                "file_path": file_metadata.storage_path
             },
             "tags": doc_tags,
             "node_id": node_id,
@@ -390,6 +397,7 @@ async def get_document(
     summary="Update a document",
     responses={
         200: {"description": "Document updated successfully"},
+        401: {"description": "Authentication required"},
         404: {"model": ErrorResponse, "description": "Document not found"},
         500: {"model": ErrorResponse, "description": "Internal server error"}
     }
@@ -399,7 +407,8 @@ async def update_document(
     update: DocumentUpdate,
     doc_repo: DocumentRepository = Depends(get_document_repository),
     search_engine: SearchEngine = Depends(get_search_engine),
-    cluster_manager: ClusterManager = Depends(get_cluster_manager)
+    cluster_manager: ClusterManager = Depends(get_cluster_manager),
+    auth_user: dict = Depends(require_auth)
 ):
     """
     Update a document by its ID.
@@ -482,6 +491,7 @@ async def update_document(
     summary="Delete a document",
     responses={
         204: {"description": "Document deleted successfully"},
+        401: {"description": "Authentication required"},
         404: {"model": ErrorResponse, "description": "Document not found"},
         500: {"model": ErrorResponse, "description": "Internal server error"}
     }
@@ -489,7 +499,8 @@ async def update_document(
 async def delete_document(
     document_id: str,
     doc_repo: DocumentRepository = Depends(get_document_repository),
-    cluster_manager: ClusterManager = Depends(get_cluster_manager)
+    cluster_manager: ClusterManager = Depends(get_cluster_manager),
+    auth_user: dict = Depends(require_auth)
 ):
     """
     Delete a document by its ID.

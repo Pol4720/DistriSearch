@@ -11,15 +11,32 @@ Handles:
 
 import asyncio
 import logging
+import os
 from typing import List, Dict, Any, Optional, Callable, Awaitable, Set
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 
+import redis
+
 from .query_processor import QueryProcessor, ProcessedQuery, QueryType
 from .result_aggregator import ResultAggregator, SearchResult, AggregatedResults, RankingStrategy
 
 logger = logging.getLogger(__name__)
+
+# Redis connection for persistent counters
+_redis_client = None
+
+def _get_redis():
+    global _redis_client
+    if _redis_client is None:
+        redis_url = os.environ.get("REDIS_URL", "redis://redis:6379")
+        try:
+            _redis_client = redis.from_url(redis_url)
+        except Exception as e:
+            logger.warning(f"Could not connect to Redis: {e}")
+            return None
+    return _redis_client
 
 
 @dataclass
@@ -497,6 +514,17 @@ class SearchEngine:
         """
         import re
         
+        # Increment search counter (local)
+        self._total_searches += 1
+        
+        # Increment in Redis for persistence across workers
+        try:
+            r = _get_redis()
+            if r:
+                r.incr("distrisearch:total_searches")
+        except Exception as e:
+            logger.warning(f"Failed to increment Redis counter: {e}")
+        
         results = []
         query_terms = set(re.findall(r'\b\w+\b', query.lower()))
         
@@ -548,10 +576,21 @@ class SearchEngine:
     
     def get_statistics(self) -> Dict[str, Any]:
         """Get search engine statistics."""
+        # Try to get persistent count from Redis
+        total_searches = self._total_searches
+        try:
+            r = _get_redis()
+            if r:
+                redis_count = r.get("distrisearch:total_searches")
+                if redis_count:
+                    total_searches = int(redis_count)
+        except Exception as e:
+            logger.warning(f"Failed to get Redis counter: {e}")
+        
         return {
-            "total_searches": self._total_searches,
+            "total_searches": total_searches,
             "cache_hits": self._cache_hits,
-            "cache_hit_rate": self._cache_hits / self._total_searches if self._total_searches > 0 else 0,
+            "cache_hit_rate": self._cache_hits / total_searches if total_searches > 0 else 0,
             "failed_searches": self._failed_searches,
             "cache_size": len(self._cache),
             "config": {

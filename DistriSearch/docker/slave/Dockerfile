@@ -52,6 +52,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     nginx \
     supervisor \
     curl \
+    openssl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -67,8 +68,11 @@ COPY --from=frontend-builder /app/frontend/dist /var/www/html
 COPY backend/ ./backend/
 COPY shared/ ./shared/
 
-# Copy nginx configuration for frontend
+# Copy nginx configuration for frontend (HTTP and HTTPS)
 COPY docker/slave/nginx-frontend.conf /etc/nginx/sites-available/default
+COPY docker/slave/nginx-https.conf /etc/nginx/sites-available/https
+COPY docker/slave/generate-ssl.sh /generate-ssl.sh
+RUN chmod +x /generate-ssl.sh
 
 # Copy supervisor configuration
 COPY docker/slave/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
@@ -87,12 +91,12 @@ ENV PYTHONUNBUFFERED=1 \
     API_HOST=0.0.0.0 \
     API_PORT=8000
 
-# Expose ports (80 for frontend, 8000 for backend API)
-EXPOSE 80 8000
+# Expose ports (80 for HTTP redirect, 443 for HTTPS, 8000 for backend API)
+EXPOSE 80 443 8000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD curl -f http://localhost:8000/api/v1/health && curl -f http://localhost/ || exit 1
+    CMD curl -f http://localhost:8000/api/v1/health || exit 1
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

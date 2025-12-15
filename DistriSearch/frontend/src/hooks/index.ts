@@ -49,3 +49,6 @@ export {
   useClusterUpdates,
   useSearchUpdates,
 } from './useWebSocket';
+
+// Auth hooks
+export { useAuth, AuthProvider } from './useAuth';

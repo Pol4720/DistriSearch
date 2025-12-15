@@ -9,7 +9,7 @@ import type {
 } from '../types';
 
 const CLUSTER_ENDPOINT = '/cluster';
-const HEALTH_ENDPOINT = '/health';
+const HEALTH_ENDPOINT = '/health/';
 
 export const clusterService = {
   /**

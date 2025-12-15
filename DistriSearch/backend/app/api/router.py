@@ -10,11 +10,13 @@ from .search import router as search_router
 from .cluster import router as cluster_router
 from .health import router as health_router
 from .websocket import router as websocket_router
+from .auth import router as auth_router
 
 # Create main API router
 api_router = APIRouter(prefix="/api/v1")
 
 # Include all routers
+api_router.include_router(auth_router)  # Auth first for login/register
 api_router.include_router(documents_router)
 api_router.include_router(search_router)
 api_router.include_router(cluster_router)
@@ -34,6 +36,7 @@ async def root():
         "version": "1.0.0",
         "description": "Distributed document search system API",
         "endpoints": {
+            "auth": "/api/v1/auth",
             "documents": "/api/v1/documents",
             "search": "/api/v1/search",
             "cluster": "/api/v1/cluster",
