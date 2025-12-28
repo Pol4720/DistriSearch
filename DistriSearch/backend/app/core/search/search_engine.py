@@ -11,6 +11,7 @@ Handles:
 
 import asyncio
 import logging
+import math
 import os
 from typing import List, Dict, Any, Optional, Callable, Awaitable, Set
 from dataclasses import dataclass, field
@@ -526,40 +527,146 @@ class SearchEngine:
             logger.warning(f"Failed to increment Redis counter: {e}")
         
         results = []
-        query_terms = set(re.findall(r'\b\w+\b', query.lower()))
+        query_terms = [w for w in re.findall(r'\b\w+\b', query.lower()) if len(w) > 2]
+        query_term_set = set(query_terms)
         
         if document_repository:
             # Search locally using repository
             all_docs = await document_repository.find_many({}, limit=1000)
             
+            # Build corpus statistics for BM25
+            doc_count = len(all_docs)
+            avg_doc_length = 0
+            term_doc_freq = {}  # How many docs contain each term
+            
+            # First pass: collect statistics
+            doc_data_list = []
             for doc in all_docs:
                 doc_dict = doc if isinstance(doc, dict) else doc.dict()
                 content = doc_dict.get("content", "").lower()
                 title = doc_dict.get("title", "").lower()
+                full_text = title + " " + content
                 
-                # Calculate match score based on query terms
-                doc_terms = set(re.findall(r'\b\w+\b', content + " " + title))
-                matched_terms = query_terms & doc_terms
+                doc_terms = re.findall(r'\b\w+\b', full_text)
+                doc_terms = [w for w in doc_terms if len(w) > 2]
+                avg_doc_length += len(doc_terms)
                 
-                if matched_terms:
-                    # Simple scoring: percentage of query terms matched
-                    score = len(matched_terms) / len(query_terms) if query_terms else 0
+                unique_terms = set(doc_terms)
+                for term in unique_terms:
+                    term_doc_freq[term] = term_doc_freq.get(term, 0) + 1
+                
+                doc_data_list.append({
+                    "doc_dict": doc_dict,
+                    "doc_terms": doc_terms,
+                    "term_freq": {},
+                    "doc_length": len(doc_terms)
+                })
+            
+            avg_doc_length = avg_doc_length / doc_count if doc_count > 0 else 1
+            
+            # Calculate term frequencies for each doc
+            for doc_data in doc_data_list:
+                for term in doc_data["doc_terms"]:
+                    doc_data["term_freq"][term] = doc_data["term_freq"].get(term, 0) + 1
+            
+            # Second pass: calculate BM25 + vector similarity scores
+            # BM25 parameters
+            k1 = 1.5  # Term frequency saturation
+            b = 0.75  # Length normalization
+            
+            for doc_data in doc_data_list:
+                doc_dict = doc_data["doc_dict"]
+                doc_terms_set = set(doc_data["doc_terms"])
+                matched_terms = query_term_set & doc_terms_set
+                
+                if not matched_terms:
+                    continue
+                
+                # Calculate BM25 score
+                bm25_score = 0.0
+                for term in query_terms:
+                    if term not in doc_data["term_freq"]:
+                        continue
                     
-                    # Get document ID (could be _id or id depending on source)
-                    doc_id = doc_dict.get("id") or doc_dict.get("_id", "")
-                    if hasattr(doc_id, '__str__'):
-                        doc_id = str(doc_id)
+                    tf = doc_data["term_freq"][term]
+                    df = term_doc_freq.get(term, 1)
+                    doc_len = doc_data["doc_length"]
                     
-                    results.append({
-                        "document_id": doc_id,
-                        "title": doc_dict.get("title", "Untitled"),
-                        "content": doc_dict.get("content", ""),
-                        "score": score,
-                        "node_id": doc_dict.get("node_id", ""),
-                        "metadata": doc_dict.get("metadata", {}),
-                        "matched_terms": list(matched_terms),
-                        "vectors": doc_dict.get("vectors", {})
-                    })
+                    # IDF component (with smoothing)
+                    idf = math.log((doc_count - df + 0.5) / (df + 0.5) + 1)
+                    
+                    # TF component with saturation and length normalization
+                    tf_component = (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * doc_len / avg_doc_length))
+                    
+                    bm25_score += idf * tf_component
+                
+                # Normalize BM25 score (typical range 0-15 for good matches)
+                bm25_normalized = min(bm25_score / 10.0, 1.0)
+                
+                # Calculate TF-IDF vector similarity if vectors exist
+                vector_similarity = 0.0
+                doc_vectors = doc_dict.get("vectors", {})
+                if doc_vectors and doc_vectors.get("tfidf"):
+                    doc_tfidf = doc_vectors.get("tfidf", [])
+                    # Create query TF-IDF vector based on term frequencies
+                    query_tf = {}
+                    for term in query_terms:
+                        query_tf[term] = query_tf.get(term, 0) + 1
+                    
+                    # Simple cosine similarity approximation using matched terms
+                    if doc_tfidf:
+                        # Use overlap coefficient as proxy for vector similarity
+                        match_ratio = len(matched_terms) / max(len(query_term_set), 1)
+                        vector_similarity = match_ratio * 0.5
+                        
+                        # Boost if MinHash signatures suggest similarity
+                        if doc_vectors.get("minhash"):
+                            vector_similarity += 0.1
+                
+                # Calculate MinHash Jaccard similarity estimate
+                minhash_similarity = 0.0
+                if doc_vectors and doc_vectors.get("minhash"):
+                    # Jaccard estimate from keyword overlap
+                    all_terms = query_term_set | doc_terms_set
+                    if all_terms:
+                        minhash_similarity = len(matched_terms) / len(all_terms)
+                
+                # Hybrid score with configurable weights
+                # Weights: BM25 (60%), TF-IDF vector (25%), MinHash (15%)
+                hybrid_score = (
+                    0.60 * bm25_normalized +
+                    0.25 * vector_similarity +
+                    0.15 * minhash_similarity
+                )
+                
+                # Bonus for title matches (titles are more important)
+                title_lower = doc_dict.get("title", "").lower()
+                title_terms = set(re.findall(r'\b\w+\b', title_lower))
+                title_matches = query_term_set & title_terms
+                if title_matches:
+                    title_boost = 0.2 * (len(title_matches) / len(query_term_set))
+                    hybrid_score = min(hybrid_score + title_boost, 1.0)
+                
+                # Get document ID
+                doc_id = doc_dict.get("id") or doc_dict.get("_id", "")
+                if hasattr(doc_id, '__str__'):
+                    doc_id = str(doc_id)
+                
+                results.append({
+                    "document_id": doc_id,
+                    "title": doc_dict.get("title", "Untitled"),
+                    "content": doc_dict.get("content", ""),
+                    "score": round(hybrid_score, 4),
+                    "node_id": doc_dict.get("node_id", ""),
+                    "metadata": doc_dict.get("metadata", {}),
+                    "matched_terms": list(matched_terms),
+                    "vectors": doc_dict.get("vectors", {}),
+                    "score_breakdown": {
+                        "bm25": round(bm25_normalized, 4),
+                        "tfidf_similarity": round(vector_similarity, 4),
+                        "minhash_similarity": round(minhash_similarity, 4)
+                    }
+                })
             
             # Sort by score descending
             results.sort(key=lambda x: x["score"], reverse=True)
