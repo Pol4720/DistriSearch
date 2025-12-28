@@ -36,9 +36,6 @@ if [ "${HTTPS_ENABLED:-true}" = "true" ]; then
     else
         echo "SSL certificates already exist."
     fi
-    
-    # Use HTTPS nginx configuration
-    cp /etc/nginx/sites-available/https /etc/nginx/sites-available/default
     echo "HTTPS configuration enabled."
 fi
 

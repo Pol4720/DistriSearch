@@ -1,0 +1,110 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# Docker Compose for Local Development - SIMPLIFIED
+# ═══════════════════════════════════════════════════════════════════════════
+# Sin CoreDNS ni DNS-Sync para evitar conflictos de puertos
+
+networks:
+  distrisearch-network:
+    driver: bridge
+
+volumes:
+  mongodb-data:
+  redis-data:
+
+services:
+  # ═══════════════════════════════════════════════════════════════════════
+  # MONGODB
+  # ═══════════════════════════════════════════════════════════════════════
+  mongodb:
+    image: mongo:4.4
+    container_name: distrisearch-mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb-data:/data/db
+    networks:
+      - distrisearch-network
+    healthcheck:
+      test: ["CMD", "mongo", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # REDIS
+  # ═══════════════════════════════════════════════════════════════════════
+  redis:
+    image: redis:7-alpine
+    container_name: distrisearch-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - distrisearch-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # MASTER NODE
+  # ═══════════════════════════════════════════════════════════════════════
+  master:
+    image: docker-master:latest
+    container_name: distrisearch-master
+    environment:
+      - NODE_ID=master-1
+      - NODE_ROLE=master
+      - MONGODB_URI=mongodb://mongodb:27017/distrisearch
+      - REDIS_URL=redis://redis:6379
+      - LOG_LEVEL=INFO
+    ports:
+      - "8001:8001"
+    networks:
+      - distrisearch-network
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # SLAVE NODE (Backend + Frontend combined)
+  # ═══════════════════════════════════════════════════════════════════════
+  slave:
+    image: distrisearch/slave:latest
+    container_name: distrisearch-slave
+    environment:
+      - NODE_ID=slave-1
+      - NODE_ROLE=slave
+      - MASTER_HOST=master
+      - MASTER_PORT=8001
+      - MONGODB_URI=mongodb://mongodb:27017/distrisearch
+      - REDIS_URL=redis://redis:6379
+      - REPLICATION_FACTOR=1
+      - LOG_LEVEL=INFO
+    ports:
+      - "8080:80"
+      - "8443:443"
+      - "8000:8000"
+    networks:
+      - distrisearch-network
+    depends_on:
+      - master
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health/"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    restart: unless-stopped

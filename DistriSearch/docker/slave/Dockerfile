@@ -68,9 +68,9 @@ COPY --from=frontend-builder /app/frontend/dist /var/www/html
 COPY backend/ ./backend/
 COPY shared/ ./shared/
 
-# Copy nginx configuration for frontend (HTTP and HTTPS)
-COPY docker/slave/nginx-frontend.conf /etc/nginx/sites-available/default
-COPY docker/slave/nginx-https.conf /etc/nginx/sites-available/https
+# Copy nginx configuration for frontend (HTTPS por defecto)
+COPY docker/slave/nginx-https.conf /etc/nginx/sites-available/default
+RUN ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default
 COPY docker/slave/generate-ssl.sh /generate-ssl.sh
 RUN chmod +x /generate-ssl.sh
 

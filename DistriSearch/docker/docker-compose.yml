@@ -4,7 +4,7 @@
 #
 # ⚠️  NO USAR EN PRODUCCIÓN ⚠️
 #
-# Este archivo tiene slaves estáticos (slave-1, slave-2) y NO soporta
+# Este archivo tiene slaves estáticos y NO soporta
 # el crecimiento dinámico de nodos requerido en producción.
 #
 # Para despliegue dinámico use: ./scripts/deploy.sh
@@ -13,8 +13,6 @@
 #   - Usa solo 'docker run' (no docker-compose)
 #
 # ═══════════════════════════════════════════════════════════════════════════
-
-version: '3.8'
 
 networks:
   distrisearch-network:
@@ -39,7 +37,6 @@ services:
       - distrisearch-network
     depends_on:
       - slave-1
-      - slave-2
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost/health"]
       interval: 30s
@@ -57,7 +54,7 @@ services:
     environment:
       - NODE_ID=master-1
       - NODE_ROLE=master
-      - MONGODB_URI=mongodb://mongodb:27017/distrisearch?replicaSet=rs0
+      - MONGODB_URI=mongodb://mongodb:27017/distrisearch
       - REDIS_URL=redis://redis:6379
       - RAFT_PEERS=master-1
       - LOG_LEVEL=INFO
@@ -76,23 +73,23 @@ services:
     restart: unless-stopped
 
   # ═══════════════════════════════════════════════════════════════════════
-  # SLAVE NODES (Backend + Frontend combined)
+  # SLAVE NODE (Backend + Frontend combined)
+  # Una sola imagen, múltiples contenedores con diferentes NODE_ID
   # ═══════════════════════════════════════════════════════════════════════
   slave-1:
-    build:
-      context: ..
-      dockerfile: docker/slave/Dockerfile
+    image: distrisearch/slave:latest
     environment:
       - NODE_ID=slave-1
       - NODE_ROLE=slave
       - MASTER_HOST=master
       - MASTER_PORT=8001
-      - MONGODB_URI=mongodb://mongodb:27017/distrisearch?replicaSet=rs0
+      - MONGODB_URI=mongodb://mongodb:27017/distrisearch
       - REDIS_URL=redis://redis:6379
       - REPLICATION_FACTOR=2
       - LOG_LEVEL=INFO
     ports:
       - "8080:80"
+      - "8443:443"
       - "8000:8000"
     networks:
       - distrisearch-network
@@ -103,49 +100,17 @@ services:
     volumes:
       - ./data/slave-1:/app/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-    restart: unless-stopped
-
-  slave-2:
-    build:
-      context: ..
-      dockerfile: docker/slave/Dockerfile
-    environment:
-      - NODE_ID=slave-2
-      - NODE_ROLE=slave
-      - MASTER_HOST=master
-      - MASTER_PORT=8001
-      - MONGODB_URI=mongodb://mongodb:27017/distrisearch?replicaSet=rs0
-      - REDIS_URL=redis://redis:6379
-      - REPLICATION_FACTOR=2
-      - LOG_LEVEL=INFO
-    ports:
-      - "8081:80"
-      - "8002:8000"
-    networks:
-      - distrisearch-network
-    depends_on:
-      - master
-      - mongodb
-      - redis
-    volumes:
-      - ./data/slave-2:/app/data
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health/"]
       interval: 10s
       timeout: 5s
       retries: 3
     restart: unless-stopped
 
   # ═══════════════════════════════════════════════════════════════════════
-  # MONGODB (Replica Set)
+  # MONGODB (Standalone para compatibilidad)
   # ═══════════════════════════════════════════════════════════════════════
   mongodb:
-    image: mongo:7.0
-    command: ["--replSet", "rs0", "--bind_ip_all"]
+    image: mongo:4.4
     environment:
       - MONGO_INITDB_DATABASE=distrisearch
     ports:
@@ -154,9 +119,8 @@ services:
       - distrisearch-network
     volumes:
       - mongodb-data:/data/db
-      - ./mongodb/init-replica.js:/docker-entrypoint-initdb.d/init-replica.js:ro
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: ["CMD", "mongo", "--eval", "db.adminCommand('ping')"]
       interval: 10s
       timeout: 5s
       retries: 5
