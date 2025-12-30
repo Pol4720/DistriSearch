@@ -3,10 +3,15 @@ FROM python:3.11-slim
 WORKDIR /app
 
 COPY frontend/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --default-timeout=300 --retries=5 --no-cache-dir -r requirements.txt
 
 COPY frontend/ .
 
+# Crear configuración de Streamlit
+RUN mkdir -p /root/.streamlit
+RUN echo '[server]\nheadless = true\nport = 8501\naddress = "0.0.0.0"\n\n[theme]\nprimaryColor = "#6366f1"\nbackgroundColor = "#0f172a"\nsecondaryBackgroundColor = "#1e1b4b"\ntextColor = "#f1f5f9"\n' > /root/.streamlit/config.toml
+
 EXPOSE 8501
 
-CMD ["streamlit", "run", "app.py", "--server.port", "8501", "--server.address", "0.0.0.0"]
+# Ejecutar la página principal con emojis
+CMD ["streamlit", "run", "🏠_Panel_Principal.py", "--server.port", "8501", "--server.address", "0.0.0.0"]
