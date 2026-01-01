@@ -9,11 +9,14 @@ services:
     ports:
       - "8888:8888"
     environment:
-      - DISTRISEARCH_URL=http://host.docker.internal:8000
+      - DISTRISEARCH_URL=http://distrisearch-master:8001
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - control-center-net
+      - docker_distrisearch-network
     restart: unless-stopped
 
   control-center-frontend:
@@ -34,3 +37,5 @@ services:
 networks:
   control-center-net:
     driver: bridge
+  docker_distrisearch-network:
+    external: true
