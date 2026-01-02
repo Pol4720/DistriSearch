@@ -1,6 +1,6 @@
 """
-🖥️ Gestión de Nodos
-Control de contenedores Docker del cluster
+🖥️ Gestión de Nodos DistriSearch
+Visualización y control de nodos del sistema distribuido
 """
 
 import streamlit as st
@@ -13,7 +13,7 @@ st.set_page_config(
     layout="wide",
 )
 
-# CSS (mismo estilo)
+# CSS Moderno
 st.markdown("""
 <style>
     #MainMenu {visibility: hidden;}
@@ -36,7 +36,7 @@ st.markdown("""
         margin-bottom: 1rem;
     }
     
-    .container-card {
+    .node-card {
         background: rgba(30, 41, 59, 0.6);
         border-radius: 12px;
         padding: 1.25rem;
@@ -45,12 +45,21 @@ st.markdown("""
         transition: all 0.3s ease;
     }
     
-    .container-card:hover {
+    .node-card:hover {
         border-color: rgba(99, 102, 241, 0.5);
         box-shadow: 0 4px 20px rgba(99, 102, 241, 0.1);
     }
     
-    .container-header {
+    .node-card-master {
+        border-left: 4px solid #10b981;
+        background: linear-gradient(90deg, rgba(16, 185, 129, 0.1), rgba(30, 41, 59, 0.6));
+    }
+    
+    .node-card-slave {
+        border-left: 4px solid #6366f1;
+    }
+    
+    .node-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
@@ -59,21 +68,43 @@ st.markdown("""
         border-bottom: 1px solid rgba(99, 102, 241, 0.1);
     }
     
-    .container-name {
+    .node-name {
         color: #f1f5f9;
         font-weight: 600;
         font-size: 1.1rem;
     }
     
-    .container-info {
+    .node-components {
         display: grid;
-        grid-template-columns: repeat(2, 1fr);
+        grid-template-columns: repeat(4, 1fr);
         gap: 0.75rem;
+        margin-top: 1rem;
+    }
+    
+    .component-badge {
+        background: rgba(99, 102, 241, 0.1);
+        border: 1px solid rgba(99, 102, 241, 0.2);
+        border-radius: 8px;
+        padding: 0.5rem;
+        text-align: center;
+        font-size: 0.8rem;
+        color: #94a3b8;
+    }
+    
+    .component-badge-active {
+        background: rgba(16, 185, 129, 0.1);
+        border-color: rgba(16, 185, 129, 0.3);
+        color: #34d399;
+    }
+    
+    .node-stats {
+        display: flex;
+        gap: 1.5rem;
         color: #94a3b8;
         font-size: 0.9rem;
     }
     
-    .container-info-item {
+    .stat-item {
         display: flex;
         align-items: center;
         gap: 0.5rem;
@@ -89,45 +120,22 @@ st.markdown("""
         font-weight: 600;
     }
     
-    .status-running {
+    .status-healthy {
         background: rgba(16, 185, 129, 0.15);
         color: #34d399;
         border: 1px solid rgba(16, 185, 129, 0.4);
     }
     
-    .status-exited {
+    .status-unhealthy {
         background: rgba(239, 68, 68, 0.15);
         color: #f87171;
         border: 1px solid rgba(239, 68, 68, 0.4);
     }
     
-    .status-paused {
+    .status-unknown {
         background: rgba(245, 158, 11, 0.15);
         color: #fbbf24;
         border: 1px solid rgba(245, 158, 11, 0.4);
-    }
-    
-    .action-section {
-        background: rgba(15, 23, 42, 0.5);
-        border-radius: 10px;
-        padding: 1rem;
-        margin-top: 1rem;
-    }
-    
-    .action-title {
-        color: #94a3b8;
-        font-size: 0.85rem;
-        font-weight: 500;
-        margin-bottom: 0.75rem;
-    }
-    
-    .warning-box {
-        background: rgba(245, 158, 11, 0.1);
-        border: 1px solid rgba(245, 158, 11, 0.3);
-        border-radius: 10px;
-        padding: 1rem;
-        color: #fbbf24;
-        margin-top: 1rem;
     }
     
     .concept-box {
@@ -148,6 +156,18 @@ st.markdown("""
         color: #cbd5e1;
         font-size: 0.9rem;
         line-height: 1.6;
+    }
+    
+    .arch-diagram {
+        background: rgba(15, 23, 42, 0.8);
+        border: 1px solid rgba(99, 102, 241, 0.3);
+        border-radius: 12px;
+        padding: 1.5rem;
+        text-align: center;
+        color: #94a3b8;
+        font-family: monospace;
+        font-size: 0.85rem;
+        line-height: 1.8;
     }
     
     .stButton > button {
@@ -177,9 +197,9 @@ def api_get(endpoint: str) -> dict:
         return {"error": str(e)}
 
 
-def api_post(endpoint: str) -> dict:
+def api_post(endpoint: str, data: dict = None) -> dict:
     try:
-        response = requests.post(f"{BACKEND_URL}/api{endpoint}", timeout=30)
+        response = requests.post(f"{BACKEND_URL}/api{endpoint}", json=data, timeout=30)
         return response.json() if response.ok else {"error": f"HTTP {response.status_code}"}
     except Exception as e:
         return {"error": str(e)}
@@ -187,11 +207,13 @@ def api_post(endpoint: str) -> dict:
 
 def get_status_badge(status: str) -> str:
     configs = {
-        "running": ("▶", "status-running", "ACTIVO"),
-        "exited": ("■", "status-exited", "DETENIDO"),
-        "paused": ("⏸", "status-paused", "PAUSADO"),
+        "healthy": ("✓", "status-healthy", "ACTIVO"),
+        "running": ("✓", "status-healthy", "ACTIVO"),
+        "unhealthy": ("✗", "status-unhealthy", "INACTIVO"),
+        "degraded": ("⚠", "status-unknown", "DEGRADADO"),
+        "unknown": ("?", "status-unknown", "DESCONOCIDO"),
     }
-    icon, css, label = configs.get(status.lower(), ("?", "status-exited", status.upper()))
+    icon, css, label = configs.get(status.lower(), ("?", "status-unknown", status.upper()))
     return f'<span class="status-badge {css}">{icon} {label}</span>'
 
 
@@ -199,185 +221,398 @@ def get_status_badge(status: str) -> str:
 st.markdown("""
 <div style="text-align: center; padding: 2rem 0;">
     <h1 style="font-size: 2.5rem; font-weight: 800; background: linear-gradient(135deg, #6366f1, #a855f7); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
-        🖥️ Gestión de Nodos
+        🖥️ Nodos DistriSearch
     </h1>
-    <p style="color: #94a3b8; font-size: 1rem;">Control de contenedores Docker del cluster DistriSearch</p>
+    <p style="color: #94a3b8; font-size: 1rem;">Visualización de la arquitectura Master-Slave del sistema distribuido</p>
 </div>
 """, unsafe_allow_html=True)
 
-# Obtener contenedores
-containers_data = api_get("/nodes/containers")
+# Tabs para organizar contenido
+tab_nodes, tab_arch, tab_docker = st.tabs(["📊 Nodos del Cluster", "🏗️ Arquitectura", "🐳 Contenedores Docker"])
 
-if "error" in containers_data:
-    st.error(f"Error: {containers_data['error']}")
-    st.stop()
+with tab_nodes:
+    st.markdown("### 🔍 Estado de los Nodos")
+    
+    # Obtener estado del cluster
+    cluster_data = api_get("/cluster/status")
+    
+    if "error" in cluster_data:
+        st.warning("⚠️ No se pudo conectar al cluster DistriSearch")
+        st.info("Mostrando datos de ejemplo para demostración...")
+        # Datos de ejemplo
+        nodes = [
+            {
+                "node_id": "distrisearch-master",
+                "role": "master",
+                "status": "healthy",
+                "address": "distrisearch-master",
+                "port": 8001,
+                "document_count": 50,
+                "partition_count": 2,
+                "cpu_usage": 15.5,
+                "memory_usage": 45.2
+            },
+            {
+                "node_id": "distrisearch-slave-1",
+                "role": "slave",
+                "status": "healthy",
+                "address": "distrisearch-slave",
+                "port": 8000,
+                "document_count": 50,
+                "partition_count": 2,
+                "cpu_usage": 12.3,
+                "memory_usage": 38.1
+            },
+        ]
+    else:
+        nodes = cluster_data.get("nodes", [])
+    
+    if not nodes:
+        st.info("📦 No hay nodos registrados en el cluster")
+    else:
+        # Resumen
+        col1, col2, col3, col4 = st.columns(4)
+        
+        total = len(nodes)
+        healthy = sum(1 for n in nodes if n.get("status") == "healthy")
+        masters = sum(1 for n in nodes if n.get("role") == "master")
+        slaves = sum(1 for n in nodes if n.get("role") == "slave")
+        
+        with col1:
+            st.metric("📊 Total Nodos", total)
+        with col2:
+            st.metric("🟢 Saludables", healthy)
+        with col3:
+            st.metric("👑 Master(s)", masters)
+        with col4:
+            st.metric("🔹 Slave(s)", slaves)
+        
+        st.markdown("---")
+        
+        # Lista de nodos
+        for node in nodes:
+            node_id = node.get("node_id", "unknown")
+            role = node.get("role", "slave")
+            status = node.get("status", "unknown")
+            is_master = role == "master"
+            
+            card_class = "node-card-master" if is_master else "node-card-slave"
+            role_icon = "👑" if is_master else "🔹"
+            role_label = "Master" if is_master else "Slave"
+            
+            with st.expander(f"{role_icon} {node_id} ({role_label})", expanded=(is_master)):
+                st.markdown(f"""
+                <div class="node-card {card_class}">
+                    <div class="node-header">
+                        <span class="node-name">{role_icon} {node_id}</span>
+                        {get_status_badge(status)}
+                    </div>
+                    
+                    <div class="node-stats">
+                        <div class="stat-item">
+                            <span>🌐</span>
+                            <span>{node.get('address', 'N/A')}:{node.get('port', 'N/A')}</span>
+                        </div>
+                        <div class="stat-item">
+                            <span>📄</span>
+                            <span>{node.get('document_count', 0)} documentos</span>
+                        </div>
+                        <div class="stat-item">
+                            <span>📦</span>
+                            <span>{node.get('partition_count', 0)} particiones</span>
+                        </div>
+                    </div>
+                    
+                    <div class="node-components">
+                        <div class="component-badge component-badge-active">
+                            🔧 Backend<br/><small>FastAPI</small>
+                        </div>
+                        <div class="component-badge component-badge-active">
+                            🎨 Frontend<br/><small>React+Nginx</small>
+                        </div>
+                        <div class="component-badge component-badge-active">
+                            🗄️ MongoDB<br/><small>Base Datos</small>
+                        </div>
+                        <div class="component-badge component-badge-active">
+                            💓 Heartbeat<br/><small>UDP</small>
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Métricas del nodo
+                if node.get('cpu_usage') or node.get('memory_usage'):
+                    c1, c2, c3 = st.columns(3)
+                    with c1:
+                        cpu = node.get('cpu_usage', 0)
+                        st.metric("CPU", f"{cpu:.1f}%")
+                    with c2:
+                        mem = node.get('memory_usage', 0)
+                        st.metric("Memoria", f"{mem:.1f}%")
+                    with c3:
+                        disk = node.get('disk_usage', 0)
+                        st.metric("Disco", f"{disk:.1f}%")
+                
+                # Información adicional para el Master
+                if is_master:
+                    st.markdown("""
+                    <div class="concept-box">
+                        <div class="concept-title">👑 Responsabilidades del Master</div>
+                        <p class="concept-text">
+                            • Mantiene el índice semántico global (TF-IDF + MinHash)<br/>
+                            • Enruta consultas a los Slaves apropiados<br/>
+                            • Coordina la replicación de datos<br/>
+                            • Monitorea la salud del cluster via heartbeats
+                        </p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.markdown("""
+                    <div class="concept-box">
+                        <div class="concept-title">🔹 Responsabilidades del Slave</div>
+                        <p class="concept-text">
+                            • Almacena documentos en MongoDB local<br/>
+                            • Procesa búsquedas locales<br/>
+                            • Participa en elecciones de líder (algoritmo Bully)<br/>
+                            • Replica datos a otros nodos
+                        </p>
+                    </div>
+                    """, unsafe_allow_html=True)
 
-if not containers_data.get("docker_available", False):
-    st.warning("⚠️ Docker no está disponible")
+
+with tab_arch:
+    st.markdown("### 🏗️ Arquitectura de un Nodo DistriSearch")
+    
     st.markdown("""
-    <div class="warning-box">
-        <strong>Docker no accesible</strong><br>
-        Para habilitar el control de nodos, asegúrate de que:
-        <ul>
-            <li>Docker esté instalado y corriendo</li>
-            <li>El backend tenga acceso al socket de Docker</li>
-            <li>El usuario tenga permisos adecuados</li>
-        </ul>
+    <div class="concept-box">
+        <div class="concept-title">📌 ¿Qué es un Nodo en DistriSearch?</div>
+        <p class="concept-text">
+            Un <strong>nodo</strong> en DistriSearch es una unidad autónoma que integra todos los componentes 
+            necesarios para operar de forma independiente. Cada nodo (Master o Slave) contiene:
+        </p>
     </div>
     """, unsafe_allow_html=True)
-    st.stop()
-
-containers = containers_data.get("containers", [])
-
-if not containers:
-    st.info("📦 No se encontraron contenedores de DistriSearch")
-    st.stop()
-
-# Resumen
-col1, col2, col3 = st.columns(3)
-
-running = sum(1 for c in containers if c.get("status") == "running")
-stopped = sum(1 for c in containers if c.get("status") == "exited")
-paused = sum(1 for c in containers if c.get("status") == "paused")
-
-with col1:
-    st.metric("🟢 Activos", running)
-with col2:
-    st.metric("🔴 Detenidos", stopped)
-with col3:
-    st.metric("🟡 Pausados", paused)
-
-st.markdown("---")
-
-# Lista de contenedores
-st.markdown(f"### 📦 {len(containers)} Contenedores Encontrados")
-
-for container in containers:
-    name = container["name"]
-    status = container.get("status", "unknown")
-    is_master = container.get("is_master", False)
     
-    with st.expander(f"{'👑 ' if is_master else '🔹 '}{name}", expanded=(status == "running")):
-        st.markdown(f"""
-        <div class="container-card">
-            <div class="container-header">
-                <span class="container-name">{'👑 Master: ' if is_master else '🔹 Slave: '}{name}</span>
-                {get_status_badge(status)}
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("""
+        <div class="glass-card">
+            <h4 style="color: #f1f5f9; margin-bottom: 1rem;">🔧 Componentes de un Nodo</h4>
+            
+            <div class="component-badge component-badge-active" style="margin: 0.5rem 0; display: block; text-align: left; padding: 1rem;">
+                <strong>🔧 Backend (FastAPI)</strong><br/>
+                API REST para procesamiento de consultas, gestión de documentos y comunicación con el cluster.
             </div>
-            <div class="container-info">
-                <div class="container-info-item">
-                    <span>🆔</span>
-                    <code>{container['id']}</code>
-                </div>
-                <div class="container-info-item">
-                    <span>🐳</span>
-                    <span>{container['image']}</span>
-                </div>
-                <div class="container-info-item">
-                    <span>🔌</span>
-                    <span>{', '.join(container.get('ports', [])) or 'N/A'}</span>
-                </div>
-                <div class="container-info-item">
-                    <span>📅</span>
-                    <span>{container.get('created', 'N/A')[:19]}</span>
-                </div>
+            
+            <div class="component-badge component-badge-active" style="margin: 0.5rem 0; display: block; text-align: left; padding: 1rem;">
+                <strong>🎨 Frontend (React + Nginx)</strong><br/>
+                Aplicación web para interacción con usuarios. Cada nodo puede atender usuarios directamente.
+            </div>
+            
+            <div class="component-badge component-badge-active" style="margin: 0.5rem 0; display: block; text-align: left; padding: 1rem;">
+                <strong>🗄️ MongoDB Local</strong><br/>
+                Base de datos para almacenamiento de documentos indexados.
+            </div>
+            
+            <div class="component-badge component-badge-active" style="margin: 0.5rem 0; display: block; text-align: left; padding: 1rem;">
+                <strong>💓 Servicios de Cluster</strong><br/>
+                Heartbeat (UDP), elección de líder, replicación y sincronización.
             </div>
         </div>
         """, unsafe_allow_html=True)
-        
-        # Acciones básicas
-        st.markdown('<div class="action-section">', unsafe_allow_html=True)
-        st.markdown('<p class="action-title">⚡ Acciones Básicas</p>', unsafe_allow_html=True)
-        
-        c1, c2, c3 = st.columns(3)
-        
-        with c1:
-            if status == "running":
-                if st.button("⏹️ Detener", key=f"stop_{name}", use_container_width=True):
-                    with st.spinner("Deteniendo..."):
-                        result = api_post(f"/nodes/stop/{name}")
-                    if "error" not in result:
-                        st.success("✅ Detenido")
-                        st.rerun()
-                    else:
-                        st.error(result["error"])
-            else:
-                if st.button("▶️ Iniciar", key=f"start_{name}", use_container_width=True):
-                    with st.spinner("Iniciando..."):
-                        result = api_post(f"/nodes/start/{name}")
-                    if "error" not in result:
-                        st.success("✅ Iniciado")
-                        st.rerun()
-                    else:
-                        st.error(result["error"])
-        
-        with c2:
-            if status == "running":
-                if st.button("🔄 Reiniciar", key=f"restart_{name}", use_container_width=True):
-                    with st.spinner("Reiniciando..."):
-                        result = api_post(f"/nodes/restart/{name}")
-                    if "error" not in result:
-                        st.success("✅ Reiniciado")
-                        st.rerun()
-                    else:
-                        st.error(result["error"])
-        
-        with c3:
-            if status == "paused":
-                if st.button("▶️ Reanudar", key=f"unpause_{name}", use_container_width=True):
-                    with st.spinner("Reanudando..."):
-                        result = api_post(f"/nodes/unpause/{name}")
-                    if "error" not in result:
-                        st.success("✅ Reanudado")
-                        st.rerun()
-                    else:
-                        st.error(result["error"])
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        # Acciones avanzadas
-        if status == "running":
-            st.markdown('<div class="action-section">', unsafe_allow_html=True)
-            st.markdown('<p class="action-title">⚠️ Acciones Avanzadas (Simulación de Fallos)</p>', unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown("""
+        <div class="glass-card">
+            <h4 style="color: #f1f5f9; margin-bottom: 1rem;">👑 Master vs 🔹 Slave</h4>
             
-            c1, c2 = st.columns(2)
+            <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; padding: 1rem; margin: 0.5rem 0;">
+                <strong style="color: #34d399;">👑 Master (Coordinador)</strong><br/>
+                <span style="color: #94a3b8; font-size: 0.9rem;">
+                    Además de los componentes base, el Master mantiene:
+                    <ul style="margin: 0.5rem 0;">
+                        <li>Índice semántico global</li>
+                        <li>Balanceador de carga</li>
+                        <li>Coordinador de replicación</li>
+                        <li>Enrutador de consultas</li>
+                    </ul>
+                </span>
+            </div>
             
-            with c1:
-                if st.button("💀 Kill (SIGKILL)", key=f"kill_{name}", use_container_width=True, type="secondary"):
-                    with st.spinner("Terminando proceso..."):
-                        result = api_post(f"/nodes/kill/{name}")
-                    if "error" not in result:
-                        st.warning("⚠️ Proceso terminado abruptamente")
-                        st.rerun()
-                    else:
-                        st.error(result["error"])
-            
-            with c2:
-                if st.button("🌐 Pausar (Partición Red)", key=f"pause_{name}", use_container_width=True, type="secondary"):
-                    with st.spinner("Pausando..."):
-                        result = api_post(f"/nodes/pause/{name}")
-                    if "error" not in result:
-                        st.info("🌐 Nodo pausado - simula partición de red")
-                        st.rerun()
-                    else:
-                        st.error(result["error"])
-            
-            st.markdown('</div>', unsafe_allow_html=True)
+            <div style="background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 8px; padding: 1rem; margin: 0.5rem 0;">
+                <strong style="color: #818cf8;">🔹 Slave (Trabajador)</strong><br/>
+                <span style="color: #94a3b8; font-size: 0.9rem;">
+                    Nodo autónomo que:
+                    <ul style="margin: 0.5rem 0;">
+                        <li>Almacena documentos localmente</li>
+                        <li>Procesa búsquedas asignadas</li>
+                        <li>Puede convertirse en Master si el líder falla</li>
+                    </ul>
+                </span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # Diagrama ASCII de la arquitectura
+    st.markdown("### 📐 Diagrama de Arquitectura")
+    st.markdown("""
+    <div class="arch-diagram">
+    <pre style="color: #94a3b8; font-size: 0.85rem;">
+                    ┌─────────────────────────────────────┐
+                    │           👑 MASTER NODE            │
+                    │  ┌─────────┐  ┌─────────┐          │
+                    │  │ Backend │  │Frontend │          │
+                    │  │ FastAPI │  │  React  │          │
+                    │  └────┬────┘  └─────────┘          │
+                    │       │                             │
+                    │  ┌────┴────┐  ┌─────────────────┐  │
+                    │  │ MongoDB │  │ Índice Semántico│  │
+                    │  └─────────┘  │  (TF-IDF+MinHash)│  │
+                    │               └─────────────────┘  │
+                    └───────────────┬─────────────────────┘
+                                    │ Heartbeat + Replicación
+            ┌───────────────────────┼───────────────────────┐
+            │                       │                       │
+    ┌───────┴───────┐       ┌───────┴───────┐       ┌───────┴───────┐
+    │ 🔹 SLAVE 1    │       │ 🔹 SLAVE 2    │       │ 🔹 SLAVE 3    │
+    │ ┌──────────┐  │       │ ┌──────────┐  │       │ ┌──────────┐  │
+    │ │ Backend  │  │       │ │ Backend  │  │       │ │ Backend  │  │
+    │ │ Frontend │  │◄─────►│ │ Frontend │  │◄─────►│ │ Frontend │  │
+    │ │ MongoDB  │  │       │ │ MongoDB  │  │       │ │ MongoDB  │  │
+    │ └──────────┘  │       │ └──────────┘  │       │ └──────────┘  │
+    └───────────────┘       └───────────────┘       └───────────────┘
+           ↑                       ↑                       ↑
+           │                       │                       │
+           └───────────────────────┴───────────────────────┘
+                         Heartbeat entre Slaves
+    </pre>
+    </div>
+    """, unsafe_allow_html=True)
 
-# Explicaciones
+
+with tab_docker:
+    st.markdown("### 🐳 Contenedores Docker")
+    st.markdown("""
+    <div class="concept-box">
+        <div class="concept-title">⚠️ Vista de Bajo Nivel</div>
+        <p class="concept-text">
+            Esta sección muestra los <strong>contenedores Docker</strong> individuales que componen el sistema.
+            Es útil para operaciones de mantenimiento y simulación de fallos, pero recuerda que un 
+            <strong>nodo lógico</strong> puede estar compuesto por múltiples contenedores.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Obtener contenedores
+    containers_data = api_get("/nodes/containers")
+    
+    if "error" in containers_data:
+        st.error(f"Error: {containers_data['error']}")
+    elif not containers_data.get("docker_available", False):
+        st.warning("⚠️ Docker no está disponible")
+    else:
+        containers = containers_data.get("containers", [])
+        
+        if not containers:
+            st.info("📦 No se encontraron contenedores de DistriSearch")
+        else:
+            # Resumen
+            col1, col2, col3 = st.columns(3)
+            
+            running = sum(1 for c in containers if c.get("status") == "running")
+            stopped = sum(1 for c in containers if c.get("status") == "exited")
+            paused = sum(1 for c in containers if c.get("status") == "paused")
+            
+            with col1:
+                st.metric("🟢 Activos", running)
+            with col2:
+                st.metric("🔴 Detenidos", stopped)
+            with col3:
+                st.metric("🟡 Pausados", paused)
+            
+            st.markdown("---")
+            
+            # Lista de contenedores
+            for container in containers:
+                name = container["name"]
+                status = container.get("status", "unknown")
+                is_master = "master" in name.lower()
+                
+                status_configs = {
+                    "running": ("✓", "status-healthy", "ACTIVO"),
+                    "exited": ("✗", "status-unhealthy", "DETENIDO"),
+                    "paused": ("⏸", "status-unknown", "PAUSADO"),
+                }
+                icon, css, label = status_configs.get(status.lower(), ("?", "status-unknown", status.upper()))
+                
+                with st.expander(f"{'👑' if is_master else '📦'} {name}", expanded=(status == "running")):
+                    col_info, col_actions = st.columns([2, 1])
+                    
+                    with col_info:
+                        st.markdown(f"""
+                        <div style="color: #94a3b8; font-size: 0.9rem;">
+                            <p><strong>ID:</strong> <code>{container['id']}</code></p>
+                            <p><strong>Imagen:</strong> {container['image']}</p>
+                            <p><strong>Puertos:</strong> {', '.join(container.get('ports', [])) or 'N/A'}</p>
+                            <p><strong>Estado:</strong> <span class="status-badge {css}">{icon} {label}</span></p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    with col_actions:
+                        st.markdown("**Acciones:**")
+                        
+                        if status == "running":
+                            if st.button("⏹️ Detener", key=f"stop_{name}", use_container_width=True):
+                                with st.spinner("Deteniendo..."):
+                                    result = api_post(f"/nodes/stop/{name}")
+                                if "error" not in result:
+                                    st.success("✅ Detenido")
+                                    st.rerun()
+                                else:
+                                    st.error(result["error"])
+                            
+                            if st.button("🔄 Reiniciar", key=f"restart_{name}", use_container_width=True):
+                                with st.spinner("Reiniciando..."):
+                                    result = api_post(f"/nodes/restart/{name}")
+                                if "error" not in result:
+                                    st.success("✅ Reiniciado")
+                                    st.rerun()
+                                else:
+                                    st.error(result["error"])
+                            
+                            if st.button("💀 Kill", key=f"kill_{name}", use_container_width=True, type="secondary"):
+                                with st.spinner("Terminando..."):
+                                    result = api_post(f"/nodes/kill/{name}")
+                                if "error" not in result:
+                                    st.warning("⚠️ Proceso terminado")
+                                    st.rerun()
+                                else:
+                                    st.error(result["error"])
+                        else:
+                            if st.button("▶️ Iniciar", key=f"start_{name}", use_container_width=True):
+                                with st.spinner("Iniciando..."):
+                                    result = api_post(f"/nodes/start/{name}")
+                                if "error" not in result:
+                                    st.success("✅ Iniciado")
+                                    st.rerun()
+                                else:
+                                    st.error(result["error"])
+
+# Footer con conceptos
 st.markdown("---")
-st.markdown("### 📚 ¿Qué hace cada acción?")
+st.markdown("### 📚 Conceptos Clave")
 
 c1, c2 = st.columns(2)
 
 with c1:
     st.markdown("""
     <div class="concept-box">
-        <div class="concept-title">⏹️ Detener vs 💀 Kill</div>
+        <div class="concept-title">🏛️ Arquitectura Master-Slave</div>
         <p class="concept-text">
-            <strong>Detener</strong> envía SIGTERM permitiendo un apagado controlado.<br><br>
-            <strong>Kill</strong> envía SIGKILL terminando inmediatamente, simulando un fallo catastrófico 
-            donde el nodo no puede notificar su salida.
+            DistriSearch utiliza una arquitectura <strong>Master-Slave</strong> donde el Master coordina 
+            y los Slaves almacenan/procesan. A diferencia de P2P puro, esto simplifica la coordinación 
+            mientras mantiene escalabilidad horizontal.
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -385,11 +620,11 @@ with c1:
 with c2:
     st.markdown("""
     <div class="concept-box">
-        <div class="concept-title">🌐 Pausar (Partición de Red)</div>
+        <div class="concept-title">🗳️ Algoritmo Bully</div>
         <p class="concept-text">
-            Pausar congela el proceso sin terminarlo. El nodo está "vivo" pero no puede comunicarse.<br><br>
-            Simula una <strong>partición de red</strong> donde el nodo queda aislado del cluster.
-            Útil para probar tolerancia a particiones (CAP theorem).
+            Cuando el Master falla, los Slaves ejecutan el <strong>algoritmo Bully</strong> para 
+            elegir un nuevo líder. El nodo con mayor ID gana la elección, garantizando 
+            continuidad del servicio sin intervención manual.
         </p>
     </div>
     """, unsafe_allow_html=True)

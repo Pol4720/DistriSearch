@@ -402,36 +402,70 @@ def leader_panel():
     """Fragmento que muestra info del líder - se actualiza cada 5s."""
     leader = api_get("/cluster/leader")
     
+    # Obtener datos del líder
     if "error" in leader:
-        leader_data = {"leader_id": "node-1", "leader_address": "localhost:8001", "term": 5}
+        leader_data = {"leader_id": None, "leader_address": None, "term": 0}
     else:
         leader_data = leader.get("leader", {})
+    
+    leader_id = leader_data.get('leader_id')
+    leader_address = leader_data.get('leader_address', '')
+    term = leader_data.get('term', 0)
+    
+    # Verificar si hay líder
+    has_leader = leader_id is not None and leader_id != ""
+    
+    if has_leader:
+        leader_display = f"""
+        <div style="font-size: 4rem; margin: 1rem 0;">👑</div>
+        <p style="color: #10b981; font-size: 1.2rem; font-weight: 600; margin: 0;">
+            {leader_id}
+        </p>
+        <p style="color: #64748b; font-size: 0.9rem; margin: 0.5rem 0;">
+            {leader_address}
+        </p>
+        <p style="color: #94a3b8; font-size: 0.8rem; margin-top: 1rem;">
+            Término: {term}
+        </p>
+        """
+        concept_text = """
+            El <strong>Master</strong> coordina las operaciones del cluster usando 
+            el algoritmo <strong>Bully</strong> para elección de líder. Si el Master falla, 
+            los Slaves eligen automáticamente un nuevo líder.
+        """
+    else:
+        leader_display = f"""
+        <div style="font-size: 4rem; margin: 1rem 0;">⏳</div>
+        <p style="color: #fbbf24; font-size: 1.2rem; font-weight: 600; margin: 0;">
+            En Elección...
+        </p>
+        <p style="color: #64748b; font-size: 0.9rem; margin: 0.5rem 0;">
+            Esperando selección de líder
+        </p>
+        <p style="color: #94a3b8; font-size: 0.8rem; margin-top: 1rem;">
+            Término: {term}
+        </p>
+        """
+        concept_text = """
+            El cluster está en proceso de <strong>elección de líder</strong>. 
+            Esto puede ocurrir al iniciar el sistema o cuando el Master anterior ha fallado.
+        """
     
     st.markdown(f"""
     <div class="glass-card" style="text-align: center;">
         <div class="glass-card-header" style="justify-content: center;">
             <span style="font-size: 1.5rem;">👑</span>
-            <h3 class="glass-card-title">Líder Actual</h3>
+            <h3 class="glass-card-title">Líder Actual (Master)</h3>
         </div>
-        <div style="font-size: 4rem; margin: 1rem 0;">👑</div>
-        <p style="color: #10b981; font-size: 1.2rem; font-weight: 600; margin: 0;">
-            {leader_data.get('leader_id', 'node-1')}
-        </p>
-        <p style="color: #64748b; font-size: 0.9rem; margin: 0.5rem 0;">
-            {leader_data.get('leader_address', '')}
-        </p>
-        <p style="color: #94a3b8; font-size: 0.8rem; margin-top: 1rem;">
-            Término: {leader_data.get('term', 0)}
-        </p>
+        {leader_display}
     </div>
     """, unsafe_allow_html=True)
     
-    st.markdown("""
+    st.markdown(f"""
     <div class="concept-box">
-        <div class="concept-title">💡 Elección de Líder</div>
+        <div class="concept-title">💡 Arquitectura Master-Slave</div>
         <p class="concept-text">
-            El líder coordina las operaciones de escritura y replica los datos 
-            a los seguidores usando el algoritmo Raft.
+            {concept_text}
         </p>
     </div>
     """, unsafe_allow_html=True)

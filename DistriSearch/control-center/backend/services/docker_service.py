@@ -181,6 +181,42 @@ class DockerService:
         else:
             return {"success": False, "error": error}
     
+    async def pause_container(self, container_id_or_name: str) -> Dict[str, Any]:
+        """Pausa un contenedor (simula partición de red)."""
+        if not self._available:
+            return {"success": False, "error": "Docker no disponible"}
+        
+        success, _, error = self._run_docker_command(["pause", container_id_or_name], timeout=10)
+        
+        if success:
+            logger.info(f"Contenedor pausado: {container_id_or_name}")
+            return {
+                "success": True,
+                "container_name": container_id_or_name,
+                "action": "paused",
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        else:
+            return {"success": False, "error": error}
+    
+    async def unpause_container(self, container_id_or_name: str) -> Dict[str, Any]:
+        """Reanuda un contenedor pausado."""
+        if not self._available:
+            return {"success": False, "error": "Docker no disponible"}
+        
+        success, _, error = self._run_docker_command(["unpause", container_id_or_name], timeout=10)
+        
+        if success:
+            logger.info(f"Contenedor reanudado: {container_id_or_name}")
+            return {
+                "success": True,
+                "container_name": container_id_or_name,
+                "action": "unpaused",
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        else:
+            return {"success": False, "error": error}
+    
     async def get_container_stats(self, container_id_or_name: str) -> Dict[str, Any]:
         """Obtiene estadísticas de un contenedor."""
         if not self._available:

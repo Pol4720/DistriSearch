@@ -80,6 +80,7 @@ class ClusterService:
     async def get_leader_info(self) -> Dict[str, Any]:
         """
         Obtiene información sobre el líder actual y el estado de Raft.
+        Busca el nodo con role='master' en la lista de nodos.
         """
         cluster_status = await self.get_cluster_status()
         if not cluster_status:
@@ -90,12 +91,28 @@ class ClusterService:
                 "state": "unknown"
             }
         
+        # Buscar el nodo líder (role=master) en la lista de nodos
+        nodes = cluster_status.get("nodes", [])
+        leader_node = None
+        for node in nodes:
+            if node.get("role") == "master":
+                leader_node = node
+                break
+        
+        if leader_node:
+            leader_id = leader_node.get("node_id")
+            leader_address = f"{leader_node.get('address', '')}:{leader_node.get('port', '')}"
+        else:
+            # Fallback a los campos de nivel superior
+            leader_id = cluster_status.get("master_node_id")
+            leader_address = cluster_status.get("master_address")
+        
         return {
-            "leader_id": cluster_status.get("master_node_id"),
-            "leader_address": cluster_status.get("master_address"),
+            "leader_id": leader_id,
+            "leader_address": leader_address,
             "term": cluster_status.get("current_term", 0),
             "state": cluster_status.get("status", "unknown"),
-            "nodes": cluster_status.get("nodes", [])
+            "nodes": nodes
         }
     
     async def get_replication_status(self) -> Dict[str, Any]:
