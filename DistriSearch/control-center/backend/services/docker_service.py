@@ -1,12 +1,13 @@
 """
 Docker Service - Control de contenedores Docker
+Usa subprocess como método principal para mayor compatibilidad
 """
 
-import docker
+import subprocess
+import json
 import logging
 from typing import Optional, Dict, Any, List
 from datetime import datetime
-import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -14,336 +15,214 @@ logger = logging.getLogger(__name__)
 class DockerService:
     """
     Servicio para controlar contenedores Docker del cluster DistriSearch.
-    Permite simular fallos, reiniciar nodos, etc.
+    Usa subprocess para ejecutar comandos docker directamente.
     """
     
     def __init__(self):
-        """Inicializa el cliente Docker."""
+        """Inicializa el servicio Docker."""
+        self._available = self._check_docker_available()
+        if self._available:
+            logger.info("DockerService: Docker disponible via CLI")
+        else:
+            logger.warning("DockerService: Docker no disponible")
+    
+    def _check_docker_available(self) -> bool:
+        """Verifica si Docker está disponible."""
         try:
-            self.client = docker.from_env()
-            self._available = True
-            logger.info("DockerService: Conectado al daemon Docker")
-        except docker.errors.DockerException as e:
-            logger.warning(f"DockerService: Docker no disponible - {e}")
-            self.client = None
-            self._available = False
+            result = subprocess.run(
+                ["docker", "info"],
+                capture_output=True,
+                timeout=5
+            )
+            return result.returncode == 0
+        except Exception as e:
+            logger.warning(f"Docker check failed: {e}")
+            return False
     
     @property
     def available(self) -> bool:
         """Indica si Docker está disponible."""
         return self._available
     
+    def _run_docker_command(self, args: List[str], timeout: int = 30) -> tuple:
+        """Ejecuta un comando docker y retorna (success, output, error)."""
+        try:
+            result = subprocess.run(
+                ["docker"] + args,
+                capture_output=True,
+                text=True,
+                timeout=timeout
+            )
+            return result.returncode == 0, result.stdout, result.stderr
+        except subprocess.TimeoutExpired:
+            return False, "", "Timeout"
+        except Exception as e:
+            return False, "", str(e)
+    
     def get_distrisearch_containers(self) -> List[Dict[str, Any]]:
-        """
-        Obtiene todos los contenedores de DistriSearch.
-        
-        Returns:
-            Lista de contenedores con su información
-        """
+        """Obtiene todos los contenedores de DistriSearch."""
         if not self._available:
             return []
         
         try:
-            containers = self.client.containers.list(all=True)
-            distrisearch_containers = []
+            success, output, _ = self._run_docker_command([
+                "ps", "-a", "--format", 
+                '{"id":"{{.ID}}","name":"{{.Names}}","status":"{{.Status}}","image":"{{.Image}}","ports":"{{.Ports}}"}'
+            ])
             
-            for container in containers:
-                name = container.name.lower()
-                # Filtrar contenedores de DistriSearch
-                if 'distrisearch' in name or 'master' in name or 'slave' in name:
-                    distrisearch_containers.append({
-                        "id": container.id[:12],
-                        "name": container.name,
-                        "status": container.status,
-                        "image": container.image.tags[0] if container.image.tags else "unknown",
-                        "created": container.attrs.get("Created", ""),
-                        "ports": self._parse_ports(container.ports),
-                        "is_master": "master" in name.lower(),
-                        "is_slave": "slave" in name.lower()
-                    })
+            if not success:
+                return []
             
-            return distrisearch_containers
+            containers = []
+            for line in output.strip().split('\n'):
+                if line:
+                    try:
+                        c = json.loads(line)
+                        name = c.get("name", "").lower()
+                        if 'distrisearch' in name or 'master' in name or 'slave' in name or 'mongo' in name or 'redis' in name:
+                            # Determinar estado
+                            status_str = c.get("status", "").lower()
+                            if "up" in status_str:
+                                state = "running"
+                            elif "exited" in status_str:
+                                state = "exited"
+                            else:
+                                state = "unknown"
+                            
+                            containers.append({
+                                "id": c.get("id", "")[:12],
+                                "name": c.get("name", ""),
+                                "status": state,
+                                "status_text": c.get("status", ""),
+                                "image": c.get("image", ""),
+                                "ports": c.get("ports", "").split(", ") if c.get("ports") else [],
+                                "is_master": "master" in name,
+                                "is_slave": "slave" in name,
+                                "is_db": "mongo" in name or "redis" in name
+                            })
+                    except json.JSONDecodeError:
+                        continue
+            
+            return containers
             
         except Exception as e:
             logger.error(f"Error obteniendo contenedores: {e}")
             return []
     
-    def _parse_ports(self, ports: Dict) -> List[str]:
-        """Parsea los puertos del contenedor."""
-        result = []
-        for port, bindings in ports.items():
-            if bindings:
-                for binding in bindings:
-                    result.append(f"{binding['HostPort']}:{port}")
-        return result
-    
     async def stop_container(self, container_id_or_name: str) -> Dict[str, Any]:
-        """
-        Detiene un contenedor (simula fallo de nodo).
-        
-        Args:
-            container_id_or_name: ID o nombre del contenedor
-            
-        Returns:
-            Resultado de la operación
-        """
+        """Detiene un contenedor (simula fallo de nodo)."""
         if not self._available:
             return {"success": False, "error": "Docker no disponible"}
         
-        try:
-            container = self.client.containers.get(container_id_or_name)
-            container.stop(timeout=10)
-            
+        success, _, error = self._run_docker_command(["stop", container_id_or_name], timeout=15)
+        
+        if success:
             logger.info(f"Contenedor detenido: {container_id_or_name}")
-            
             return {
                 "success": True,
-                "container_id": container.id[:12],
-                "container_name": container.name,
+                "container_name": container_id_or_name,
                 "action": "stopped",
                 "timestamp": datetime.utcnow().isoformat()
             }
-            
-        except docker.errors.NotFound:
-            return {"success": False, "error": f"Contenedor no encontrado: {container_id_or_name}"}
-        except Exception as e:
-            logger.error(f"Error deteniendo contenedor: {e}")
-            return {"success": False, "error": str(e)}
+        else:
+            return {"success": False, "error": error}
     
     async def start_container(self, container_id_or_name: str) -> Dict[str, Any]:
-        """
-        Inicia un contenedor (recuperación de nodo).
-        
-        Args:
-            container_id_or_name: ID o nombre del contenedor
-            
-        Returns:
-            Resultado de la operación
-        """
+        """Inicia un contenedor (recuperación de nodo)."""
         if not self._available:
             return {"success": False, "error": "Docker no disponible"}
         
-        try:
-            container = self.client.containers.get(container_id_or_name)
-            container.start()
-            
+        success, _, error = self._run_docker_command(["start", container_id_or_name], timeout=15)
+        
+        if success:
             logger.info(f"Contenedor iniciado: {container_id_or_name}")
-            
             return {
                 "success": True,
-                "container_id": container.id[:12],
-                "container_name": container.name,
+                "container_name": container_id_or_name,
                 "action": "started",
                 "timestamp": datetime.utcnow().isoformat()
             }
-            
-        except docker.errors.NotFound:
-            return {"success": False, "error": f"Contenedor no encontrado: {container_id_or_name}"}
-        except Exception as e:
-            logger.error(f"Error iniciando contenedor: {e}")
-            return {"success": False, "error": str(e)}
+        else:
+            return {"success": False, "error": error}
     
     async def restart_container(self, container_id_or_name: str) -> Dict[str, Any]:
-        """
-        Reinicia un contenedor.
-        
-        Args:
-            container_id_or_name: ID o nombre del contenedor
-            
-        Returns:
-            Resultado de la operación
-        """
+        """Reinicia un contenedor."""
         if not self._available:
             return {"success": False, "error": "Docker no disponible"}
         
-        try:
-            container = self.client.containers.get(container_id_or_name)
-            container.restart(timeout=10)
-            
+        success, _, error = self._run_docker_command(["restart", container_id_or_name], timeout=30)
+        
+        if success:
             logger.info(f"Contenedor reiniciado: {container_id_or_name}")
-            
             return {
                 "success": True,
-                "container_id": container.id[:12],
-                "container_name": container.name,
+                "container_name": container_id_or_name,
                 "action": "restarted",
                 "timestamp": datetime.utcnow().isoformat()
             }
-            
-        except docker.errors.NotFound:
-            return {"success": False, "error": f"Contenedor no encontrado: {container_id_or_name}"}
-        except Exception as e:
-            logger.error(f"Error reiniciando contenedor: {e}")
-            return {"success": False, "error": str(e)}
+        else:
+            return {"success": False, "error": error}
     
-    async def kill_container(self, container_id_or_name: str, signal: str = "SIGKILL") -> Dict[str, Any]:
-        """
-        Mata un contenedor bruscamente (simula fallo catastrófico).
-        
-        Args:
-            container_id_or_name: ID o nombre del contenedor
-            signal: Señal a enviar (default: SIGKILL)
-            
-        Returns:
-            Resultado de la operación
-        """
+    async def kill_container(self, container_id_or_name: str) -> Dict[str, Any]:
+        """Mata un contenedor inmediatamente (simula crash)."""
         if not self._available:
             return {"success": False, "error": "Docker no disponible"}
         
-        try:
-            container = self.client.containers.get(container_id_or_name)
-            container.kill(signal=signal)
-            
-            logger.warning(f"Contenedor terminado con {signal}: {container_id_or_name}")
-            
+        success, _, error = self._run_docker_command(["kill", container_id_or_name], timeout=10)
+        
+        if success:
+            logger.info(f"Contenedor terminado: {container_id_or_name}")
             return {
                 "success": True,
-                "container_id": container.id[:12],
-                "container_name": container.name,
+                "container_name": container_id_or_name,
                 "action": "killed",
-                "signal": signal,
                 "timestamp": datetime.utcnow().isoformat()
             }
-            
-        except docker.errors.NotFound:
-            return {"success": False, "error": f"Contenedor no encontrado: {container_id_or_name}"}
-        except Exception as e:
-            logger.error(f"Error matando contenedor: {e}")
-            return {"success": False, "error": str(e)}
+        else:
+            return {"success": False, "error": error}
     
-    async def pause_container(self, container_id_or_name: str) -> Dict[str, Any]:
-        """
-        Pausa un contenedor (simula partición de red).
-        
-        Args:
-            container_id_or_name: ID o nombre del contenedor
-            
-        Returns:
-            Resultado de la operación
-        """
+    async def get_container_stats(self, container_id_or_name: str) -> Dict[str, Any]:
+        """Obtiene estadísticas de un contenedor."""
         if not self._available:
-            return {"success": False, "error": "Docker no disponible"}
+            return {"error": "Docker no disponible"}
         
-        try:
-            container = self.client.containers.get(container_id_or_name)
-            container.pause()
-            
-            logger.info(f"Contenedor pausado: {container_id_or_name}")
-            
+        success, output, _ = self._run_docker_command([
+            "stats", container_id_or_name, "--no-stream", "--format",
+            '{"cpu":"{{.CPUPerc}}","memory":"{{.MemUsage}}","mem_perc":"{{.MemPerc}}"}'
+        ], timeout=10)
+        
+        if success and output.strip():
+            try:
+                stats = json.loads(output.strip())
+                return {
+                    "container": container_id_or_name,
+                    "cpu_percent": stats.get("cpu", "0%").replace("%", ""),
+                    "memory_usage": stats.get("memory", "0MiB / 0MiB"),
+                    "memory_percent": stats.get("mem_perc", "0%").replace("%", "")
+                }
+            except:
+                pass
+        
+        return {"error": "No stats available"}
+    
+    async def get_container_logs(self, container_id_or_name: str, tail: int = 50) -> Dict[str, Any]:
+        """Obtiene los logs de un contenedor."""
+        if not self._available:
+            return {"error": "Docker no disponible"}
+        
+        success, output, error = self._run_docker_command([
+            "logs", container_id_or_name, "--tail", str(tail)
+        ], timeout=10)
+        
+        if success:
             return {
-                "success": True,
-                "container_id": container.id[:12],
-                "container_name": container.name,
-                "action": "paused",
-                "timestamp": datetime.utcnow().isoformat()
+                "container": container_id_or_name,
+                "logs": output + error,  # logs pueden ir a stderr
+                "lines": tail
             }
-            
-        except docker.errors.NotFound:
-            return {"success": False, "error": f"Contenedor no encontrado: {container_id_or_name}"}
-        except Exception as e:
-            logger.error(f"Error pausando contenedor: {e}")
-            return {"success": False, "error": str(e)}
-    
-    async def unpause_container(self, container_id_or_name: str) -> Dict[str, Any]:
-        """
-        Reanuda un contenedor pausado.
-        
-        Args:
-            container_id_or_name: ID o nombre del contenedor
-            
-        Returns:
-            Resultado de la operación
-        """
-        if not self._available:
-            return {"success": False, "error": "Docker no disponible"}
-        
-        try:
-            container = self.client.containers.get(container_id_or_name)
-            container.unpause()
-            
-            logger.info(f"Contenedor reanudado: {container_id_or_name}")
-            
-            return {
-                "success": True,
-                "container_id": container.id[:12],
-                "container_name": container.name,
-                "action": "unpaused",
-                "timestamp": datetime.utcnow().isoformat()
-            }
-            
-        except docker.errors.NotFound:
-            return {"success": False, "error": f"Contenedor no encontrado: {container_id_or_name}"}
-        except Exception as e:
-            logger.error(f"Error reanudando contenedor: {e}")
-            return {"success": False, "error": str(e)}
-    
-    def get_container_stats(self, container_id_or_name: str) -> Optional[Dict[str, Any]]:
-        """
-        Obtiene estadísticas de un contenedor.
-        
-        Args:
-            container_id_or_name: ID o nombre del contenedor
-            
-        Returns:
-            Estadísticas del contenedor
-        """
-        if not self._available:
-            return None
-        
-        try:
-            container = self.client.containers.get(container_id_or_name)
-            stats = container.stats(stream=False)
-            
-            # Calcular uso de CPU
-            cpu_delta = stats['cpu_stats']['cpu_usage']['total_usage'] - \
-                       stats['precpu_stats']['cpu_usage']['total_usage']
-            system_delta = stats['cpu_stats']['system_cpu_usage'] - \
-                          stats['precpu_stats']['system_cpu_usage']
-            cpu_usage = (cpu_delta / system_delta) * 100 if system_delta > 0 else 0
-            
-            # Calcular uso de memoria
-            memory_usage = stats['memory_stats'].get('usage', 0)
-            memory_limit = stats['memory_stats'].get('limit', 1)
-            memory_percent = (memory_usage / memory_limit) * 100 if memory_limit > 0 else 0
-            
-            return {
-                "container_id": container.id[:12],
-                "container_name": container.name,
-                "status": container.status,
-                "cpu_percent": round(cpu_usage, 2),
-                "memory_usage_mb": round(memory_usage / (1024 * 1024), 2),
-                "memory_limit_mb": round(memory_limit / (1024 * 1024), 2),
-                "memory_percent": round(memory_percent, 2),
-                "timestamp": datetime.utcnow().isoformat()
-            }
-            
-        except docker.errors.NotFound:
-            return None
-        except Exception as e:
-            logger.error(f"Error obteniendo stats: {e}")
-            return None
-    
-    def get_container_logs(self, container_id_or_name: str, tail: int = 100) -> Optional[str]:
-        """
-        Obtiene los logs de un contenedor.
-        
-        Args:
-            container_id_or_name: ID o nombre del contenedor
-            tail: Número de líneas a obtener
-            
-        Returns:
-            Logs del contenedor
-        """
-        if not self._available:
-            return None
-        
-        try:
-            container = self.client.containers.get(container_id_or_name)
-            logs = container.logs(tail=tail, timestamps=True).decode('utf-8')
-            return logs
-            
-        except docker.errors.NotFound:
-            return None
-        except Exception as e:
-            logger.error(f"Error obteniendo logs: {e}")
-            return None
+        else:
+            return {"error": error}
+
+
+# Instancia global
+docker_service = DockerService()
