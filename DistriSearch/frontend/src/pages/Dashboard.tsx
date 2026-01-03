@@ -18,7 +18,7 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { useClusterStatus, useDocuments, useHealth, useMetrics, useSearchHistory } from '../hooks';
-import { LoadingSpinner, ErrorMessage, Badge } from '../components/common';
+import { LoadingSpinner, ErrorMessage } from '../components/common';
 
 export const Dashboard: React.FC = () => {
   const { data: clusterStatus, isLoading: clusterLoading, error: clusterError } = useClusterStatus();
@@ -290,13 +290,6 @@ const StatCard: React.FC<StatCardProps> = ({
     green: 'from-green-500 to-green-600',
     purple: 'from-purple-500 to-purple-600',
     orange: 'from-orange-500 to-orange-600',
-  };
-
-  const bgClasses = {
-    blue: 'bg-blue-50',
-    green: 'bg-green-50',
-    purple: 'bg-purple-50',
-    orange: 'bg-orange-50',
   };
 
   const content = (
