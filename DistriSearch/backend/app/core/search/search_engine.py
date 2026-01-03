@@ -645,13 +645,27 @@ class SearchEngine:
                     if all_terms:
                         minhash_similarity = len(matched_terms) / len(all_terms)
                 
-                # Hybrid score with configurable weights
-                # Weights: BM25 (60%), TF-IDF vector (25%), MinHash (15%)
-                hybrid_score = (
-                    0.60 * bm25_normalized +
-                    0.25 * vector_similarity +
-                    0.15 * minhash_similarity
-                )
+                # Calculate final score based on search_type
+                if search_type == "keyword":
+                    # KEYWORD: Only use BM25 lexical matching
+                    final_score = bm25_normalized
+                elif search_type == "semantic":
+                    # SEMANTIC: Only use vector similarity (TF-IDF + MinHash)
+                    final_score = (
+                        0.65 * vector_similarity +
+                        0.35 * minhash_similarity
+                    )
+                else:
+                    # HYBRID (default): Combine all approaches
+                    # Weights: BM25 (60%), TF-IDF vector (25%), MinHash (15%)
+                    final_score = (
+                        0.60 * bm25_normalized +
+                        0.25 * vector_similarity +
+                        0.15 * minhash_similarity
+                    )
+                
+                # Use final_score instead of hybrid_score
+                hybrid_score = final_score
                 
                 # Bonus for title matches (titles are more important)
                 title_terms = set(re.findall(r'\b\w+\b', title_lower))

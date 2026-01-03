@@ -2,20 +2,19 @@ import React, { useState, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Search as SearchIcon,
-  Filter,
   Clock,
   FileText,
-  ChevronDown,
   X,
-  Sliders,
   Download,
   Eye,
+  Zap,
+  Brain,
+  Sparkles,
 } from 'lucide-react';
 import { documentService } from '../services';
 import {
   useSearchMutation,
   useSearchHistory,
-  useSearchSuggestions,
   useClearSearchHistory,
 } from '../hooks';
 import {
@@ -23,33 +22,22 @@ import {
   LoadingSpinner,
   EmptyState,
   ErrorMessage,
-  Badge,
 } from '../components/common';
 import type { SearchRequest, SearchResult } from '../types';
+
+type SearchType = 'hybrid' | 'keyword' | 'semantic';
 
 export const SearchPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   
   const [query, setQuery] = useState(searchParams.get('q') || '');
-  const [showFilters, setShowFilters] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
-  const [filters, setFilters] = useState<SearchRequest['filters']>({});
+  const [searchType, setSearchType] = useState<SearchType>('hybrid');
   const [viewingDocument, setViewingDocument] = useState<{ title: string; content: string } | null>(null);
   const [loadingDocument, setLoadingDocument] = useState(false);
-  const [semanticOptions, setSemanticOptions] = useState({
-    use_tfidf: true,
-    use_minhash: true,
-    use_lda: false,
-    tfidf_weight: 0.5,
-    minhash_weight: 0.3,
-    lda_weight: 0.2,
-  });
 
   const searchMutation = useSearchMutation();
   const { data: history } = useSearchHistory({ limit: 10 });
-  const { data: suggestions } = useSearchSuggestions(query, {
-    enabled: query.length >= 2,
-  });
   const clearHistory = useClearSearchHistory();
 
   const handleSearch = useCallback(
@@ -63,22 +51,12 @@ export const SearchPage: React.FC = () => {
         query: searchQuery,
         limit: 20,
         offset: 0,
-        filters,
-        semantic_options: {
-          use_tfidf: semanticOptions.use_tfidf,
-          use_minhash: semanticOptions.use_minhash,
-          use_lda: semanticOptions.use_lda,
-          weights: {
-            tfidf: semanticOptions.tfidf_weight,
-            minhash: semanticOptions.minhash_weight,
-            lda: semanticOptions.lda_weight,
-          },
-        },
+        search_type: searchType,
       };
 
       searchMutation.mutate(request);
     },
-    [filters, semanticOptions, setSearchParams, searchMutation]
+    [searchType, setSearchParams, searchMutation]
   );
 
   const handleDocumentClick = async (result: SearchResult) => {
@@ -116,23 +94,22 @@ export const SearchPage: React.FC = () => {
     handleSearch(historyQuery);
   };
 
-  const handleSuggestionClick = (suggestion: string) => {
-    setQuery(suggestion);
-    handleSearch(suggestion);
-  };
+  const searchTypeOptions = [
+    { value: 'hybrid', label: 'Híbrida', icon: <Sparkles className="w-4 h-4" />, desc: 'Combina todas las técnicas' },
+    { value: 'keyword', label: 'Palabras clave', icon: <Zap className="w-4 h-4" />, desc: 'Búsqueda exacta de términos' },
+    { value: 'semantic', label: 'Semántica', icon: <Brain className="w-4 h-4" />, desc: 'Por significado y contexto' },
+  ];
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in duration-500">
+    <div className="max-w-4xl mx-auto space-y-6">
       {/* Header */}
       <div className="text-center mb-8">
-        <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 rounded-2xl shadow-lg mb-4">
-          <SearchIcon className="w-8 h-8 text-white" />
-        </div>
-        <h1 className="text-4xl font-bold bg-gradient-to-r from-gray-900 via-blue-800 to-purple-800 bg-clip-text text-transparent mb-2">
-          Buscar Documentos
+        <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-blue-600 bg-clip-text text-transparent mb-3">
+          <SearchIcon className="inline-block w-10 h-10 mr-3 text-blue-600" />
+          DistriSearch
         </h1>
         <p className="text-gray-500 text-lg">
-          Encuentra cualquier documento en tu colección
+          Búsqueda inteligente en tu colección de documentos
         </p>
       </div>
 
@@ -142,228 +119,60 @@ export const SearchPage: React.FC = () => {
           value={query}
           onChange={setQuery}
           onSearch={handleSearch}
-          placeholder="¿Qué estás buscando?"
+          placeholder="Buscar documentos..."
           autoFocus
-          suggestions={suggestions || []}
-          onSuggestionClick={handleSuggestionClick}
           loading={searchMutation.isPending}
           className="w-full"
         />
 
-        {/* Action buttons */}
-        <div className="flex items-center gap-2 mt-3">
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className={`
-              flex items-center gap-2 px-4 py-2 rounded-lg border transition-colors
-              ${showFilters ? 'bg-blue-50 border-blue-300 text-blue-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}
-            `}
-          >
-            <Filter className="w-4 h-4" />
-            Filters
-            <ChevronDown className={`w-4 h-4 transition-transform ${showFilters ? 'rotate-180' : ''}`} />
-          </button>
+        {/* Search Type Selector */}
+        <div className="flex items-center gap-2 mt-4 flex-wrap">
+          {searchTypeOptions.map((option) => (
+            <button
+              key={option.value}
+              onClick={() => setSearchType(option.value as SearchType)}
+              className={`
+                flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 transition-all duration-200
+                ${searchType === option.value 
+                  ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-sm' 
+                  : 'border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50'
+                }
+              `}
+            >
+              {option.icon}
+              <span className="font-medium">{option.label}</span>
+            </button>
+          ))}
 
           <button
             onClick={() => setShowHistory(!showHistory)}
             className={`
-              flex items-center gap-2 px-4 py-2 rounded-lg border transition-colors
-              ${showHistory ? 'bg-blue-50 border-blue-300 text-blue-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}
+              flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 transition-all duration-200 ml-auto
+              ${showHistory 
+                ? 'border-purple-500 bg-purple-50 text-purple-700' 
+                : 'border-gray-200 text-gray-600 hover:border-gray-300'
+              }
             `}
           >
             <Clock className="w-4 h-4" />
-            History
-          </button>
-
-          <button
-            onClick={() => handleSearch(query)}
-            disabled={!query.trim() || searchMutation.isPending}
-            className="
-              flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg
-              hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors
-            "
-          >
-            <SearchIcon className="w-4 h-4" />
-            Search
+            Historial
           </button>
         </div>
       </div>
 
-      {/* Filters Panel */}
-      {showFilters && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-              <Sliders className="w-5 h-5" />
-              Search Options
-            </h3>
-            <button
-              onClick={() => setShowFilters(false)}
-              className="p-1 hover:bg-gray-100 rounded"
-            >
-              <X className="w-5 h-5 text-gray-500" />
-            </button>
-          </div>
-
-          {/* Semantic Options */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Vectorization Methods
-              </label>
-              <div className="space-y-2">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={semanticOptions.use_tfidf}
-                    onChange={(e) =>
-                      setSemanticOptions({ ...semanticOptions, use_tfidf: e.target.checked })
-                    }
-                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                  />
-                  <span className="text-sm text-gray-600">TF-IDF</span>
-                </label>
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={semanticOptions.use_minhash}
-                    onChange={(e) =>
-                      setSemanticOptions({ ...semanticOptions, use_minhash: e.target.checked })
-                    }
-                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                  />
-                  <span className="text-sm text-gray-600">MinHash (Similarity)</span>
-                </label>
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={semanticOptions.use_lda}
-                    onChange={(e) =>
-                      setSemanticOptions({ ...semanticOptions, use_lda: e.target.checked })
-                    }
-                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                  />
-                  <span className="text-sm text-gray-600">LDA (Topic Modeling)</span>
-                </label>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Date Range
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="date"
-                  value={filters?.date_from || ''}
-                  onChange={(e) =>
-                    setFilters({ ...filters, date_from: e.target.value || undefined })
-                  }
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                  placeholder="From"
-                />
-                <input
-                  type="date"
-                  value={filters?.date_to || ''}
-                  onChange={(e) =>
-                    setFilters({ ...filters, date_to: e.target.value || undefined })
-                  }
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                  placeholder="To"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Weight Sliders */}
-          {(semanticOptions.use_tfidf || semanticOptions.use_minhash || semanticOptions.use_lda) && (
-            <div className="pt-4 border-t border-gray-100">
-              <label className="block text-sm font-medium text-gray-700 mb-3">
-                Method Weights
-              </label>
-              <div className="space-y-3">
-                {semanticOptions.use_tfidf && (
-                  <div>
-                    <div className="flex justify-between text-sm mb-1">
-                      <span className="text-gray-600">TF-IDF Weight</span>
-                      <span className="text-gray-900">{semanticOptions.tfidf_weight.toFixed(2)}</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0"
-                      max="1"
-                      step="0.1"
-                      value={semanticOptions.tfidf_weight}
-                      onChange={(e) =>
-                        setSemanticOptions({
-                          ...semanticOptions,
-                          tfidf_weight: parseFloat(e.target.value),
-                        })
-                      }
-                      className="w-full"
-                    />
-                  </div>
-                )}
-                {semanticOptions.use_minhash && (
-                  <div>
-                    <div className="flex justify-between text-sm mb-1">
-                      <span className="text-gray-600">MinHash Weight</span>
-                      <span className="text-gray-900">{semanticOptions.minhash_weight.toFixed(2)}</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0"
-                      max="1"
-                      step="0.1"
-                      value={semanticOptions.minhash_weight}
-                      onChange={(e) =>
-                        setSemanticOptions({
-                          ...semanticOptions,
-                          minhash_weight: parseFloat(e.target.value),
-                        })
-                      }
-                      className="w-full"
-                    />
-                  </div>
-                )}
-                {semanticOptions.use_lda && (
-                  <div>
-                    <div className="flex justify-between text-sm mb-1">
-                      <span className="text-gray-600">LDA Weight</span>
-                      <span className="text-gray-900">{semanticOptions.lda_weight.toFixed(2)}</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0"
-                      max="1"
-                      step="0.1"
-                      value={semanticOptions.lda_weight}
-                      onChange={(e) =>
-                        setSemanticOptions({
-                          ...semanticOptions,
-                          lda_weight: parseFloat(e.target.value),
-                        })
-                      }
-                      className="w-full"
-                    />
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
       {/* History Panel */}
       {showHistory && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm animate-in fade-in slide-in-from-top-2 duration-300">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-gray-900">Recent Searches</h3>
+            <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+              <Clock className="w-5 h-5 text-gray-400" />
+              Búsquedas recientes
+            </h3>
             <button
               onClick={() => clearHistory.mutate()}
-              className="text-sm text-red-600 hover:text-red-700"
+              className="text-sm text-red-600 hover:text-red-700 hover:underline"
             >
-              Clear History
+              Limpiar
             </button>
           </div>
           {history?.history?.length ? (
@@ -372,18 +181,18 @@ export const SearchPage: React.FC = () => {
                 <button
                   key={index}
                   onClick={() => handleHistoryClick(item.query)}
-                  className="w-full flex items-center gap-3 p-3 text-left hover:bg-gray-50 rounded-lg transition-colors"
+                  className="w-full flex items-center gap-3 p-3 text-left hover:bg-gray-50 rounded-xl transition-colors group"
                 >
-                  <Clock className="w-4 h-4 text-gray-400" />
-                  <span className="text-gray-700">{item.query}</span>
-                  <span className="ml-auto text-xs text-gray-400">
-                    {item.results_count} results
+                  <SearchIcon className="w-4 h-4 text-gray-400 group-hover:text-blue-500" />
+                  <span className="text-gray-700 group-hover:text-gray-900">{item.query}</span>
+                  <span className="ml-auto text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded-full">
+                    {item.results_count} resultados
                   </span>
                 </button>
               ))}
             </div>
           ) : (
-            <p className="text-gray-500 text-center py-4">No search history</p>
+            <p className="text-gray-500 text-center py-4">No hay búsquedas recientes</p>
           )}
         </div>
       )}
@@ -391,16 +200,19 @@ export const SearchPage: React.FC = () => {
       {/* Results */}
       <div className="space-y-4">
         {searchMutation.isPending && (
-          <div className="flex items-center justify-center py-12">
-            <LoadingSpinner size="lg" />
-            <span className="ml-3 text-gray-500">Searching across nodes...</span>
+          <div className="flex flex-col items-center justify-center py-16">
+            <div className="relative">
+              <div className="absolute inset-0 bg-blue-500 blur-xl opacity-20 animate-pulse" />
+              <LoadingSpinner size="lg" />
+            </div>
+            <span className="mt-4 text-gray-500 font-medium">Buscando documentos...</span>
           </div>
         )}
 
         {searchMutation.isError && (
           <ErrorMessage
-            title="Search failed"
-            message={searchMutation.error?.message || 'An error occurred while searching'}
+            title="Error en la búsqueda"
+            message={searchMutation.error?.message || 'Ocurrió un error al buscar'}
             onRetry={() => handleSearch(query)}
           />
         )}
@@ -408,27 +220,21 @@ export const SearchPage: React.FC = () => {
         {searchMutation.isSuccess && searchMutation.data && (
           <>
             {/* Results header */}
-            <div className="flex items-center justify-between">
-              <p className="text-gray-600">
-                Found <strong>{searchMutation.data.total_results}</strong> results in{' '}
-                <strong>{searchMutation.data.search_time_ms?.toFixed(0)}ms</strong>
+            <div className="flex items-center justify-between bg-gradient-to-r from-blue-50 to-purple-50 p-4 rounded-xl">
+              <p className="text-gray-700">
+                <strong className="text-blue-600">{searchMutation.data.total_results}</strong> resultados encontrados en{' '}
+                <strong className="text-purple-600">{searchMutation.data.search_time_ms?.toFixed(0)}ms</strong>
               </p>
-              <div className="flex items-center gap-2">
-                {searchMutation.data.nodes_queried && (
-                  <Badge variant="info">
-                    {searchMutation.data.nodes_queried} nodes queried
-                  </Badge>
-                )}
-              </div>
             </div>
 
             {/* Results list */}
             {searchMutation.data.results.length > 0 ? (
               <div className="space-y-4">
-                {searchMutation.data.results.map((result) => (
+                {searchMutation.data.results.map((result, index) => (
                   <SearchResultCard
                     key={result.document_id}
                     result={result}
+                    index={index}
                     onClick={() => handleDocumentClick(result)}
                     onDownload={() => handleDownload(result)}
                   />
@@ -437,19 +243,23 @@ export const SearchPage: React.FC = () => {
             ) : (
               <EmptyState
                 icon={<SearchIcon className="w-12 h-12" />}
-                title="No results found"
-                description={`We couldn't find any documents matching "${query}". Try different keywords or filters.`}
+                title="Sin resultados"
+                description={`No encontramos documentos para "${query}". Prueba con otras palabras.`}
               />
             )}
           </>
         )}
 
         {!searchMutation.isPending && !searchMutation.isSuccess && !searchMutation.isError && (
-          <EmptyState
-            icon={<FileText className="w-12 h-12" />}
-            title="Start searching"
-            description="Enter a query above to search across your distributed document collection."
-          />
+          <div className="text-center py-16">
+            <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-blue-100 to-purple-100 rounded-2xl mb-4">
+              <FileText className="w-10 h-10 text-blue-500" />
+            </div>
+            <h3 className="text-xl font-semibold text-gray-900 mb-2">Comienza a buscar</h3>
+            <p className="text-gray-500 max-w-md mx-auto">
+              Escribe una consulta para buscar en tu colección de documentos distribuidos.
+            </p>
+          </div>
         )}
       </div>
 
@@ -472,10 +282,10 @@ export const SearchPage: React.FC = () => {
 
       {/* Loading overlay */}
       {loadingDocument && (
-        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-40">
-          <div className="bg-white p-6 rounded-xl shadow-lg flex items-center gap-3">
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-[60]">
+          <div className="bg-white p-6 rounded-2xl shadow-2xl flex items-center gap-4">
             <LoadingSpinner size="sm" />
-            <span>Cargando documento...</span>
+            <span className="font-medium text-gray-700">Cargando documento...</span>
           </div>
         </div>
       )}
@@ -486,70 +296,48 @@ export const SearchPage: React.FC = () => {
 // Search Result Card Component
 interface SearchResultCardProps {
   result: SearchResult;
+  index: number;
   onClick: () => void;
   onDownload: () => void;
 }
 
-const SearchResultCard: React.FC<SearchResultCardProps> = ({ result, onClick, onDownload }) => {
+const SearchResultCard: React.FC<SearchResultCardProps> = ({ result, index, onClick, onDownload }) => {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md hover:border-gray-300 transition-all">
+    <div 
+      className="bg-white rounded-2xl border border-gray-100 p-5 hover:shadow-xl hover:shadow-gray-200/50 hover:border-gray-200 transition-all duration-300 transform hover:-translate-y-0.5 group"
+      style={{ animationDelay: `${index * 50}ms` }}
+    >
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-3">
-          <FileText className="w-5 h-5 text-blue-600" />
+          <div className="p-2.5 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl text-white group-hover:scale-110 transition-transform duration-300">
+            <FileText className="w-5 h-5" />
+          </div>
           <div>
-            <h3 className="font-semibold text-gray-900">
-              {result.title || result.document?.title || 'Untitled'}
+            <h3 className="font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">
+              {result.title || result.document?.title || 'Sin título'}
             </h3>
             {result.content_preview && (
-              <p className="text-sm text-gray-500 line-clamp-1">{result.content_preview}</p>
+              <p className="text-sm text-gray-500 line-clamp-2 mt-1">{result.content_preview}</p>
             )}
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Badge variant="info">Relevancia: {(result.score * 100).toFixed(0)}%</Badge>
+        <div className="px-3 py-1.5 bg-gradient-to-r from-blue-500 to-purple-500 text-white text-sm font-medium rounded-full">
+          {(result.score * 100).toFixed(0)}%
         </div>
       </div>
 
-      {/* Highlights */}
-      {result.highlights && result.highlights.length > 0 && (
-        <div className="mt-3 space-y-2">
-          {result.highlights.slice(0, 2).map((highlight: string, index: number) => (
-            <p
-              key={index}
-              className="text-sm text-gray-600 line-clamp-2"
-              dangerouslySetInnerHTML={{ __html: highlight }}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* Score breakdown */}
-      {result.score_breakdown && (
-        <div className="mt-3 pt-3 border-t border-gray-100 flex gap-4 text-xs text-gray-500">
-          {result.score_breakdown.keyword_score !== undefined && (
-            <span>Keyword: {result.score_breakdown.keyword_score.toFixed(3)}</span>
-          )}
-          {result.score_breakdown.semantic_score !== undefined && (
-            <span>Semantic: {result.score_breakdown.semantic_score.toFixed(3)}</span>
-          )}
-          {result.score_breakdown.hybrid_score !== undefined && (
-            <span>Hybrid: {result.score_breakdown.hybrid_score.toFixed(3)}</span>
-          )}
-        </div>
-      )}
-
       {/* Action buttons */}
-      <div className="mt-4 pt-3 border-t border-gray-100 flex gap-2">
+      <div className="mt-4 pt-4 border-t border-gray-100 flex gap-3">
         <button
           onClick={(e) => { e.stopPropagation(); onClick(); }}
-          className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors"
+          className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl hover:from-blue-600 hover:to-blue-700 transition-all shadow-sm hover:shadow-md"
         >
           <Eye className="w-4 h-4" />
           Ver documento
         </button>
         <button
           onClick={(e) => { e.stopPropagation(); onDownload(); }}
-          className="flex items-center gap-2 px-4 py-2 text-sm bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition-colors"
+          className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl hover:from-green-600 hover:to-green-700 transition-all shadow-sm hover:shadow-md"
         >
           <Download className="w-4 h-4" />
           Descargar
@@ -568,30 +356,46 @@ interface DocumentViewerModalProps {
 
 const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({ document, onClose, onDownload }) => {
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] flex flex-col">
-        <div className="flex items-center justify-between p-4 border-b border-gray-200">
-          <h2 className="text-xl font-semibold text-gray-900">{document.title}</h2>
+    <div 
+      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[100] p-4"
+      onClick={onClose}
+    >
+      <div 
+        className="bg-white rounded-2xl max-w-4xl w-full max-h-[85vh] flex flex-col shadow-2xl animate-in fade-in zoom-in-95 duration-200"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between p-5 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white rounded-t-2xl">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl text-white">
+              <FileText className="w-5 h-5" />
+            </div>
+            <h2 className="text-xl font-bold text-gray-900">{document.title}</h2>
+          </div>
           <div className="flex items-center gap-2">
             <button
               onClick={onDownload}
-              className="flex items-center gap-2 px-3 py-1.5 text-sm bg-green-50 text-green-700 rounded-lg hover:bg-green-100"
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl hover:from-green-600 hover:to-green-700 transition-all shadow-sm"
             >
               <Download className="w-4 h-4" />
               Descargar
             </button>
             <button
               onClick={onClose}
-              className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg"
+              className="p-2.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-xl transition-colors"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
         </div>
+        
+        {/* Content */}
         <div className="flex-1 overflow-auto p-6">
-          <pre className="whitespace-pre-wrap font-mono text-sm text-gray-700 bg-gray-50 p-4 rounded-lg">
-            {document.content}
-          </pre>
+          <div className="bg-gray-50 rounded-xl p-6 min-h-[300px]">
+            <pre className="whitespace-pre-wrap font-mono text-sm text-gray-700 leading-relaxed">
+              {document.content}
+            </pre>
+          </div>
         </div>
       </div>
     </div>

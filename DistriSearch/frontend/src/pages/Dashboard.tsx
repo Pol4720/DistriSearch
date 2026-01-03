@@ -30,16 +30,17 @@ export const Dashboard: React.FC = () => {
   // Generate search metrics from REAL historical data with proper timestamps
   const searchMetricsData = React.useMemo(() => {
     const now = new Date();
-    const buckets: { time: string; searches: number; startTime: Date }[] = [];
+    const buckets: { time: string; searches: number; startTime: Date; endTime: Date }[] = [];
     
-    // Create 6 time buckets (4 hours each)
+    // Create 6 time buckets (1 hour each for more recent visibility)
     for (let i = 5; i >= 0; i--) {
-      const bucketEnd = new Date(now.getTime() - i * 4 * 3600000);
-      const bucketStart = new Date(now.getTime() - (i + 1) * 4 * 3600000);
+      const bucketEnd = new Date(now.getTime() - i * 3600000); // 1 hour intervals
+      const bucketStart = new Date(now.getTime() - (i + 1) * 3600000);
       buckets.push({
         time: bucketEnd.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }),
         searches: 0,
-        startTime: bucketStart
+        startTime: bucketStart,
+        endTime: bucketEnd
       });
     }
     
@@ -47,11 +48,11 @@ export const Dashboard: React.FC = () => {
     if (searchHistory?.history) {
       searchHistory.history.forEach((item: { timestamp?: string }) => {
         if (item.timestamp) {
-          const searchTime = new Date(item.timestamp);
+          // Parse UTC timestamp and convert to local for comparison
+          const searchTime = new Date(item.timestamp + (item.timestamp.endsWith('Z') ? '' : 'Z'));
+          
           for (let i = 0; i < buckets.length; i++) {
-            const bucketStart = buckets[i].startTime;
-            const bucketEnd = new Date(bucketStart.getTime() + 4 * 3600000);
-            if (searchTime >= bucketStart && searchTime < bucketEnd) {
+            if (searchTime >= buckets[i].startTime && searchTime < buckets[i].endTime) {
               buckets[i].searches++;
               break;
             }
