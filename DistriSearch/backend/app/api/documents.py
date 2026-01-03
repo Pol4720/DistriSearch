@@ -90,6 +90,7 @@ async def create_document(
             "content": document.content,
             "metadata": document.metadata or {},
             "tags": document.tags or [],
+            "owner_id": auth_user.get("user_id") or auth_user.get("id") or auth_user.get("sub"),
             "node_id": node_id,
             "partition_id": partition_id,
             "vectors": {
@@ -224,6 +225,7 @@ async def upload_document(
                 "file_path": file_metadata.storage_path
             },
             "tags": doc_tags,
+            "owner_id": auth_user.get("user_id") or auth_user.get("id") or auth_user.get("sub"),
             "node_id": node_id,
             "partition_id": partition_id,
             "vectors": {
@@ -272,6 +274,7 @@ async def upload_document(
     summary="List documents",
     responses={
         200: {"description": "List of documents"},
+        401: {"description": "Authentication required"},
         500: {"model": ErrorResponse, "description": "Internal server error"}
     }
 )
@@ -280,14 +283,16 @@ async def list_documents(
     page_size: int = Query(default=20, ge=1, le=100, description="Items per page"),
     tag: Optional[str] = Query(default=None, description="Filter by tag"),
     node_id: Optional[str] = Query(default=None, description="Filter by node"),
-    doc_repo: DocumentRepository = Depends(get_document_repository)
+    doc_repo: DocumentRepository = Depends(get_document_repository),
+    auth_user: dict = Depends(require_auth)
 ):
     """
-    List documents with pagination and optional filtering.
+    List documents uploaded by the current authenticated user.
     """
     try:
-        # Build filter
-        filters = {}
+        # Build filter - only show user's own documents
+        user_id = auth_user.get("user_id") or auth_user.get("id") or auth_user.get("sub")
+        filters = {"owner_id": user_id}
         if tag:
             filters["tags"] = tag
         if node_id:

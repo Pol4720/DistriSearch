@@ -8,7 +8,10 @@ import {
   ChevronDown,
   X,
   Sliders,
+  Download,
+  Eye,
 } from 'lucide-react';
+import { documentService } from '../services';
 import {
   useSearchMutation,
   useSearchHistory,
@@ -79,6 +82,21 @@ export const SearchPage: React.FC = () => {
 
   const handleDocumentClick = (result: SearchResult) => {
     navigate(`/documents/${result.document_id}`);
+  };
+
+  const handleDownload = async (result: SearchResult) => {
+    try {
+      const doc = await documentService.get(result.document_id);
+      const blob = new Blob([doc.content], { type: 'text/plain' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = result.title || result.document?.title || 'document.txt';
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Download failed:', error);
+    }
   };
 
   const handleHistoryClick = (historyQuery: string) => {
@@ -398,6 +416,7 @@ export const SearchPage: React.FC = () => {
                     key={result.document_id}
                     result={result}
                     onClick={() => handleDocumentClick(result)}
+                    onDownload={() => handleDownload(result)}
                   />
                 ))}
               </div>
@@ -427,19 +446,17 @@ export const SearchPage: React.FC = () => {
 interface SearchResultCardProps {
   result: SearchResult;
   onClick: () => void;
+  onDownload: () => void;
 }
 
-const SearchResultCard: React.FC<SearchResultCardProps> = ({ result, onClick }) => {
+const SearchResultCard: React.FC<SearchResultCardProps> = ({ result, onClick, onDownload }) => {
   return (
-    <div
-      onClick={onClick}
-      className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md hover:border-gray-300 cursor-pointer transition-all"
-    >
+    <div className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md hover:border-gray-300 transition-all">
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-3">
           <FileText className="w-5 h-5 text-blue-600" />
           <div>
-            <h3 className="font-semibold text-gray-900 hover:text-blue-600">
+            <h3 className="font-semibold text-gray-900">
               {result.title || result.document?.title || 'Untitled'}
             </h3>
             {result.content_preview && (
@@ -480,6 +497,24 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({ result, onClick }) 
           )}
         </div>
       )}
+
+      {/* Action buttons */}
+      <div className="mt-4 pt-3 border-t border-gray-100 flex gap-2">
+        <button
+          onClick={(e) => { e.stopPropagation(); onClick(); }}
+          className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors"
+        >
+          <Eye className="w-4 h-4" />
+          Ver documento
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); onDownload(); }}
+          className="flex items-center gap-2 px-4 py-2 text-sm bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition-colors"
+        >
+          <Download className="w-4 h-4" />
+          Descargar
+        </button>
+      </div>
     </div>
   );
 };

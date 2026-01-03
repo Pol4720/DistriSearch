@@ -574,12 +574,26 @@ class SearchEngine:
             k1 = 1.5  # Term frequency saturation
             b = 0.75  # Length normalization
             
+            # Normalize query for substring matching
+            query_lower = query.lower().strip()
+            
             for doc_data in doc_data_list:
                 doc_dict = doc_data["doc_dict"]
                 doc_terms_set = set(doc_data["doc_terms"])
                 matched_terms = query_term_set & doc_terms_set
                 
-                if not matched_terms:
+                # Check for substring match in title/filename
+                title_lower = doc_dict.get("title", "").lower()
+                filename_lower = doc_dict.get("filename", doc_dict.get("title", "")).lower()
+                
+                # Check if query is a substring of the filename/title
+                is_substring_match = (
+                    query_lower in title_lower or 
+                    query_lower in filename_lower
+                )
+                
+                # Skip if no term matches AND no substring match
+                if not matched_terms and not is_substring_match:
                     continue
                 
                 # Calculate BM25 score
@@ -640,12 +654,21 @@ class SearchEngine:
                 )
                 
                 # Bonus for title matches (titles are more important)
-                title_lower = doc_dict.get("title", "").lower()
                 title_terms = set(re.findall(r'\b\w+\b', title_lower))
                 title_matches = query_term_set & title_terms
                 if title_matches:
                     title_boost = 0.2 * (len(title_matches) / len(query_term_set))
                     hybrid_score = min(hybrid_score + title_boost, 1.0)
+                
+                # Bonus for substring match in filename/title (high priority)
+                if is_substring_match:
+                    # Calculate substring match quality (longer matches = better)
+                    substring_boost = 0.3 * (len(query_lower) / max(len(title_lower), 1))
+                    substring_boost = min(substring_boost, 0.4)  # Cap at 0.4
+                    hybrid_score = min(hybrid_score + substring_boost, 1.0)
+                    # If this is ONLY a substring match (no BM25 score), give base score
+                    if hybrid_score < 0.1:
+                        hybrid_score = 0.5 + substring_boost  # Base score for substring matches
                 
                 # Get document ID
                 doc_id = doc_dict.get("id") or doc_dict.get("_id", "")

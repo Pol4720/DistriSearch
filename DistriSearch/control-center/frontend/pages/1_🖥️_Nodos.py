@@ -237,33 +237,9 @@ with tab_nodes:
     cluster_data = api_get("/cluster/status")
     
     if "error" in cluster_data:
-        st.warning("⚠️ No se pudo conectar al cluster DistriSearch")
-        st.info("Mostrando datos de ejemplo para demostración...")
-        # Datos de ejemplo
-        nodes = [
-            {
-                "node_id": "distrisearch-master",
-                "role": "master",
-                "status": "healthy",
-                "address": "distrisearch-master",
-                "port": 8001,
-                "document_count": 50,
-                "partition_count": 2,
-                "cpu_usage": 15.5,
-                "memory_usage": 45.2
-            },
-            {
-                "node_id": "distrisearch-slave-1",
-                "role": "slave",
-                "status": "healthy",
-                "address": "distrisearch-slave",
-                "port": 8000,
-                "document_count": 50,
-                "partition_count": 2,
-                "cpu_usage": 12.3,
-                "memory_usage": 38.1
-            },
-        ]
+        st.error(f"❌ No se pudo conectar al cluster DistriSearch: {cluster_data['error']}")
+        st.info("💡 Asegúrate de que el cluster esté corriendo y accesible.")
+        nodes = []
     else:
         nodes = cluster_data.get("nodes", [])
     

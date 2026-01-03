@@ -297,15 +297,8 @@ def cluster_metrics():
     cluster = api_get("/cluster/status")
     
     if "error" in cluster:
-        # Datos demo para mostrar la UI
-        cluster = {
-            "status": "healthy",
-            "total_nodes": 3,
-            "healthy_nodes": 3,
-            "total_documents": 150,
-            "total_partitions": 6,
-            "replication_factor": 2,
-        }
+        st.error(f"❌ Sin conexión: {cluster['error']}")
+        return
     
     st.markdown("### 📊 Métricas del Cluster")
     
@@ -356,11 +349,8 @@ def nodes_panel():
     cluster = api_get("/cluster/status")
     
     if "error" in cluster:
-        nodes = [
-            {"node_id": "node-1", "role": "master", "status": "running", "address": "localhost", "port": 8001, "document_count": 50, "partition_count": 2},
-            {"node_id": "node-2", "role": "slave", "status": "running", "address": "localhost", "port": 8002, "document_count": 50, "partition_count": 2},
-            {"node_id": "node-3", "role": "slave", "status": "running", "address": "localhost", "port": 8003, "document_count": 50, "partition_count": 2},
-        ]
+        st.warning("⚠️ No se pueden obtener los nodos")
+        nodes = []
     else:
         nodes = cluster.get("nodes", [])
     
