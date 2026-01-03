@@ -3,12 +3,10 @@ import { Link, useLocation } from 'react-router-dom';
 import {
   Search,
   FileText,
-  Server,
   LayoutDashboard,
   Settings,
   ChevronLeft,
   ChevronRight,
-  Activity,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -24,11 +22,9 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { path: '/', label: 'Dashboard', icon: <LayoutDashboard className="w-5 h-5" /> },
-  { path: '/search', label: 'Search', icon: <Search className="w-5 h-5" /> },
-  { path: '/documents', label: 'Documents', icon: <FileText className="w-5 h-5" /> },
-  { path: '/cluster', label: 'Cluster', icon: <Server className="w-5 h-5" /> },
-  { path: '/monitoring', label: 'Monitoring', icon: <Activity className="w-5 h-5" /> },
-  { path: '/settings', label: 'Settings', icon: <Settings className="w-5 h-5" /> },
+  { path: '/search', label: 'Buscar', icon: <Search className="w-5 h-5" /> },
+  { path: '/documents', label: 'Documentos', icon: <FileText className="w-5 h-5" /> },
+  { path: '/settings', label: 'Configuración', icon: <Settings className="w-5 h-5" /> },
 ];
 
 export const Sidebar: React.FC<SidebarProps> = ({

@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import {
   Search as SearchIcon,
   Filter,
@@ -28,13 +28,14 @@ import {
 import type { SearchRequest, SearchResult } from '../types';
 
 export const SearchPage: React.FC = () => {
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   
   const [query, setQuery] = useState(searchParams.get('q') || '');
   const [showFilters, setShowFilters] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [filters, setFilters] = useState<SearchRequest['filters']>({});
+  const [viewingDocument, setViewingDocument] = useState<{ title: string; content: string } | null>(null);
+  const [loadingDocument, setLoadingDocument] = useState(false);
   const [semanticOptions, setSemanticOptions] = useState({
     use_tfidf: true,
     use_minhash: true,
@@ -80,8 +81,19 @@ export const SearchPage: React.FC = () => {
     [filters, semanticOptions, setSearchParams, searchMutation]
   );
 
-  const handleDocumentClick = (result: SearchResult) => {
-    navigate(`/documents/${result.document_id}`);
+  const handleDocumentClick = async (result: SearchResult) => {
+    try {
+      setLoadingDocument(true);
+      const doc = await documentService.get(result.document_id);
+      setViewingDocument({
+        title: doc.title || result.title || 'Documento',
+        content: doc.content || 'Sin contenido disponible'
+      });
+    } catch (error) {
+      console.error('Error loading document:', error);
+    } finally {
+      setLoadingDocument(false);
+    }
   };
 
   const handleDownload = async (result: SearchResult) => {
@@ -438,6 +450,33 @@ export const SearchPage: React.FC = () => {
           />
         )}
       </div>
+
+      {/* Document Viewer Modal */}
+      {viewingDocument && (
+        <DocumentViewerModal
+          document={viewingDocument}
+          onClose={() => setViewingDocument(null)}
+          onDownload={() => {
+            const blob = new Blob([viewingDocument.content], { type: 'text/plain' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = viewingDocument.title || 'document.txt';
+            a.click();
+            window.URL.revokeObjectURL(url);
+          }}
+        />
+      )}
+
+      {/* Loading overlay */}
+      {loadingDocument && (
+        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-40">
+          <div className="bg-white p-6 rounded-xl shadow-lg flex items-center gap-3">
+            <LoadingSpinner size="sm" />
+            <span>Cargando documento...</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -465,8 +504,7 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({ result, onClick, on
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Badge variant="info">Score: {result.score.toFixed(3)}</Badge>
-          <Badge variant="default">Node: {result.node_id}</Badge>
+          <Badge variant="info">Relevancia: {(result.score * 100).toFixed(0)}%</Badge>
         </div>
       </div>
 
@@ -514,6 +552,45 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({ result, onClick, on
           <Download className="w-4 h-4" />
           Descargar
         </button>
+      </div>
+    </div>
+  );
+};
+
+// Document Viewer Modal Component
+interface DocumentViewerModalProps {
+  document: { title: string; content: string };
+  onClose: () => void;
+  onDownload: () => void;
+}
+
+const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({ document, onClose, onDownload }) => {
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b border-gray-200">
+          <h2 className="text-xl font-semibold text-gray-900">{document.title}</h2>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onDownload}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm bg-green-50 text-green-700 rounded-lg hover:bg-green-100"
+            >
+              <Download className="w-4 h-4" />
+              Descargar
+            </button>
+            <button
+              onClick={onClose}
+              className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-auto p-6">
+          <pre className="whitespace-pre-wrap font-mono text-sm text-gray-700 bg-gray-50 p-4 rounded-lg">
+            {document.content}
+          </pre>
+        </div>
       </div>
     </div>
   );
