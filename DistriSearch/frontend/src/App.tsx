@@ -7,8 +7,6 @@ import {
   Dashboard,
   SearchPage,
   Documents,
-  Cluster,
-  Monitoring,
   Settings,
   Login,
   Register,
@@ -42,8 +40,6 @@ function App() {
             <Route path="search" element={<SearchPage />} />
             <Route path="documents" element={<Documents />} />
             <Route path="documents/:id" element={<Documents />} />
-            <Route path="cluster" element={<Cluster />} />
-            <Route path="monitoring" element={<Monitoring />} />
             <Route path="settings" element={<Settings />} />
           </Route>
         </Routes>

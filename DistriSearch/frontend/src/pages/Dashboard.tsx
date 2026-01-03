@@ -269,7 +269,6 @@ interface StatCardProps {
   icon: React.ReactNode;
   color: 'blue' | 'green' | 'purple' | 'orange';
   link?: string;
-  trend?: { value: number; positive: boolean };
 }
 
 const StatCard: React.FC<StatCardProps> = ({
@@ -279,7 +278,6 @@ const StatCard: React.FC<StatCardProps> = ({
   icon,
   color,
   link,
-  trend,
 }) => {
   const colorClasses = {
     blue: 'bg-blue-50 text-blue-600',
