@@ -122,15 +122,17 @@ export const SearchPage: React.FC = () => {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in duration-500">
       {/* Header */}
       <div className="text-center mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">
-          <SearchIcon className="inline-block w-8 h-8 mr-2 text-blue-600" />
-          DistriSearch
+        <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 rounded-2xl shadow-lg mb-4">
+          <SearchIcon className="w-8 h-8 text-white" />
+        </div>
+        <h1 className="text-4xl font-bold bg-gradient-to-r from-gray-900 via-blue-800 to-purple-800 bg-clip-text text-transparent mb-2">
+          Buscar Documentos
         </h1>
-        <p className="text-gray-500">
-          Distributed semantic search across your document collection
+        <p className="text-gray-500 text-lg">
+          Encuentra cualquier documento en tu colección
         </p>
       </div>
 
@@ -140,7 +142,7 @@ export const SearchPage: React.FC = () => {
           value={query}
           onChange={setQuery}
           onSearch={handleSearch}
-          placeholder="Search documents..."
+          placeholder="¿Qué estás buscando?"
           autoFocus
           suggestions={suggestions || []}
           onSuggestionClick={handleSuggestionClick}

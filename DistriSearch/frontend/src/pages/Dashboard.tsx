@@ -87,17 +87,23 @@ export const Dashboard: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-in fade-in duration-500">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-          <p className="text-gray-500">Welcome to DistriSearch distributed search system</p>
+          <h1 className="text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
+            Bienvenido a DistriSearch
+          </h1>
+          <p className="text-gray-500 mt-1">Tu sistema de búsqueda distribuida de documentos</p>
         </div>
-        <Badge variant={health?.status === 'healthy' ? 'success' : 'warning'}>
+        <div className={`flex items-center gap-2 px-4 py-2 rounded-full ${
+          health?.status === 'healthy' 
+            ? 'bg-green-50 text-green-700' 
+            : 'bg-yellow-50 text-yellow-700'
+        }`}>
           {getStatusIcon(health?.status)}
-          <span className="ml-1">{health?.status || 'Unknown'}</span>
-        </Badge>
+          <span className="font-medium">{health?.status === 'healthy' ? 'Todo funcionando' : 'Verificando...'}</span>
+        </div>
       </div>
 
       {/* Stats Grid */}
@@ -280,19 +286,28 @@ const StatCard: React.FC<StatCardProps> = ({
   link,
 }) => {
   const colorClasses = {
-    blue: 'bg-blue-50 text-blue-600',
-    green: 'bg-green-50 text-green-600',
-    purple: 'bg-purple-50 text-purple-600',
-    orange: 'bg-orange-50 text-orange-600',
+    blue: 'from-blue-500 to-blue-600',
+    green: 'from-green-500 to-green-600',
+    purple: 'from-purple-500 to-purple-600',
+    orange: 'from-orange-500 to-orange-600',
+  };
+
+  const bgClasses = {
+    blue: 'bg-blue-50',
+    green: 'bg-green-50',
+    purple: 'bg-purple-50',
+    orange: 'bg-orange-50',
   };
 
   const content = (
-    <div className="bg-white rounded-xl border border-gray-200 p-6 hover:shadow-md transition-shadow">
+    <div className="bg-white rounded-2xl border border-gray-100 p-6 hover:shadow-xl hover:shadow-gray-200/50 transition-all duration-300 transform hover:-translate-y-1 group">
       <div className="flex items-center justify-between mb-4">
-        <div className={`p-3 rounded-lg ${colorClasses[color]}`}>{icon}</div>
+        <div className={`p-3 rounded-xl bg-gradient-to-br ${colorClasses[color]} text-white shadow-lg group-hover:scale-110 transition-transform duration-300`}>
+          {icon}
+        </div>
       </div>
-      <h3 className="text-2xl font-bold text-gray-900">{value}</h3>
-      <p className="text-sm text-gray-500">{title}</p>
+      <h3 className="text-3xl font-bold text-gray-900">{value}</h3>
+      <p className="text-sm text-gray-500 font-medium">{title}</p>
       {subtitle && <p className="text-xs text-gray-400 mt-1">{subtitle}</p>}
     </div>
   );

@@ -1,85 +1,53 @@
 import React, { useState } from 'react';
 import {
-  Settings as SettingsIcon,
-  Server,
-  Database,
+  User,
   Search,
-  Shield,
   Bell,
   Save,
-  RotateCcw,
+  Palette,
+  Globe,
+  Moon,
+  Sun,
+  Check,
 } from 'lucide-react';
-import { Badge } from '../components/common';
 
 interface SettingsSection {
   id: string;
   label: string;
   icon: React.ReactNode;
+  description: string;
 }
 
 const sections: SettingsSection[] = [
-  { id: 'general', label: 'General', icon: <SettingsIcon className="w-5 h-5" /> },
-  { id: 'cluster', label: 'Cluster', icon: <Server className="w-5 h-5" /> },
-  { id: 'search', label: 'Search', icon: <Search className="w-5 h-5" /> },
-  { id: 'storage', label: 'Storage', icon: <Database className="w-5 h-5" /> },
-  { id: 'security', label: 'Security', icon: <Shield className="w-5 h-5" /> },
-  { id: 'notifications', label: 'Notifications', icon: <Bell className="w-5 h-5" /> },
+  { id: 'profile', label: 'Perfil', icon: <User className="w-5 h-5" />, description: 'Tu información personal' },
+  { id: 'search', label: 'Búsqueda', icon: <Search className="w-5 h-5" />, description: 'Preferencias de búsqueda' },
+  { id: 'appearance', label: 'Apariencia', icon: <Palette className="w-5 h-5" />, description: 'Personaliza la interfaz' },
+  { id: 'notifications', label: 'Notificaciones', icon: <Bell className="w-5 h-5" />, description: 'Gestiona tus alertas' },
 ];
 
 export const Settings: React.FC = () => {
-  const [activeSection, setActiveSection] = useState('general');
-  const [hasChanges, setHasChanges] = useState(false);
+  const [activeSection, setActiveSection] = useState('profile');
+  const [saved, setSaved] = useState(false);
 
-  // Settings state
   const [settings, setSettings] = useState({
-    general: {
-      systemName: 'DistriSearch',
-      timezone: 'UTC',
-      language: 'en',
-      darkMode: false,
-    },
-    cluster: {
-      replicationFactor: 2,
-      partitionCount: 16,
-      heartbeatInterval: 5000,
-      nodeTimeout: 30000,
-      autoRebalance: true,
+    profile: {
+      displayName: '',
+      email: '',
+      language: 'es',
     },
     search: {
       defaultLimit: 20,
-      maxLimit: 100,
-      useTfIdf: true,
-      useMinHash: true,
-      useLda: false,
-      tfidfWeight: 0.5,
-      minhashWeight: 0.3,
-      ldaWeight: 0.2,
-      highlightEnabled: true,
-      highlightPreTag: '<mark>',
-      highlightPostTag: '</mark>',
+      highlightResults: true,
+      showPreviews: true,
     },
-    storage: {
-      mongoUri: 'mongodb://localhost:27017',
-      redisUri: 'redis://localhost:6379',
-      dataPath: '/data/distrisearch',
-      maxDocumentSize: 10,
-      compressionEnabled: true,
-    },
-    security: {
-      jwtSecret: '********',
-      tokenExpiration: 3600,
-      rateLimitEnabled: true,
-      rateLimitRequests: 100,
-      rateLimitWindow: 60,
-      corsOrigins: '*',
+    appearance: {
+      theme: 'light',
+      compactMode: false,
+      animationsEnabled: true,
     },
     notifications: {
-      emailEnabled: false,
-      emailSmtp: '',
-      slackEnabled: false,
-      slackWebhook: '',
-      alertOnNodeFailure: true,
-      alertOnRebalance: true,
+      emailNotifications: true,
+      searchAlerts: false,
     },
   });
 
@@ -91,110 +59,79 @@ export const Settings: React.FC = () => {
         [key]: value,
       },
     }));
-    setHasChanges(true);
   };
 
   const handleSave = () => {
-    // TODO: Save settings to backend
-    console.log('Saving settings:', settings);
-    setHasChanges(false);
-  };
-
-  const handleReset = () => {
-    // TODO: Reset to defaults
-    setHasChanges(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
   };
 
   return (
-    <div className="space-y-6">
+    <div className="max-w-5xl mx-auto space-y-6 animate-in fade-in duration-500">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
-          <p className="text-gray-500">Configure your DistriSearch system</p>
+          <h1 className="text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
+            Configuración
+          </h1>
+          <p className="text-gray-500 mt-1">Personaliza tu experiencia en DistriSearch</p>
         </div>
-        <div className="flex items-center gap-3">
-          {hasChanges && <Badge variant="warning">Unsaved changes</Badge>}
-          <button
-            onClick={handleReset}
-            disabled={!hasChanges}
-            className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
-          >
-            <RotateCcw className="w-5 h-5" />
-            Reset
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={!hasChanges}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
-          >
-            <Save className="w-5 h-5" />
-            Save Changes
-          </button>
-        </div>
+        <button
+          onClick={handleSave}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium transition-all duration-300 transform hover:scale-105 ${
+            saved 
+              ? 'bg-green-500 text-white' 
+              : 'bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:shadow-lg hover:shadow-blue-500/25'
+          }`}
+        >
+          {saved ? <Check className="w-5 h-5" /> : <Save className="w-5 h-5" />}
+          {saved ? 'Guardado' : 'Guardar cambios'}
+        </button>
       </div>
 
       <div className="flex gap-6">
         {/* Sidebar */}
-        <div className="w-64 flex-shrink-0">
-          <nav className="bg-white rounded-xl border border-gray-200 p-2">
+        <div className="w-72 flex-shrink-0">
+          <nav className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 space-y-1">
             {sections.map((section) => (
               <button
                 key={section.id}
                 onClick={() => setActiveSection(section.id)}
-                className={`
-                  w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors
-                  ${
-                    activeSection === section.id
-                      ? 'bg-blue-50 text-blue-700'
-                      : 'text-gray-600 hover:bg-gray-50'
-                  }
-                `}
+                className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-xl text-left transition-all duration-200 group ${
+                  activeSection === section.id
+                    ? 'bg-gradient-to-r from-blue-50 to-purple-50 text-blue-700 shadow-sm'
+                    : 'text-gray-600 hover:bg-gray-50'
+                }`}
               >
-                {section.icon}
-                <span className="font-medium">{section.label}</span>
+                <div className={`p-2 rounded-lg transition-colors ${
+                  activeSection === section.id 
+                    ? 'bg-blue-100 text-blue-600' 
+                    : 'bg-gray-100 text-gray-500 group-hover:bg-gray-200'
+                }`}>
+                  {section.icon}
+                </div>
+                <div>
+                  <span className="font-medium block">{section.label}</span>
+                  <span className="text-xs text-gray-400">{section.description}</span>
+                </div>
               </button>
             ))}
           </nav>
         </div>
 
         {/* Content */}
-        <div className="flex-1 bg-white rounded-xl border border-gray-200 p-6">
-          {activeSection === 'general' && (
-            <GeneralSettings
-              settings={settings.general}
-              onUpdate={(key, value) => updateSetting('general', key, value)}
-            />
-          )}
-          {activeSection === 'cluster' && (
-            <ClusterSettings
-              settings={settings.cluster}
-              onUpdate={(key, value) => updateSetting('cluster', key, value)}
-            />
+        <div className="flex-1 bg-white rounded-2xl border border-gray-100 shadow-sm p-8 animate-in fade-in duration-300">
+          {activeSection === 'profile' && (
+            <ProfileSettings settings={settings.profile} onUpdate={(key, value) => updateSetting('profile', key, value)} />
           )}
           {activeSection === 'search' && (
-            <SearchSettings
-              settings={settings.search}
-              onUpdate={(key, value) => updateSetting('search', key, value)}
-            />
+            <SearchSettings settings={settings.search} onUpdate={(key, value) => updateSetting('search', key, value)} />
           )}
-          {activeSection === 'storage' && (
-            <StorageSettings
-              settings={settings.storage}
-              onUpdate={(key, value) => updateSetting('storage', key, value)}
-            />
-          )}
-          {activeSection === 'security' && (
-            <SecuritySettings
-              settings={settings.security}
-              onUpdate={(key, value) => updateSetting('security', key, value)}
-            />
+          {activeSection === 'appearance' && (
+            <AppearanceSettings settings={settings.appearance} onUpdate={(key, value) => updateSetting('appearance', key, value)} />
           )}
           {activeSection === 'notifications' && (
-            <NotificationSettings
-              settings={settings.notifications}
-              onUpdate={(key, value) => updateSetting('notifications', key, value)}
-            />
+            <NotificationSettings settings={settings.notifications} onUpdate={(key, value) => updateSetting('notifications', key, value)} />
           )}
         </div>
       </div>
@@ -202,639 +139,202 @@ export const Settings: React.FC = () => {
   );
 };
 
-// Settings Section Components
-interface SettingsProps<T> {
-  settings: T;
-  onUpdate: (key: string, value: unknown) => void;
-}
+// Profile Settings
+const ProfileSettings: React.FC<{ settings: any; onUpdate: (key: string, value: unknown) => void }> = ({ settings, onUpdate }) => (
+  <div className="space-y-8">
+    <div>
+      <h2 className="text-xl font-semibold text-gray-900 mb-1">Perfil de Usuario</h2>
+      <p className="text-sm text-gray-500">Administra tu información personal</p>
+    </div>
 
-const GeneralSettings: React.FC<SettingsProps<typeof defaultSettings.general>> = ({
-  settings,
-  onUpdate,
-}) => (
-  <div className="space-y-6">
-    <h2 className="text-lg font-semibold text-gray-900">General Settings</h2>
-
-    <div className="space-y-4">
+    <div className="flex items-center gap-6 p-6 bg-gradient-to-r from-blue-50 to-purple-50 rounded-2xl">
+      <div className="w-20 h-20 bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 rounded-2xl flex items-center justify-center shadow-lg">
+        <User className="w-10 h-10 text-white" />
+      </div>
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          System Name
-        </label>
+        <h3 className="font-semibold text-gray-900">Foto de perfil</h3>
+        <p className="text-sm text-gray-500 mb-2">Tu avatar se genera automáticamente</p>
+      </div>
+    </div>
+
+    <div className="grid gap-6">
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">Nombre para mostrar</label>
         <input
           type="text"
-          value={settings.systemName}
-          onChange={(e) => onUpdate('systemName', e.target.value)}
-          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          value={settings.displayName}
+          onChange={(e) => onUpdate('displayName', e.target.value)}
+          placeholder="Tu nombre"
+          className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
         />
       </div>
 
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">
-          Timezone
-        </label>
-        <select
-          value={settings.timezone}
-          onChange={(e) => onUpdate('timezone', e.target.value)}
-          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-        >
-          <option value="UTC">UTC</option>
-          <option value="America/New_York">Eastern Time</option>
-          <option value="America/Los_Angeles">Pacific Time</option>
-          <option value="Europe/London">London</option>
-          <option value="Asia/Tokyo">Tokyo</option>
-        </select>
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          Language
+          <Globe className="w-4 h-4 inline mr-2" />
+          Idioma
         </label>
         <select
           value={settings.language}
           onChange={(e) => onUpdate('language', e.target.value)}
-          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
         >
+          <option value="es">Español</option>
           <option value="en">English</option>
-          <option value="es">Spanish</option>
-          <option value="fr">French</option>
-          <option value="de">German</option>
         </select>
       </div>
-
-      <div className="flex items-center justify-between">
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
-            Dark Mode
-          </label>
-          <p className="text-sm text-gray-500">Enable dark theme</p>
-        </div>
-        <button
-          onClick={() => onUpdate('darkMode', !settings.darkMode)}
-          className={`
-            relative inline-flex h-6 w-11 items-center rounded-full transition-colors
-            ${settings.darkMode ? 'bg-blue-600' : 'bg-gray-200'}
-          `}
-        >
-          <span
-            className={`
-              inline-block h-4 w-4 transform rounded-full bg-white transition-transform
-              ${settings.darkMode ? 'translate-x-6' : 'translate-x-1'}
-            `}
-          />
-        </button>
-      </div>
     </div>
   </div>
 );
 
-const ClusterSettings: React.FC<SettingsProps<typeof defaultSettings.cluster>> = ({
-  settings,
-  onUpdate,
-}) => (
-  <div className="space-y-6">
-    <h2 className="text-lg font-semibold text-gray-900">Cluster Configuration</h2>
+// Search Settings
+const SearchSettings: React.FC<{ settings: any; onUpdate: (key: string, value: unknown) => void }> = ({ settings, onUpdate }) => (
+  <div className="space-y-8">
+    <div>
+      <h2 className="text-xl font-semibold text-gray-900 mb-1">Preferencias de Búsqueda</h2>
+      <p className="text-sm text-gray-500">Configura cómo funcionan tus búsquedas</p>
+    </div>
 
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Replication Factor
-          </label>
-          <input
-            type="number"
-            min="1"
-            max="5"
-            value={settings.replicationFactor}
-            onChange={(e) => onUpdate('replicationFactor', parseInt(e.target.value))}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Partition Count
-          </label>
-          <input
-            type="number"
-            min="4"
-            max="64"
-            value={settings.partitionCount}
-            onChange={(e) => onUpdate('partitionCount', parseInt(e.target.value))}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
+    <div className="space-y-6">
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">Resultados por página</label>
+        <div className="flex gap-3">
+          {[10, 20, 50].map((num) => (
+            <button
+              key={num}
+              onClick={() => onUpdate('defaultLimit', num)}
+              className={`px-6 py-3 rounded-xl font-medium transition-all duration-200 ${
+                settings.defaultLimit === num
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              {num}
+            </button>
+          ))}
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Heartbeat Interval (ms)
-          </label>
-          <input
-            type="number"
-            min="1000"
-            max="30000"
-            step="1000"
-            value={settings.heartbeatInterval}
-            onChange={(e) => onUpdate('heartbeatInterval', parseInt(e.target.value))}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
-        </div>
+      <ToggleOption
+        label="Resaltar coincidencias"
+        description="Destaca las palabras que coinciden con tu búsqueda"
+        checked={settings.highlightResults}
+        onChange={(v) => onUpdate('highlightResults', v)}
+      />
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Node Timeout (ms)
-          </label>
-          <input
-            type="number"
-            min="10000"
-            max="120000"
-            step="5000"
-            value={settings.nodeTimeout}
-            onChange={(e) => onUpdate('nodeTimeout', parseInt(e.target.value))}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
-        </div>
-      </div>
-
-      <div className="flex items-center justify-between">
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
-            Auto Rebalance
-          </label>
-          <p className="text-sm text-gray-500">
-            Automatically rebalance when nodes join/leave
-          </p>
-        </div>
-        <button
-          onClick={() => onUpdate('autoRebalance', !settings.autoRebalance)}
-          className={`
-            relative inline-flex h-6 w-11 items-center rounded-full transition-colors
-            ${settings.autoRebalance ? 'bg-blue-600' : 'bg-gray-200'}
-          `}
-        >
-          <span
-            className={`
-              inline-block h-4 w-4 transform rounded-full bg-white transition-transform
-              ${settings.autoRebalance ? 'translate-x-6' : 'translate-x-1'}
-            `}
-          />
-        </button>
-      </div>
+      <ToggleOption
+        label="Mostrar vista previa"
+        description="Muestra un fragmento del contenido en los resultados"
+        checked={settings.showPreviews}
+        onChange={(v) => onUpdate('showPreviews', v)}
+      />
     </div>
   </div>
 );
 
-const SearchSettings: React.FC<SettingsProps<typeof defaultSettings.search>> = ({
-  settings,
-  onUpdate,
-}) => (
-  <div className="space-y-6">
-    <h2 className="text-lg font-semibold text-gray-900">Search Configuration</h2>
+// Appearance Settings
+const AppearanceSettings: React.FC<{ settings: any; onUpdate: (key: string, value: unknown) => void }> = ({ settings, onUpdate }) => (
+  <div className="space-y-8">
+    <div>
+      <h2 className="text-xl font-semibold text-gray-900 mb-1">Apariencia</h2>
+      <p className="text-sm text-gray-500">Personaliza el aspecto de la aplicación</p>
+    </div>
 
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Default Result Limit
-          </label>
-          <input
-            type="number"
-            min="5"
-            max="100"
-            value={settings.defaultLimit}
-            onChange={(e) => onUpdate('defaultLimit', parseInt(e.target.value))}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Max Result Limit
-          </label>
-          <input
-            type="number"
-            min="20"
-            max="1000"
-            value={settings.maxLimit}
-            onChange={(e) => onUpdate('maxLimit', parseInt(e.target.value))}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
-        </div>
-      </div>
-
+    <div className="space-y-6">
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-3">
-          Vectorization Methods
-        </label>
-        <div className="space-y-3">
-          <label className="flex items-center gap-3">
-            <input
-              type="checkbox"
-              checked={settings.useTfIdf}
-              onChange={(e) => onUpdate('useTfIdf', e.target.checked)}
-              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-            />
-            <span>TF-IDF (Term Frequency-Inverse Document Frequency)</span>
-          </label>
-          <label className="flex items-center gap-3">
-            <input
-              type="checkbox"
-              checked={settings.useMinHash}
-              onChange={(e) => onUpdate('useMinHash', e.target.checked)}
-              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-            />
-            <span>MinHash (Similarity Detection)</span>
-          </label>
-          <label className="flex items-center gap-3">
-            <input
-              type="checkbox"
-              checked={settings.useLda}
-              onChange={(e) => onUpdate('useLda', e.target.checked)}
-              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-            />
-            <span>LDA (Latent Dirichlet Allocation)</span>
-          </label>
+        <label className="block text-sm font-medium text-gray-700 mb-3">Tema</label>
+        <div className="grid grid-cols-2 gap-4">
+          <button
+            onClick={() => onUpdate('theme', 'light')}
+            className={`p-6 rounded-2xl border-2 transition-all duration-200 flex flex-col items-center gap-3 ${
+              settings.theme === 'light' 
+                ? 'border-blue-500 bg-blue-50' 
+                : 'border-gray-200 hover:border-gray-300'
+            }`}
+          >
+            <Sun className={`w-8 h-8 ${settings.theme === 'light' ? 'text-blue-600' : 'text-gray-400'}`} />
+            <span className={`font-medium ${settings.theme === 'light' ? 'text-blue-600' : 'text-gray-600'}`}>Claro</span>
+          </button>
+          <button
+            onClick={() => onUpdate('theme', 'dark')}
+            className={`p-6 rounded-2xl border-2 transition-all duration-200 flex flex-col items-center gap-3 ${
+              settings.theme === 'dark' 
+                ? 'border-blue-500 bg-blue-50' 
+                : 'border-gray-200 hover:border-gray-300'
+            }`}
+          >
+            <Moon className={`w-8 h-8 ${settings.theme === 'dark' ? 'text-blue-600' : 'text-gray-400'}`} />
+            <span className={`font-medium ${settings.theme === 'dark' ? 'text-blue-600' : 'text-gray-600'}`}>Oscuro</span>
+          </button>
         </div>
       </div>
 
-      <div className="flex items-center justify-between">
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
-            Highlight Results
-          </label>
-          <p className="text-sm text-gray-500">
-            Highlight matching terms in results
-          </p>
-        </div>
-        <button
-          onClick={() => onUpdate('highlightEnabled', !settings.highlightEnabled)}
-          className={`
-            relative inline-flex h-6 w-11 items-center rounded-full transition-colors
-            ${settings.highlightEnabled ? 'bg-blue-600' : 'bg-gray-200'}
-          `}
-        >
-          <span
-            className={`
-              inline-block h-4 w-4 transform rounded-full bg-white transition-transform
-              ${settings.highlightEnabled ? 'translate-x-6' : 'translate-x-1'}
-            `}
-          />
-        </button>
-      </div>
+      <ToggleOption
+        label="Modo compacto"
+        description="Reduce el espaciado para ver más contenido"
+        checked={settings.compactMode}
+        onChange={(v) => onUpdate('compactMode', v)}
+      />
+
+      <ToggleOption
+        label="Animaciones"
+        description="Activa transiciones y efectos visuales"
+        checked={settings.animationsEnabled}
+        onChange={(v) => onUpdate('animationsEnabled', v)}
+      />
     </div>
   </div>
 );
 
-const StorageSettings: React.FC<SettingsProps<typeof defaultSettings.storage>> = ({
-  settings,
-  onUpdate,
-}) => (
-  <div className="space-y-6">
-    <h2 className="text-lg font-semibold text-gray-900">Storage Configuration</h2>
+// Notification Settings
+const NotificationSettings: React.FC<{ settings: any; onUpdate: (key: string, value: unknown) => void }> = ({ settings, onUpdate }) => (
+  <div className="space-y-8">
+    <div>
+      <h2 className="text-xl font-semibold text-gray-900 mb-1">Notificaciones</h2>
+      <p className="text-sm text-gray-500">Configura cómo quieres recibir alertas</p>
+    </div>
 
-    <div className="space-y-4">
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          MongoDB URI
-        </label>
-        <input
-          type="text"
-          value={settings.mongoUri}
-          onChange={(e) => onUpdate('mongoUri', e.target.value)}
-          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
-        />
-      </div>
+    <div className="space-y-6">
+      <ToggleOption
+        label="Notificaciones por email"
+        description="Recibe actualizaciones importantes en tu correo"
+        checked={settings.emailNotifications}
+        onChange={(v) => onUpdate('emailNotifications', v)}
+      />
 
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          Redis URI
-        </label>
-        <input
-          type="text"
-          value={settings.redisUri}
-          onChange={(e) => onUpdate('redisUri', e.target.value)}
-          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
-        />
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          Data Path
-        </label>
-        <input
-          type="text"
-          value={settings.dataPath}
-          onChange={(e) => onUpdate('dataPath', e.target.value)}
-          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
-        />
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          Max Document Size (MB)
-        </label>
-        <input
-          type="number"
-          min="1"
-          max="100"
-          value={settings.maxDocumentSize}
-          onChange={(e) => onUpdate('maxDocumentSize', parseInt(e.target.value))}
-          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-        />
-      </div>
-
-      <div className="flex items-center justify-between">
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
-            Enable Compression
-          </label>
-          <p className="text-sm text-gray-500">Compress stored documents</p>
-        </div>
-        <button
-          onClick={() => onUpdate('compressionEnabled', !settings.compressionEnabled)}
-          className={`
-            relative inline-flex h-6 w-11 items-center rounded-full transition-colors
-            ${settings.compressionEnabled ? 'bg-blue-600' : 'bg-gray-200'}
-          `}
-        >
-          <span
-            className={`
-              inline-block h-4 w-4 transform rounded-full bg-white transition-transform
-              ${settings.compressionEnabled ? 'translate-x-6' : 'translate-x-1'}
-            `}
-          />
-        </button>
-      </div>
+      <ToggleOption
+        label="Alertas de búsqueda"
+        description="Notificarte cuando haya nuevos documentos que coincidan con tus búsquedas guardadas"
+        checked={settings.searchAlerts}
+        onChange={(v) => onUpdate('searchAlerts', v)}
+      />
     </div>
   </div>
 );
 
-const SecuritySettings: React.FC<SettingsProps<typeof defaultSettings.security>> = ({
-  settings,
-  onUpdate,
-}) => (
-  <div className="space-y-6">
-    <h2 className="text-lg font-semibold text-gray-900">Security Configuration</h2>
-
-    <div className="space-y-4">
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          JWT Secret
-        </label>
-        <input
-          type="password"
-          value={settings.jwtSecret}
-          onChange={(e) => onUpdate('jwtSecret', e.target.value)}
-          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-        />
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          Token Expiration (seconds)
-        </label>
-        <input
-          type="number"
-          min="300"
-          max="86400"
-          value={settings.tokenExpiration}
-          onChange={(e) => onUpdate('tokenExpiration', parseInt(e.target.value))}
-          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-        />
-      </div>
-
-      <div className="flex items-center justify-between">
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
-            Rate Limiting
-          </label>
-          <p className="text-sm text-gray-500">Enable API rate limiting</p>
-        </div>
-        <button
-          onClick={() => onUpdate('rateLimitEnabled', !settings.rateLimitEnabled)}
-          className={`
-            relative inline-flex h-6 w-11 items-center rounded-full transition-colors
-            ${settings.rateLimitEnabled ? 'bg-blue-600' : 'bg-gray-200'}
-          `}
-        >
-          <span
-            className={`
-              inline-block h-4 w-4 transform rounded-full bg-white transition-transform
-              ${settings.rateLimitEnabled ? 'translate-x-6' : 'translate-x-1'}
-            `}
-          />
-        </button>
-      </div>
-
-      {settings.rateLimitEnabled && (
-        <div className="grid grid-cols-2 gap-4 pl-4 border-l-2 border-gray-200">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Requests per Window
-            </label>
-            <input
-              type="number"
-              min="10"
-              max="1000"
-              value={settings.rateLimitRequests}
-              onChange={(e) => onUpdate('rateLimitRequests', parseInt(e.target.value))}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Window Size (seconds)
-            </label>
-            <input
-              type="number"
-              min="10"
-              max="3600"
-              value={settings.rateLimitWindow}
-              onChange={(e) => onUpdate('rateLimitWindow', parseInt(e.target.value))}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-        </div>
-      )}
-
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          CORS Origins
-        </label>
-        <input
-          type="text"
-          value={settings.corsOrigins}
-          onChange={(e) => onUpdate('corsOrigins', e.target.value)}
-          placeholder="* for all, or comma-separated origins"
-          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-        />
-      </div>
+// Toggle Option Component
+const ToggleOption: React.FC<{
+  label: string;
+  description: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}> = ({ label, description, checked, onChange }) => (
+  <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors">
+    <div>
+      <p className="font-medium text-gray-900">{label}</p>
+      <p className="text-sm text-gray-500">{description}</p>
     </div>
+    <button
+      onClick={() => onChange(!checked)}
+      className={`relative w-14 h-8 rounded-full transition-all duration-300 ${
+        checked ? 'bg-blue-600' : 'bg-gray-300'
+      }`}
+    >
+      <span
+        className={`absolute top-1 w-6 h-6 bg-white rounded-full shadow-md transition-all duration-300 ${
+          checked ? 'left-7' : 'left-1'
+        }`}
+      />
+    </button>
   </div>
 );
-
-const NotificationSettings: React.FC<SettingsProps<typeof defaultSettings.notifications>> = ({
-  settings,
-  onUpdate,
-}) => (
-  <div className="space-y-6">
-    <h2 className="text-lg font-semibold text-gray-900">Notification Settings</h2>
-
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
-            Email Notifications
-          </label>
-          <p className="text-sm text-gray-500">Send alerts via email</p>
-        </div>
-        <button
-          onClick={() => onUpdate('emailEnabled', !settings.emailEnabled)}
-          className={`
-            relative inline-flex h-6 w-11 items-center rounded-full transition-colors
-            ${settings.emailEnabled ? 'bg-blue-600' : 'bg-gray-200'}
-          `}
-        >
-          <span
-            className={`
-              inline-block h-4 w-4 transform rounded-full bg-white transition-transform
-              ${settings.emailEnabled ? 'translate-x-6' : 'translate-x-1'}
-            `}
-          />
-        </button>
-      </div>
-
-      {settings.emailEnabled && (
-        <div className="pl-4 border-l-2 border-gray-200">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            SMTP Server
-          </label>
-          <input
-            type="text"
-            value={settings.emailSmtp}
-            onChange={(e) => onUpdate('emailSmtp', e.target.value)}
-            placeholder="smtp.example.com:587"
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
-        </div>
-      )}
-
-      <div className="flex items-center justify-between">
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
-            Slack Notifications
-          </label>
-          <p className="text-sm text-gray-500">Send alerts to Slack</p>
-        </div>
-        <button
-          onClick={() => onUpdate('slackEnabled', !settings.slackEnabled)}
-          className={`
-            relative inline-flex h-6 w-11 items-center rounded-full transition-colors
-            ${settings.slackEnabled ? 'bg-blue-600' : 'bg-gray-200'}
-          `}
-        >
-          <span
-            className={`
-              inline-block h-4 w-4 transform rounded-full bg-white transition-transform
-              ${settings.slackEnabled ? 'translate-x-6' : 'translate-x-1'}
-            `}
-          />
-        </button>
-      </div>
-
-      {settings.slackEnabled && (
-        <div className="pl-4 border-l-2 border-gray-200">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Webhook URL
-          </label>
-          <input
-            type="text"
-            value={settings.slackWebhook}
-            onChange={(e) => onUpdate('slackWebhook', e.target.value)}
-            placeholder="https://hooks.slack.com/..."
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
-        </div>
-      )}
-
-      <div className="border-t border-gray-200 pt-4">
-        <h3 className="text-sm font-medium text-gray-700 mb-3">Alert Types</h3>
-        <div className="space-y-3">
-          <label className="flex items-center gap-3">
-            <input
-              type="checkbox"
-              checked={settings.alertOnNodeFailure}
-              onChange={(e) => onUpdate('alertOnNodeFailure', e.target.checked)}
-              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-            />
-            <span>Node failure alerts</span>
-          </label>
-          <label className="flex items-center gap-3">
-            <input
-              type="checkbox"
-              checked={settings.alertOnRebalance}
-              onChange={(e) => onUpdate('alertOnRebalance', e.target.checked)}
-              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-            />
-            <span>Rebalance notifications</span>
-          </label>
-        </div>
-      </div>
-    </div>
-  </div>
-);
-
-// Default settings type
-const defaultSettings = {
-  general: {
-    systemName: 'DistriSearch',
-    timezone: 'UTC',
-    language: 'en',
-    darkMode: false,
-  },
-  cluster: {
-    replicationFactor: 2,
-    partitionCount: 16,
-    heartbeatInterval: 5000,
-    nodeTimeout: 30000,
-    autoRebalance: true,
-  },
-  search: {
-    defaultLimit: 20,
-    maxLimit: 100,
-    useTfIdf: true,
-    useMinHash: true,
-    useLda: false,
-    tfidfWeight: 0.5,
-    minhashWeight: 0.3,
-    ldaWeight: 0.2,
-    highlightEnabled: true,
-    highlightPreTag: '<mark>',
-    highlightPostTag: '</mark>',
-  },
-  storage: {
-    mongoUri: 'mongodb://localhost:27017',
-    redisUri: 'redis://localhost:6379',
-    dataPath: '/data/distrisearch',
-    maxDocumentSize: 10,
-    compressionEnabled: true,
-  },
-  security: {
-    jwtSecret: '********',
-    tokenExpiration: 3600,
-    rateLimitEnabled: true,
-    rateLimitRequests: 100,
-    rateLimitWindow: 60,
-    corsOrigins: '*',
-  },
-  notifications: {
-    emailEnabled: false,
-    emailSmtp: '',
-    slackEnabled: false,
-    slackWebhook: '',
-    alertOnNodeFailure: true,
-    alertOnRebalance: true,
-  },
-};

@@ -121,30 +121,32 @@ export const Documents: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-in fade-in duration-500">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Documents</h1>
-          <p className="text-gray-500">
-            {documents?.total || 0} documents in the system
+          <h1 className="text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
+            Mis Documentos
+          </h1>
+          <p className="text-gray-500 mt-1">
+            {documents?.total || 0} documentos en tu colección
           </p>
         </div>
         <button
           onClick={() => setShowUpload(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl hover:shadow-lg hover:shadow-blue-500/25 transition-all duration-300 transform hover:scale-105 font-medium"
         >
           <Plus className="w-5 h-5" />
-          Upload Document
+          Subir Documento
         </button>
       </div>
 
       {/* Toolbar */}
-      <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+      <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between bg-white/50 backdrop-blur-sm p-4 rounded-2xl border border-gray-100">
         <SearchBar
           value={searchQuery}
           onChange={setSearchQuery}
-          placeholder="Filter documents..."
+          placeholder="Buscar en tus documentos..."
           className="w-full sm:w-96"
         />
 
