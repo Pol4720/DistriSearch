@@ -29,18 +29,21 @@ export const Dashboard: React.FC = () => {
 
   // Generate search metrics from REAL historical data with proper timestamps
   const searchMetricsData = React.useMemo(() => {
-    const now = new Date();
-    const buckets: { time: string; searches: number; startTime: Date; endTime: Date }[] = [];
+    // Use UTC time since backend stores timestamps in UTC
+    const nowUTC = Date.now();
+    const buckets: { time: string; searches: number; startTime: number; endTime: number }[] = [];
     
-    // Create 6 time buckets (1 hour each for more recent visibility)
+    // Create 6 time buckets (1 hour each)
     for (let i = 5; i >= 0; i--) {
-      const bucketEnd = new Date(now.getTime() - i * 3600000); // 1 hour intervals
-      const bucketStart = new Date(now.getTime() - (i + 1) * 3600000);
+      const bucketEndMs = nowUTC - i * 3600000; // 1 hour intervals
+      const bucketStartMs = nowUTC - (i + 1) * 3600000;
+      // Format time in local timezone for display
+      const displayTime = new Date(bucketEndMs).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
       buckets.push({
-        time: bucketEnd.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }),
+        time: displayTime,
         searches: 0,
-        startTime: bucketStart,
-        endTime: bucketEnd
+        startTime: bucketStartMs,
+        endTime: bucketEndMs
       });
     }
     
@@ -48,11 +51,11 @@ export const Dashboard: React.FC = () => {
     if (searchHistory?.history) {
       searchHistory.history.forEach((item: { timestamp?: string }) => {
         if (item.timestamp) {
-          // Parse UTC timestamp and convert to local for comparison
-          const searchTime = new Date(item.timestamp + (item.timestamp.endsWith('Z') ? '' : 'Z'));
+          // Parse as UTC - backend sends UTC timestamps without 'Z' suffix
+          const searchTimeMs = new Date(item.timestamp + 'Z').getTime();
           
           for (let i = 0; i < buckets.length; i++) {
-            if (searchTime >= buckets[i].startTime && searchTime < buckets[i].endTime) {
+            if (searchTimeMs >= buckets[i].startTime && searchTimeMs < buckets[i].endTime) {
               buckets[i].searches++;
               break;
             }
