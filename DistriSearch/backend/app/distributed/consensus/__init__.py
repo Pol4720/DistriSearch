@@ -10,7 +10,8 @@ Components:
 - LogEntry: Replicated log entries
 - LogReplicator: Log replication between nodes
 - LeaderElection: Leader election mechanism
-- StateMachine: State machine for applying committed entries
+- StateMachine: In-memory state machine for applying committed entries
+- PersistentStateMachine: SQLite-backed state machine for AP mode
 - PartitionTolerantConsensus: AP-mode partition-tolerant consensus (CAP theorem)
 """
 
@@ -25,6 +26,7 @@ from .log_entry import LogEntry, LogStore
 from .log_replication import LogReplicator
 from .leader_election import LeaderElection
 from .state_machine import StateMachine, Command, CommandType
+from .persistent_state_machine import PersistentStateMachine
 from .partition_tolerant import (
     PartitionTolerantConsensus,
     PartitionState,
@@ -58,4 +60,6 @@ __all__ = [
     "VersionedData",
     "APReadResult",
     "APWriteResult",
+    # Persistent State Machine (SQLite-backed for AP mode)
+    "PersistentStateMachine",
 ]

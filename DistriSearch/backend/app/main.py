@@ -1,6 +1,11 @@
 """
 DistriSearch Main Application
 FastAPI application entry point for the distributed search system
+
+Architecture: AP (Available & Partition-tolerant)
+- SQLite (Raft-replicated): Users, nodes, partitions
+- Local MongoDB per node: Documents
+- Gossip Protocol: User-document registry
 """
 
 from fastapi import FastAPI, Request, status
@@ -37,8 +42,10 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     
     try:
-        # Initialize all dependencies
+        # Initialize AP Mode dependencies
+        logger.info("Initializing DistriSearch (SQLite + Local MongoDB)")
         await init_dependencies(settings)
+        
         logger.info(f"Node {settings.node_id} started as {settings.node_role}")
         logger.info(f"API server running on {settings.api_host}:{settings.api_port}")
         
@@ -68,12 +75,12 @@ def create_application() -> FastAPI:
         * **Cluster Management**: Automatic leader election, rebalancing, and fault tolerance
         * **Real-time Updates**: WebSocket support for live dashboard updates
         
-        ## Architecture
+        ## Architecture (AP - Available & Partition-tolerant)
         
-        - **Master Node**: Coordinates the cluster, handles VP-Tree indexing
-        - **Slave Nodes**: Store documents and process search queries
-        - **MongoDB**: Persistent document and metadata storage
-        - **Raft-Lite**: Consensus protocol for master election
+        - **SQLite (Raft-replicated)**: Users, nodes, partitions (available during partitions)
+        - **Local MongoDB per Node**: Documents stored locally on each slave
+        - **Gossip Protocol**: User-document registry for eventual consistency
+        - **Each node can authenticate users independently**
         
         ## Authentication
         

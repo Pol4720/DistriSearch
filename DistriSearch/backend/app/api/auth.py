@@ -1,6 +1,8 @@
 """
 Authentication API Router
 Handles user registration, login, and token management for DistriSearch
+
+Uses SQLite UserRepository (Raft-replicated for high availability)
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request
@@ -12,24 +14,25 @@ import logging
 import re
 
 from ..middleware.auth import jwt_handler, require_auth
-from ..storage.user_repository import UserRepository
+from ..storage.sqlite_user_repository import SQLiteUserRepository
 from ..storage.models import UserModel, UserStatus, UserRole
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
+
 # Dependency to get user repository
-_user_repository: Optional[UserRepository] = None
+_user_repository: Optional[SQLiteUserRepository] = None
 
 
-def set_user_repository(repo: UserRepository) -> None:
-    """Set the user repository instance."""
+def set_sqlite_user_repository(repo: SQLiteUserRepository) -> None:
+    """Set the SQLite user repository instance."""
     global _user_repository
     _user_repository = repo
 
 
-async def get_user_repository() -> UserRepository:
+async def get_user_repository() -> SQLiteUserRepository:
     """Get user repository dependency."""
     if _user_repository is None:
         raise HTTPException(

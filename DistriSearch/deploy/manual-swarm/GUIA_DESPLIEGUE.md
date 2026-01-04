@@ -7,6 +7,28 @@ Esta guía explica paso a paso cómo desplegar DistriSearch en un cluster Docker
 
 ---
 
+## 🏗️ Arquitectura Distribuida (Available & Partition-tolerant)
+
+DistriSearch utiliza una arquitectura que garantiza disponibilidad incluso
+durante particiones de red:
+
+### Componentes por Nodo
+
+| Componente | Ubicación | Propósito |
+|------------|-----------|-----------|
+| **SQLite** | Local (Raft-replicado) | Usuarios, nodos, particiones |
+| **MongoDB** | LOCAL por nodo | Documentos (cada slave tiene el suyo) |
+| **Redis** | LOCAL por nodo | Caché local |
+| **UserDocumentRegistry** | Gossip-based | Mapeo usuario→documentos |
+
+### Beneficios
+- ✅ **Autenticación durante particiones**: SQLite local tiene usuarios
+- ✅ **Operación independiente**: Cada nodo puede funcionar aislado
+- ✅ **Sin punto único de fallo**: MongoDB distribuido por nodo
+- ✅ **Consistencia eventual**: Gossip sincroniza el registry
+
+---
+
 ## 📋 Requisitos Previos
 
 ### En TODAS las máquinas:

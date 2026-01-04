@@ -98,6 +98,16 @@ class Settings(BaseSettings):
     documents_dir: str = Field(default="/app/data/documents", alias="DOCUMENTS_DIR")
     max_upload_size_mb: int = Field(default=500, alias="MAX_UPLOAD_SIZE_MB")
     
+    # Local MongoDB (each node has its own MongoDB instance)
+    local_mongodb_uri: Optional[str] = Field(default=None, alias="LOCAL_MONGODB_URI")
+    
+    # SQLite path (auto-generated based on data_dir and node_id)
+    sqlite_db_path: Optional[str] = Field(default=None, alias="SQLITE_DB_PATH")
+    
+    # Gossip protocol settings
+    gossip_interval: int = Field(default=1000, alias="GOSSIP_INTERVAL")  # milliseconds
+    gossip_fanout: int = Field(default=3, alias="GOSSIP_FANOUT")  # nodes per round
+    
     # Security
     jwt_secret: Optional[str] = Field(default=None, alias="JWT_SECRET")
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
@@ -141,6 +151,21 @@ class Settings(BaseSettings):
     def max_upload_size_bytes(self) -> int:
         """Max upload size in bytes."""
         return self.max_upload_size_mb * 1024 * 1024
+    
+    @property
+    def effective_local_mongodb_uri(self) -> str:
+        """Get the local MongoDB URI."""
+        if self.local_mongodb_uri:
+            return self.local_mongodb_uri
+        # Default: use same host but different database
+        return self.mongodb_uri
+    
+    @property
+    def effective_sqlite_path(self) -> str:
+        """Get the SQLite database path."""
+        if self.sqlite_db_path:
+            return self.sqlite_db_path
+        return f"{self.data_dir}/sqlite/{self.node_id}.db"
 
 
 @lru_cache()
