@@ -212,22 +212,28 @@ class TestMessageBroker:
         async def handler(message: Message):
             received_messages.append(message)
         
-        message_broker.subscribe(MessageType.DOCUMENT_INDEXED.value, handler)
+        # Start the broker's processing loop
+        await message_broker.start()
         
-        # Simulate receiving a message
-        message = Message(
-            source="node-2",
-            target="node-1",
-            type=MessageType.DOCUMENT_INDEXED,
-            payload={"doc_id": "doc-1"},
-            timestamp=datetime.now(),
-        )
-        
-        await message_broker.publish(message)
-        await asyncio.sleep(0.1)  # Let handlers run
-        
-        assert len(received_messages) == 1
-        assert received_messages[0].payload["doc_id"] == "doc-1"
+        try:
+            message_broker.subscribe(MessageType.DOCUMENT_INDEXED.value, handler)
+            
+            # Simulate receiving a message
+            message = Message(
+                source="node-2",
+                target="node-1",
+                type=MessageType.DOCUMENT_INDEXED,
+                payload={"doc_id": "doc-1"},
+                timestamp=datetime.now(),
+            )
+            
+            await message_broker.publish(message)
+            await asyncio.sleep(0.2)  # Let handlers run
+            
+            assert len(received_messages) == 1
+            assert received_messages[0].payload["doc_id"] == "doc-1"
+        finally:
+            await message_broker.stop()
 
 
 # ============================================================================

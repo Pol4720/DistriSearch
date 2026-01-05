@@ -593,6 +593,14 @@ class VPTree:
         leaf_sizes = [len(n.documents) for n in leaf_nodes]
         depths = [n.depth for n in self._all_nodes.values()]
         
+        # Count all documents: documents in leaves + vantage points in internal nodes
+        docs_in_leaves = sum(leaf_sizes)
+        internal_nodes_with_vp = sum(
+            1 for n in self._all_nodes.values()
+            if not n.is_leaf and n.vantage_point is not None
+        )
+        total_documents = docs_in_leaves + internal_nodes_with_vp
+        
         return {
             "total_nodes": len(self._all_nodes),
             "leaf_nodes": len(leaf_nodes),
@@ -601,5 +609,5 @@ class VPTree:
             "avg_leaf_size": np.mean(leaf_sizes) if leaf_sizes else 0,
             "min_leaf_size": min(leaf_sizes) if leaf_sizes else 0,
             "max_leaf_size": max(leaf_sizes) if leaf_sizes else 0,
-            "total_documents": sum(leaf_sizes),
+            "total_documents": total_documents,
         }

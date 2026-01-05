@@ -276,8 +276,11 @@ class TestVectorizationIntegration:
         """Test handling of special characters."""
         text = "Test with special chars: !@#$%^&*() and émojis 🎉"
         
+        # Need multiple documents for TF-IDF to work with min_df/max_df settings
+        texts = [text, "Another document for vectorization", "Third document here"]
+        
         # Should not raise
-        tfidf_processor.fit([text])
+        tfidf_processor.fit(texts)
         tfidf_dict = tfidf_processor.get_tfidf_dict(text)
         minhash_sig = minhash_generator.compute_signature_from_text(text)
         
@@ -288,8 +291,11 @@ class TestVectorizationIntegration:
         """Test handling of unicode text."""
         text = "Texto en español con acentos: á é í ó ú ñ"
         
+        # Need multiple documents for TF-IDF to work with min_df/max_df settings
+        texts = [text, "Otro documento en español", "Tercer documento aquí"]
+        
         # Should not raise
-        tfidf_processor.fit([text])
+        tfidf_processor.fit(texts)
         tfidf_dict = tfidf_processor.get_tfidf_dict(text)
         minhash_sig = minhash_generator.compute_signature_from_text(text)
         

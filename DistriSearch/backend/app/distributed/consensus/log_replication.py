@@ -386,7 +386,13 @@ class LogReplicator:
         
         # Append entries
         if args.entries:
-            entries = [LogEntry.from_dict(e) for e in args.entries]
+            # Handle both LogEntry objects and dicts
+            entries = []
+            for e in args.entries:
+                if isinstance(e, LogEntry):
+                    entries.append(e)
+                else:
+                    entries.append(LogEntry.from_dict(e))
             success = await self.log_store.append_entries(
                 entries,
                 args.prev_log_index,

@@ -657,7 +657,8 @@ class TestRaftNodeIntegration:
             last_log_term=0
         )
         
-        reply = await raft_node.handle_request_vote(args.to_dict())
+        # Use handle_rpc for dict-based interface
+        reply = await raft_node.handle_rpc("request_vote", args.to_dict())
         
         assert "vote_granted" in reply
         assert "term" in reply
@@ -674,7 +675,8 @@ class TestRaftNodeIntegration:
             leader_commit=0
         )
         
-        reply = await raft_node.handle_append_entries(args.to_dict())
+        # Use handle_rpc for dict-based interface
+        reply = await raft_node.handle_rpc("append_entries", args.to_dict())
         
         assert "success" in reply
         assert "term" in reply

@@ -227,11 +227,14 @@ class RaftNode:
         Handle incoming RequestVote RPC.
         
         Args:
-            args: RequestVote arguments
+            args: RequestVote arguments (can be dataclass or dict)
             
         Returns:
             RequestVote reply
         """
+        # Handle both dict and dataclass inputs
+        if isinstance(args, dict):
+            args = RequestVoteArgs.from_dict(args)
         return await self.election.handle_request_vote(args)
     
     async def handle_append_entries(
@@ -242,11 +245,15 @@ class RaftNode:
         Handle incoming AppendEntries RPC.
         
         Args:
-            args: AppendEntries arguments
+            args: AppendEntries arguments (can be dataclass or dict)
             
         Returns:
             AppendEntries reply
         """
+        # Handle both dict and dataclass inputs
+        if isinstance(args, dict):
+            args = AppendEntriesArgs.from_dict(args)
+        
         # Reset election timer on valid AppendEntries
         await self.election.start_election_timer()
         

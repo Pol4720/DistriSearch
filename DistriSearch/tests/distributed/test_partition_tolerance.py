@@ -65,11 +65,14 @@ async def consensus(node_id: str, mock_raft_node) -> PartitionTolerantConsensus:
         partition_threshold_sec=30.0,
         partition_check_interval=5.0,
     )
-    # Add other known nodes
+    # Add other known nodes and mark them as reachable
     consensus._all_known_nodes.add("node-2")
     consensus._all_known_nodes.add("node-3")
     consensus._node_last_seen["node-2"] = datetime.utcnow()
     consensus._node_last_seen["node-3"] = datetime.utcnow()
+    # Initialize reachable nodes (required for partition detection)
+    consensus._state.reachable_nodes.add("node-2")
+    consensus._state.reachable_nodes.add("node-3")
     return consensus
 
 
@@ -174,7 +177,7 @@ class TestPartitionDetection:
         # Simulate one node becoming unreachable
         consensus._node_last_seen["node-2"] = datetime.utcnow() - timedelta(seconds=60)
         
-        await consensus._check_partition_status()
+        consensus._check_partition_status()
         
         # Should be partial (1 of 2 other nodes down) or still connected
         status = consensus._state.status
@@ -183,12 +186,9 @@ class TestPartitionDetection:
     @pytest.mark.asyncio
     async def test_detect_full_partition(self, consensus):
         """Test detection of full partition (majority unreachable)."""
-        # Simulate all other nodes becoming unreachable
-        old_time = datetime.utcnow() - timedelta(seconds=120)
-        consensus._node_last_seen["node-2"] = old_time
-        consensus._node_last_seen["node-3"] = old_time
-        
-        await consensus._check_partition_status()
+        # Simulate all other nodes becoming unreachable using record_node_failure
+        consensus.record_node_failure("node-2")
+        consensus.record_node_failure("node-3")
         
         # Should be partitioned (lost majority)
         status = consensus._state.status
@@ -198,15 +198,12 @@ class TestPartitionDetection:
     async def test_partition_healing(self, consensus):
         """Test partition healing when nodes reconnect."""
         # First, create a partition
-        old_time = datetime.utcnow() - timedelta(seconds=120)
-        consensus._node_last_seen["node-2"] = old_time
-        consensus._node_last_seen["node-3"] = old_time
-        await consensus._check_partition_status()
+        consensus.record_node_failure("node-2")
+        consensus.record_node_failure("node-3")
         
         # Now simulate nodes coming back
-        consensus._node_last_seen["node-2"] = datetime.utcnow()
-        consensus._node_last_seen["node-3"] = datetime.utcnow()
-        await consensus._check_partition_status()
+        consensus.record_node_contact("node-2")
+        consensus.record_node_contact("node-3")
         
         # Should be healing or connected
         status = consensus._state.status
@@ -230,11 +227,9 @@ class TestAPModeAvailability:
             node_id=consensus.node_id
         )
         
-        # Simulate partition
-        old_time = datetime.utcnow() - timedelta(seconds=120)
-        consensus._node_last_seen["node-2"] = old_time
-        consensus._node_last_seen["node-3"] = old_time
-        await consensus._check_partition_status()
+        # Simulate partition using record_node_failure
+        consensus.record_node_failure("node-2")
+        consensus.record_node_failure("node-3")
         
         # Read should still work
         response = await consensus.read(key, ConsistencyLevel.EVENTUAL)
@@ -246,11 +241,9 @@ class TestAPModeAvailability:
     @pytest.mark.asyncio
     async def test_write_available_during_partition(self, consensus):
         """Test that writes succeed during network partition (AP mode)."""
-        # Simulate partition
-        old_time = datetime.utcnow() - timedelta(seconds=120)
-        consensus._node_last_seen["node-2"] = old_time
-        consensus._node_last_seen["node-3"] = old_time
-        await consensus._check_partition_status()
+        # Simulate partition using record_node_failure
+        consensus.record_node_failure("node-2")
+        consensus.record_node_failure("node-3")
         
         # Write should still work (stored locally, synced later)
         key = "partition-write"
@@ -273,11 +266,9 @@ class TestAPModeAvailability:
             node_id=consensus.node_id
         )
         
-        # Simulate partition
-        old_time = datetime.utcnow() - timedelta(seconds=120)
-        consensus._node_last_seen["node-2"] = old_time
-        consensus._node_last_seen["node-3"] = old_time
-        await consensus._check_partition_status()
+        # Simulate partition using record_node_failure
+        consensus.record_node_failure("node-2")
+        consensus.record_node_failure("node-3")
         
         # Read should indicate potential staleness
         response = await consensus.read(key, ConsistencyLevel.EVENTUAL)
@@ -432,10 +423,8 @@ class TestPartitionToleranceIntegration:
         await consensus.write(key, {"phase": 1}, ConsistencyLevel.LOCAL)
         
         # Phase 2: Partition occurs
-        old_time = datetime.utcnow() - timedelta(seconds=120)
-        consensus._node_last_seen["node-2"] = old_time
-        consensus._node_last_seen["node-3"] = old_time
-        await consensus._check_partition_status()
+        consensus.record_node_failure("node-2")
+        consensus.record_node_failure("node-3")
         
         assert consensus._state.status == PartitionStatus.PARTITIONED
         
@@ -445,9 +434,8 @@ class TestPartitionToleranceIntegration:
         assert response.data["phase"] == 2
         
         # Phase 4: Partition heals
-        consensus._node_last_seen["node-2"] = datetime.utcnow()
-        consensus._node_last_seen["node-3"] = datetime.utcnow()
-        await consensus._check_partition_status()
+        consensus.record_node_contact("node-2")
+        consensus.record_node_contact("node-3")
         
         # Should be healing or connected
         status = consensus._state.status

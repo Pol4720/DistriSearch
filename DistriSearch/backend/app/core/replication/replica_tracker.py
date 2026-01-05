@@ -200,7 +200,7 @@ class ReplicaTracker:
             document_id=document_id,
             node_id=node_id,
             is_primary=False,
-            status=ReplicaStatus.PENDING,
+            status=ReplicaStatus.SYNCING,  # Start as syncing (considered healthy)
             size_bytes=size_bytes or (doc.primary.size_bytes if doc.primary else 0),
             checksum=checksum or (doc.primary.checksum if doc.primary else None)
         )
