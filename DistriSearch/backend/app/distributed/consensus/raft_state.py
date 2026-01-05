@@ -165,6 +165,16 @@ class RaftState:
         return self._role == NodeRole.LEADER
     
     @property
+    def commit_index(self) -> int:
+        """Get the commit index."""
+        return self.volatile.commit_index
+    
+    @property
+    def last_applied(self) -> int:
+        """Get the last applied index."""
+        return self.volatile.last_applied
+    
+    @property
     def cluster_nodes(self) -> Dict[str, str]:
         """Get cluster node addresses."""
         return self._cluster_nodes.copy()

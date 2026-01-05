@@ -55,6 +55,9 @@ _document_registry: Optional[UserDocumentRegistry] = None
 # MongoDB (local per node, documents only)
 _local_mongodb_client: Optional[MongoDBClient] = None
 _local_document_repository: Optional[DocumentRepository] = None
+_search_history_repository: Optional[Any] = None
+_node_repository: Optional[Any] = None
+_cluster_repository: Optional[Any] = None
 
 # Distributed services
 _raft_node: Optional[RaftNode] = None
@@ -131,8 +134,7 @@ async def init_dependencies(settings: Settings):
     sqlite_path.parent.mkdir(parents=True, exist_ok=True)
     
     _sqlite_client = SQLiteClient(db_path=str(sqlite_path))
-    await _sqlite_client.connect()
-    await _sqlite_client.initialize_schema()
+    await _sqlite_client.connect()  # connect() already initializes schema
     
     # Create SQLite repositories
     _sqlite_user_repository = SQLiteUserRepository(_sqlite_client)
@@ -144,7 +146,7 @@ async def init_dependencies(settings: Settings):
     # =========================================================================
     # 2. Initialize Document Registry (Gossip-based)
     # =========================================================================
-    _document_registry = UserDocumentRegistry(local_node_id=node_id)
+    _document_registry = UserDocumentRegistry(client=_sqlite_client, node_id=node_id)
     
     logger.info("UserDocumentRegistry initialized for Gossip protocol")
     
@@ -164,6 +166,12 @@ async def init_dependencies(settings: Settings):
     
     _local_document_repository = DocumentRepository(_local_mongodb_client)
     await _local_document_repository.ensure_indexes()
+    
+    # Initialize Search History Repository
+    global _search_history_repository
+    from ..storage.mongodb import SearchHistoryRepository
+    _search_history_repository = SearchHistoryRepository(_local_mongodb_client)
+    await _search_history_repository.ensure_indexes()
     
     logger.info(f"Local MongoDB initialized: {local_mongo_db}")
     
@@ -195,7 +203,7 @@ async def init_dependencies(settings: Settings):
     await log_store.initialize()
     
     _persistent_state_machine = PersistentStateMachine(
-        state=_raft_node._state,  # Share Raft state
+        state=_raft_node.state,  # Share Raft state
         log_store=log_store,
         sqlite_client=_sqlite_client,
         document_registry=_document_registry,
@@ -354,6 +362,12 @@ async def get_local_document_repository() -> DocumentRepository:
     return _local_document_repository
 
 
+# Alias for backwards compatibility
+async def get_document_repository() -> DocumentRepository:
+    """Alias for get_local_document_repository."""
+    return await get_local_document_repository()
+
+
 async def get_persistent_state_machine() -> PersistentStateMachine:
     """Get persistent state machine."""
     if _persistent_state_machine is None:
@@ -496,3 +510,35 @@ async def rate_limit_search(request: Request):
 async def rate_limit_upload(request: Request):
     """Rate limit for upload endpoints."""
     await upload_rate_limiter.check_rate_limit(request)
+
+
+# =============================================================================
+# Additional Repository Dependencies
+# =============================================================================
+
+async def get_search_history_repository():
+    """Get search history repository."""
+    global _search_history_repository
+    if _search_history_repository is None:
+        # Return a mock or None if not initialized
+        return None
+    return _search_history_repository
+
+
+async def get_cluster_repository():
+    """Get cluster repository."""
+    global _cluster_repository
+    if _cluster_repository is None:
+        return None
+    return _cluster_repository
+
+
+async def get_db():
+    """Get database client (MongoDB)."""
+    global _local_mongodb_client
+    if _local_mongodb_client is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database not initialized"
+        )
+    return _local_mongodb_client

@@ -168,8 +168,7 @@ class PersistentStateMachine:
         if self._initialized:
             return
         
-        # Initialize SQLite schema
-        await self.sqlite.initialize_schema()
+        # SQLite schema is already initialized in SQLiteClient.connect()
         
         # Create repositories
         self.user_repo = SQLiteUserRepository(self.sqlite)

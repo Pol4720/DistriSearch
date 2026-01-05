@@ -34,7 +34,7 @@ fi
 echo "Checking Master availability..."
 MASTER_READY=false
 for i in $(seq 1 10); do
-    if curl -sf "http://${MASTER_HOST}:${MASTER_PORT:-8001}/health" >/dev/null 2>&1; then
+    if curl -sf "http://${MASTER_HOST}:${MASTER_PORT:-8001}/api/v1/health/live" >/dev/null 2>&1; then
         echo "Master is ready!"
         MASTER_READY=true
         break
@@ -49,6 +49,12 @@ fi
 
 # Create necessary directories
 mkdir -p /app/data/documents /app/data/index /app/logs
+
+# Generate SSL certificates if they don't exist
+if [ ! -f /etc/nginx/ssl/server.crt ]; then
+    echo "Generating SSL certificates..."
+    /generate-ssl.sh
+fi
 
 # Set proper permissions
 chown -R www-data:www-data /var/www/html

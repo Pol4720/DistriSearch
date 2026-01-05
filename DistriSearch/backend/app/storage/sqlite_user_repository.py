@@ -363,7 +363,20 @@ class SQLiteUserRepository:
             "password_reset_token": None,
             "password_reset_expires": None,
         })
-    
+
+    async def update_last_login(self, user_id: str) -> None:
+        """
+        Update user's last login timestamp.
+        
+        Args:
+            user_id: User ID
+        """
+        await self.update(user_id, {
+            "last_login": datetime.now().isoformat(),
+            "failed_login_attempts": 0,
+            "locked_until": None,
+        })
+
     def _user_to_row(self, user: UserModel) -> Dict[str, Any]:
         """Convert UserModel to SQLite row dictionary."""
         return {

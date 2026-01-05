@@ -138,7 +138,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60
 )
 async def register(
     request: RegisterRequest,
-    user_repo: UserRepository = Depends(get_user_repository)
+    user_repo: SQLiteUserRepository = Depends(get_user_repository)
 ):
     """
     Register a new user account.
@@ -207,7 +207,7 @@ async def register(
 )
 async def login(
     request: LoginRequest,
-    user_repo: UserRepository = Depends(get_user_repository)
+    user_repo: SQLiteUserRepository = Depends(get_user_repository)
 ):
     """
     Authenticate user and return tokens.
@@ -298,7 +298,7 @@ async def login(
 )
 async def refresh_token(
     request: RefreshTokenRequest,
-    user_repo: UserRepository = Depends(get_user_repository)
+    user_repo: SQLiteUserRepository = Depends(get_user_repository)
 ):
     """
     Refresh access token using refresh token.
@@ -373,7 +373,7 @@ async def refresh_token(
 )
 async def logout(
     current_user: dict = Depends(require_auth),
-    user_repo: UserRepository = Depends(get_user_repository)
+    user_repo: SQLiteUserRepository = Depends(get_user_repository)
 ):
     """
     Logout user and invalidate refresh token.
@@ -395,7 +395,7 @@ async def logout(
 )
 async def get_current_user(
     current_user: dict = Depends(require_auth),
-    user_repo: UserRepository = Depends(get_user_repository)
+    user_repo: SQLiteUserRepository = Depends(get_user_repository)
 ):
     """
     Get current authenticated user's information.
@@ -431,7 +431,7 @@ async def get_current_user(
 async def change_password(
     request: ChangePasswordRequest,
     current_user: dict = Depends(require_auth),
-    user_repo: UserRepository = Depends(get_user_repository)
+    user_repo: SQLiteUserRepository = Depends(get_user_repository)
 ):
     """
     Change current user's password.
