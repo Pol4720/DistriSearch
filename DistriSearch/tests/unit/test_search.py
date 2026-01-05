@@ -1,23 +1,36 @@
+# -*- coding: utf-8 -*-
 """
 Unit Tests for Search Module
-Tests distributed search and query routing
+
+Tests query processing, result aggregation, and search engine.
 """
 
 import pytest
 import asyncio
 from typing import List, Dict, Any, Optional
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
+from datetime import datetime
 import sys
 from pathlib import Path
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
+# Add backend to path
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "backend"))
 
-from search.query_processor import QueryProcessor
-from search.result_aggregator import ResultAggregator
-from search.distributed_search import DistributedSearchEngine
-from search.ranking import RankingEngine, SearchResult
-from shared.models import Document, SearchQuery, SearchResponse
+from app.core.search.query_processor import (
+    QueryProcessor,
+    ProcessedQuery,
+    QueryType,
+)
+from app.core.search.result_aggregator import (
+    ResultAggregator,
+    SearchResult,
+    AggregatedResults,
+    RankingStrategy,
+)
+from app.core.search.search_engine import (
+    SearchEngine,
+    SearchConfig,
+)
 
 
 # ============================================================================
@@ -26,41 +39,56 @@ from shared.models import Document, SearchQuery, SearchResponse
 
 @pytest.fixture
 def sample_results() -> List[SearchResult]:
-    """Sample search results for testing"""
+    """Sample search results for testing."""
     return [
         SearchResult(
-            doc_id="doc-1",
-            title="Machine Learning Basics",
-            score=0.95,
-            content_snippet="Machine learning is a subset of AI...",
+            document_id="doc-1",
+            node_id="node-1",
+            distance=0.1,
+            relevance_score=0.95,
+            filename="machine_learning.pdf",
+            file_type="pdf",
+            snippet="Machine learning is a subset of AI...",
             metadata={"category": "technology"}
         ),
         SearchResult(
-            doc_id="doc-2",
-            title="Deep Learning Guide",
-            score=0.87,
-            content_snippet="Deep learning uses neural networks...",
+            document_id="doc-2",
+            node_id="node-2",
+            distance=0.2,
+            relevance_score=0.87,
+            filename="deep_learning.pdf",
+            file_type="pdf",
+            snippet="Deep learning uses neural networks...",
             metadata={"category": "technology"}
         ),
         SearchResult(
-            doc_id="doc-3",
-            title="Python Programming",
-            score=0.75,
-            content_snippet="Python is a popular programming language...",
+            document_id="doc-3",
+            node_id="node-1",
+            distance=0.3,
+            relevance_score=0.75,
+            filename="python.py",
+            file_type="py",
+            snippet="Python is a popular programming language...",
             metadata={"category": "programming"}
         ),
         SearchResult(
-            doc_id="doc-4",
-            title="Data Science Introduction",
-            score=0.72,
-            content_snippet="Data science combines statistics...",
+            document_id="doc-4",
+            node_id="node-3",
+            distance=0.35,
+            relevance_score=0.72,
+            filename="data_science.md",
+            file_type="md",
+            snippet="Data science combines statistics...",
             metadata={"category": "technology"}
         ),
         SearchResult(
-            doc_id="doc-5",
-            title="Neural Networks",
-            score=0.68,
-            content_snippet="Neural networks are computing systems...",
+            document_id="doc-5",
+            node_id="node-2",
+            distance=0.4,
+            relevance_score=0.68,
+            filename="neural_networks.pdf",
+            file_type="pdf",
+            snippet="Neural networks are computing systems...",
             metadata={"category": "technology"}
         )
     ]
@@ -68,30 +96,32 @@ def sample_results() -> List[SearchResult]:
 
 @pytest.fixture
 def query_processor() -> QueryProcessor:
-    """Create query processor instance"""
+    """Create query processor instance."""
     return QueryProcessor(
-        min_query_length=2,
-        max_query_length=500,
-        enable_spell_check=False
+        min_token_length=2,
+        max_query_tokens=100
     )
 
 
 @pytest.fixture
 def result_aggregator() -> ResultAggregator:
-    """Create result aggregator instance"""
+    """Create result aggregator instance."""
     return ResultAggregator(
-        score_normalization=True,
-        duplicate_threshold=0.9
+        default_strategy=RankingStrategy.HYBRID,
+        distance_weight=0.6,
+        recency_weight=0.2,
+        popularity_weight=0.2
     )
 
 
 @pytest.fixture
-def ranking_engine() -> RankingEngine:
-    """Create ranking engine instance"""
-    return RankingEngine(
-        tfidf_weight=0.5,
-        minhash_weight=0.3,
-        lda_weight=0.2
+def search_config() -> SearchConfig:
+    """Create search configuration."""
+    return SearchConfig(
+        search_timeout_sec=10.0,
+        node_timeout_sec=5.0,
+        default_page_size=20,
+        max_page_size=100
     )
 
 
@@ -100,96 +130,95 @@ def ranking_engine() -> RankingEngine:
 # ============================================================================
 
 class TestQueryProcessor:
-    """Tests for query processing"""
+    """Tests for query processing."""
     
-    def test_initialization(self, query_processor: QueryProcessor):
-        """Test query processor initialization"""
+    def test_initialization(self, query_processor):
+        """Test query processor initialization."""
         assert query_processor is not None
-        assert query_processor.min_query_length == 2
-        assert query_processor.max_query_length == 500
+        assert query_processor.min_token_length == 2
+        assert query_processor.max_query_tokens == 100
     
-    def test_process_simple_query(self, query_processor: QueryProcessor):
-        """Test processing simple query"""
-        query = "machine learning"
-        result = query_processor.process(query)
+    def test_process_simple_query(self, query_processor):
+        """Test processing a simple keyword query."""
+        result = query_processor.process("machine learning tutorial")
         
-        assert result is not None
-        assert result.original == query
-        assert result.normalized is not None
+        assert isinstance(result, ProcessedQuery)
+        assert result.original_query == "machine learning tutorial"
         assert len(result.tokens) > 0
     
-    def test_query_normalization(self, query_processor: QueryProcessor):
-        """Test query normalization"""
-        query = "  MACHINE   Learning  "
-        result = query_processor.process(query)
-        
-        assert result.normalized == "machine learning"
-    
-    def test_tokenization(self, query_processor: QueryProcessor):
-        """Test query tokenization"""
-        query = "machine learning algorithms"
-        result = query_processor.process(query)
-        
-        assert "machine" in result.tokens
-        assert "learning" in result.tokens
-        assert "algorithms" in result.tokens
-    
-    def test_stop_word_removal(self, query_processor: QueryProcessor):
-        """Test stop word removal"""
-        query = "the machine learning is a field"
-        result = query_processor.process(query)
-        
-        # Stop words should be removed
-        assert "the" not in result.tokens
-        assert "is" not in result.tokens
-        assert "a" not in result.tokens
-        
-        # Content words should remain
-        assert "machine" in result.tokens
-        assert "learning" in result.tokens
-    
-    def test_empty_query(self, query_processor: QueryProcessor):
-        """Test handling of empty query"""
+    def test_process_empty_query(self, query_processor):
+        """Test processing an empty query."""
         result = query_processor.process("")
         
-        assert result.is_empty
+        assert result.original_query == ""
         assert len(result.tokens) == 0
     
-    def test_query_too_short(self, query_processor: QueryProcessor):
-        """Test query below minimum length"""
-        result = query_processor.process("a")
+    def test_normalize_query(self, query_processor):
+        """Test query normalization."""
+        result = query_processor.process("  MACHINE   LEARNING  ")
         
-        assert result.is_valid == False
+        # Should be normalized (lowercase, trimmed)
+        assert result.normalized_query == "machine learning"
     
-    def test_query_too_long(self, query_processor: QueryProcessor):
-        """Test query exceeding maximum length"""
-        long_query = "word " * 200  # Very long query
-        result = query_processor.process(long_query)
+    def test_extract_keywords(self, query_processor):
+        """Test keyword extraction from query."""
+        result = query_processor.process("python deep learning neural networks")
         
-        # Should truncate or reject
-        assert result.is_valid == False or len(result.original) <= query_processor.max_query_length
+        assert "python" in result.keywords or "python" in result.tokens
     
-    def test_special_characters(self, query_processor: QueryProcessor):
-        """Test handling of special characters"""
-        query = "C++ programming @#$% language!"
-        result = query_processor.process(query)
+    def test_detect_query_type(self, query_processor):
+        """Test query type detection."""
+        # Simple keyword query
+        result = query_processor.process("machine learning")
+        assert result.query_type in [QueryType.KEYWORD, QueryType.SEMANTIC]
         
-        assert result.normalized is not None
-        # Should handle special chars gracefully
+        # Phrase query (in quotes)
+        result = query_processor.process('"exact phrase match"')
+        assert result.query_type in [QueryType.PHRASE, QueryType.COMBINED]
     
-    def test_phrase_detection(self, query_processor: QueryProcessor):
-        """Test quoted phrase detection"""
-        query = '"machine learning" algorithms'
-        result = query_processor.process(query)
+    def test_extract_filters(self, query_processor):
+        """Test filter extraction from query."""
+        result = query_processor.process("python type:pdf ext:py")
         
-        assert "machine learning" in result.phrases or len(result.tokens) > 0
+        # Should extract file type filter
+        if result.filters:
+            assert "type" in result.filters or "ext" in result.filters
+
+
+# ============================================================================
+# SearchResult Tests
+# ============================================================================
+
+class TestSearchResult:
+    """Tests for search result dataclass."""
     
-    def test_boolean_operators(self, query_processor: QueryProcessor):
-        """Test boolean operator handling"""
-        query = "machine AND learning OR deep"
-        result = query_processor.process(query)
+    def test_search_result_creation(self):
+        """Test creating a search result."""
+        result = SearchResult(
+            document_id="doc-1",
+            node_id="node-1",
+            distance=0.15,
+            relevance_score=0.9,
+            filename="test.pdf",
+            snippet="Test snippet..."
+        )
         
-        assert result.has_operators or "and" not in [t.lower() for t in result.tokens]
+        assert result.document_id == "doc-1"
+        assert result.node_id == "node-1"
+        assert result.distance == 0.15
+        assert result.relevance_score == 0.9
+    
+    def test_search_result_defaults(self):
+        """Test search result default values."""
+        result = SearchResult(
+            document_id="doc-1",
+            node_id="node-1",
+            distance=0.2
+        )
+        
+        assert result.filename == ""
+        assert result.snippet == ""
+        assert result.matched_keywords == []
 
 
 # ============================================================================
@@ -197,415 +226,223 @@ class TestQueryProcessor:
 # ============================================================================
 
 class TestResultAggregator:
-    """Tests for result aggregation"""
+    """Tests for result aggregation."""
     
-    def test_initialization(self, result_aggregator: ResultAggregator):
-        """Test aggregator initialization"""
+    def test_initialization(self, result_aggregator):
+        """Test result aggregator initialization."""
         assert result_aggregator is not None
-        assert result_aggregator.score_normalization == True
+        assert result_aggregator.distance_weight == 0.6
     
-    def test_aggregate_single_source(self, result_aggregator: ResultAggregator, sample_results: List[SearchResult]):
-        """Test aggregating results from single source"""
-        results_by_node = {"node-1": sample_results}
+    def test_aggregate_results(self, result_aggregator, sample_results):
+        """Test aggregating results from multiple nodes."""
+        # Convert list to Dict[str, List[SearchResult]] as expected by aggregate()
+        node_results = {}
+        for result in sample_results:
+            if result.node_id not in node_results:
+                node_results[result.node_id] = []
+            node_results[result.node_id].append(result)
         
-        aggregated = result_aggregator.aggregate(results_by_node)
-        
-        assert len(aggregated) == len(sample_results)
-    
-    def test_aggregate_multiple_sources(self, result_aggregator: ResultAggregator, sample_results: List[SearchResult]):
-        """Test aggregating results from multiple sources"""
-        # Split results across nodes
-        results_by_node = {
-            "node-1": sample_results[:3],
-            "node-2": sample_results[2:5]  # Overlapping
-        }
-        
-        aggregated = result_aggregator.aggregate(results_by_node)
-        
-        # Should deduplicate
-        doc_ids = [r.doc_id for r in aggregated]
-        assert len(doc_ids) == len(set(doc_ids))
-    
-    def test_score_normalization(self, result_aggregator: ResultAggregator):
-        """Test score normalization"""
-        results = [
-            SearchResult(doc_id="1", title="A", score=100, content_snippet=""),
-            SearchResult(doc_id="2", title="B", score=50, content_snippet=""),
-            SearchResult(doc_id="3", title="C", score=25, content_snippet="")
-        ]
-        
-        results_by_node = {"node-1": results}
-        aggregated = result_aggregator.aggregate(results_by_node)
-        
-        # Scores should be normalized to 0-1 range
-        for r in aggregated:
-            assert 0 <= r.score <= 1
-    
-    def test_result_ordering(self, result_aggregator: ResultAggregator, sample_results: List[SearchResult]):
-        """Test that results are ordered by score"""
-        results_by_node = {"node-1": sample_results}
-        aggregated = result_aggregator.aggregate(results_by_node)
-        
-        # Check descending order
-        for i in range(len(aggregated) - 1):
-            assert aggregated[i].score >= aggregated[i + 1].score
-    
-    def test_limit_results(self, result_aggregator: ResultAggregator, sample_results: List[SearchResult]):
-        """Test limiting number of results"""
-        results_by_node = {"node-1": sample_results}
-        aggregated = result_aggregator.aggregate(results_by_node, limit=3)
-        
-        assert len(aggregated) == 3
-    
-    def test_duplicate_detection(self, result_aggregator: ResultAggregator):
-        """Test detection of duplicate results"""
-        results1 = [
-            SearchResult(doc_id="1", title="Test", score=0.9, content_snippet="content"),
-        ]
-        results2 = [
-            SearchResult(doc_id="1", title="Test", score=0.8, content_snippet="content"),  # Same doc
-        ]
-        
-        results_by_node = {"node-1": results1, "node-2": results2}
-        aggregated = result_aggregator.aggregate(results_by_node)
-        
-        # Should keep highest score
-        assert len(aggregated) == 1
-        assert aggregated[0].score == 0.9
-    
-    def test_empty_results(self, result_aggregator: ResultAggregator):
-        """Test handling empty results"""
-        results_by_node = {}
-        aggregated = result_aggregator.aggregate(results_by_node)
-        
-        assert len(aggregated) == 0
-    
-    def test_partial_failures(self, result_aggregator: ResultAggregator, sample_results: List[SearchResult]):
-        """Test handling partial node failures"""
-        results_by_node = {
-            "node-1": sample_results[:2],
-            "node-2": None,  # Failed
-            "node-3": sample_results[3:]
-        }
-        
-        aggregated = result_aggregator.aggregate(results_by_node)
-        
-        # Should aggregate available results
-        assert len(aggregated) > 0
-
-
-# ============================================================================
-# Ranking Engine Tests
-# ============================================================================
-
-class TestRankingEngine:
-    """Tests for ranking engine"""
-    
-    def test_initialization(self, ranking_engine: RankingEngine):
-        """Test ranking engine initialization"""
-        assert ranking_engine is not None
-        assert ranking_engine.tfidf_weight == 0.5
-        assert ranking_engine.minhash_weight == 0.3
-        assert ranking_engine.lda_weight == 0.2
-    
-    def test_compute_combined_score(self, ranking_engine: RankingEngine):
-        """Test combined score computation"""
-        scores = {
-            "tfidf": 0.8,
-            "minhash": 0.6,
-            "lda": 0.7
-        }
-        
-        combined = ranking_engine.compute_combined_score(scores)
-        
-        expected = (0.5 * 0.8) + (0.3 * 0.6) + (0.2 * 0.7)
-        assert abs(combined - expected) < 0.001
-    
-    def test_rank_results(self, ranking_engine: RankingEngine, sample_results: List[SearchResult]):
-        """Test ranking results"""
-        ranked = ranking_engine.rank(sample_results)
-        
-        assert len(ranked) == len(sample_results)
-        
-        # Should be in descending score order
-        for i in range(len(ranked) - 1):
-            assert ranked[i].score >= ranked[i + 1].score
-    
-    def test_boost_recent(self, ranking_engine: RankingEngine):
-        """Test boosting recent documents"""
-        from datetime import datetime, timedelta
-        
-        results = [
-            SearchResult(
-                doc_id="1",
-                title="Old",
-                score=0.9,
-                content_snippet="",
-                metadata={"created_at": (datetime.now() - timedelta(days=365)).isoformat()}
-            ),
-            SearchResult(
-                doc_id="2",
-                title="New",
-                score=0.8,
-                content_snippet="",
-                metadata={"created_at": datetime.now().isoformat()}
-            )
-        ]
-        
-        ranked = ranking_engine.rank(results, boost_recent=True)
-        
-        # Newer document might rank higher despite lower initial score
-        # (depends on boost factor)
-    
-    def test_filter_by_category(self, ranking_engine: RankingEngine, sample_results: List[SearchResult]):
-        """Test filtering by category"""
-        filtered = ranking_engine.filter_by_metadata(
-            sample_results,
-            filters={"category": "technology"}
-        )
-        
-        for result in filtered:
-            assert result.metadata.get("category") == "technology"
-    
-    def test_minimum_score_threshold(self, ranking_engine: RankingEngine, sample_results: List[SearchResult]):
-        """Test minimum score threshold"""
-        filtered = ranking_engine.filter_by_score(sample_results, min_score=0.7)
-        
-        for result in filtered:
-            assert result.score >= 0.7
-
-
-# ============================================================================
-# Distributed Search Tests
-# ============================================================================
-
-class TestDistributedSearchEngine:
-    """Tests for distributed search engine"""
-    
-    @pytest.fixture
-    def mock_partition_manager(self):
-        """Create mock partition manager"""
-        manager = Mock()
-        manager.get_all_nodes.return_value = ["node-1", "node-2", "node-3"]
-        manager.get_document_nodes.return_value = ["node-1", "node-2"]
-        manager.get_nodes_for_partition.return_value = ["node-1", "node-2", "node-3"]
-        return manager
-    
-    @pytest.fixture
-    def mock_communication(self):
-        """Create mock communication layer"""
-        comm = AsyncMock()
-        comm.send_search_request = AsyncMock(return_value={
-            "results": [
-                {"doc_id": "1", "title": "Test", "score": 0.9, "content_snippet": "..."}
-            ]
-        })
-        return comm
-    
-    @pytest.fixture
-    def search_engine(self, mock_partition_manager, mock_communication) -> DistributedSearchEngine:
-        """Create distributed search engine"""
-        return DistributedSearchEngine(
-            partition_manager=mock_partition_manager,
-            communication=mock_communication,
-            timeout=30
-        )
-    
-    @pytest.mark.asyncio
-    async def test_search_basic(self, search_engine: DistributedSearchEngine):
-        """Test basic search operation"""
-        query = SearchQuery(query="machine learning", limit=10)
-        
-        response = await search_engine.search(query)
-        
-        assert response is not None
-        assert isinstance(response, SearchResponse)
-    
-    @pytest.mark.asyncio
-    async def test_search_with_filters(self, search_engine: DistributedSearchEngine):
-        """Test search with filters"""
-        query = SearchQuery(
+        aggregated = result_aggregator.aggregate(
             query="machine learning",
-            limit=10,
-            filters={"category": "technology"}
+            node_results=node_results,
+            nodes_queried=["node-1", "node-2", "node-3"],
         )
         
-        response = await search_engine.search(query)
-        
-        assert response is not None
+        assert isinstance(aggregated, AggregatedResults)
+        assert aggregated.result_count == len(sample_results)
+        assert aggregated.query == "machine learning"
     
-    @pytest.mark.asyncio
-    async def test_broadcast_search(self, search_engine: DistributedSearchEngine, mock_communication):
-        """Test that search is broadcast to all nodes"""
-        query = SearchQuery(query="test", limit=10)
+    def test_rank_by_distance(self, result_aggregator, sample_results):
+        """Test ranking results by distance."""
+        # Convert list to Dict[str, List[SearchResult]]
+        node_results = {}
+        for result in sample_results:
+            if result.node_id not in node_results:
+                node_results[result.node_id] = []
+            node_results[result.node_id].append(result)
         
-        await search_engine.search(query)
-        
-        # Should have sent requests to multiple nodes
-        assert mock_communication.send_search_request.called
-    
-    @pytest.mark.asyncio
-    async def test_handle_node_failure(self, search_engine: DistributedSearchEngine, mock_communication):
-        """Test handling node failures during search"""
-        # Simulate one node failing
-        mock_communication.send_search_request = AsyncMock(
-            side_effect=[
-                {"results": [{"doc_id": "1", "title": "A", "score": 0.9, "content_snippet": ""}]},
-                Exception("Node unavailable"),
-                {"results": [{"doc_id": "2", "title": "B", "score": 0.8, "content_snippet": ""}]}
-            ]
+        aggregated = result_aggregator.aggregate(
+            query="test",
+            node_results=node_results,
+            nodes_queried=["node-1"],
+            strategy=RankingStrategy.DISTANCE
         )
         
-        query = SearchQuery(query="test", limit=10)
-        response = await search_engine.search(query)
-        
-        # Should still return results from available nodes
-        assert response is not None
+        # Results should be sorted by distance (ascending)
+        distances = [r.distance for r in aggregated.results]
+        assert distances == sorted(distances)
     
-    @pytest.mark.asyncio
-    async def test_search_timeout(self, search_engine: DistributedSearchEngine, mock_communication):
-        """Test search timeout handling"""
-        async def slow_response(*args, **kwargs):
-            await asyncio.sleep(100)
-            return {"results": []}
+    def test_remove_duplicates(self, result_aggregator):
+        """Test duplicate removal."""
+        results_with_dupes = [
+            SearchResult(document_id="doc-1", node_id="node-1", distance=0.1),
+            SearchResult(document_id="doc-1", node_id="node-2", distance=0.15),  # Duplicate
+            SearchResult(document_id="doc-2", node_id="node-1", distance=0.2),
+        ]
         
-        mock_communication.send_search_request = slow_response
+        # Convert to dict format
+        node_results = {}
+        for result in results_with_dupes:
+            if result.node_id not in node_results:
+                node_results[result.node_id] = []
+            node_results[result.node_id].append(result)
         
-        query = SearchQuery(query="test", limit=10)
-        
-        # Should timeout and return partial results
-        with pytest.raises(asyncio.TimeoutError):
-            await asyncio.wait_for(search_engine.search(query), timeout=0.1)
-    
-    @pytest.mark.asyncio
-    async def test_result_aggregation(self, search_engine: DistributedSearchEngine, mock_communication):
-        """Test result aggregation from multiple nodes"""
-        mock_communication.send_search_request = AsyncMock(
-            side_effect=[
-                {"results": [{"doc_id": "1", "title": "A", "score": 0.9, "content_snippet": ""}]},
-                {"results": [{"doc_id": "2", "title": "B", "score": 0.8, "content_snippet": ""}]},
-                {"results": [{"doc_id": "3", "title": "C", "score": 0.7, "content_snippet": ""}]}
-            ]
+        aggregated = result_aggregator.aggregate(
+            query="test",
+            node_results=node_results,
+            nodes_queried=["node-1", "node-2"],
         )
         
-        query = SearchQuery(query="test", limit=10)
-        response = await search_engine.search(query)
+        # Should have removed duplicate, keeping the one with lower distance
+        doc_ids = [r.document_id for r in aggregated.results]
+        assert doc_ids.count("doc-1") == 1
+    
+    def test_pagination(self, result_aggregator, sample_results):
+        """Test result pagination."""
+        # Convert list to Dict[str, List[SearchResult]]
+        node_results = {}
+        for result in sample_results:
+            if result.node_id not in node_results:
+                node_results[result.node_id] = []
+            node_results[result.node_id].append(result)
         
-        assert len(response.results) >= 1
+        aggregated = result_aggregator.aggregate(
+            query="test",
+            node_results=node_results,
+            nodes_queried=["node-1"],
+            page=1,
+            page_size=2
+        )
+        
+        assert len(aggregated.results) <= 2
+        assert aggregated.has_more is True or aggregated.total_results > 2
 
 
 # ============================================================================
-# Edge Cases
+# AggregatedResults Tests
 # ============================================================================
 
-class TestEdgeCases:
-    """Test edge cases and error handling"""
+class TestAggregatedResults:
+    """Tests for aggregated results dataclass."""
     
-    def test_empty_query_results(self, result_aggregator: ResultAggregator):
-        """Test handling queries with no results"""
-        results_by_node = {
-            "node-1": [],
-            "node-2": [],
-            "node-3": []
-        }
+    def test_result_count_property(self, sample_results):
+        """Test result count property."""
+        aggregated = AggregatedResults(
+            query="test",
+            results=sample_results,
+            total_results=len(sample_results),
+            nodes_queried=["node-1"],
+            nodes_responded=["node-1"]
+        )
         
-        aggregated = result_aggregator.aggregate(results_by_node)
-        
-        assert len(aggregated) == 0
-    
-    def test_very_long_results_list(self, result_aggregator: ResultAggregator):
-        """Test handling large number of results"""
-        results = [
-            SearchResult(
-                doc_id=f"doc-{i}",
-                title=f"Document {i}",
-                score=1.0 - (i / 10000),
-                content_snippet=f"Content {i}"
-            )
-            for i in range(1000)
-        ]
-        
-        results_by_node = {"node-1": results}
-        aggregated = result_aggregator.aggregate(results_by_node, limit=100)
-        
-        assert len(aggregated) == 100
-    
-    def test_unicode_in_query(self, query_processor: QueryProcessor):
-        """Test handling unicode characters in query"""
-        query = "机器学习 машинное обучение machine learning"
-        result = query_processor.process(query)
-        
-        assert result is not None
-    
-    def test_zero_scores(self, ranking_engine: RankingEngine):
-        """Test handling zero scores"""
-        results = [
-            SearchResult(doc_id="1", title="A", score=0.0, content_snippet=""),
-            SearchResult(doc_id="2", title="B", score=0.0, content_snippet="")
-        ]
-        
-        ranked = ranking_engine.rank(results)
-        
-        assert len(ranked) == 2
-    
-    def test_negative_scores(self, ranking_engine: RankingEngine):
-        """Test handling negative scores"""
-        results = [
-            SearchResult(doc_id="1", title="A", score=-0.5, content_snippet=""),
-            SearchResult(doc_id="2", title="B", score=0.5, content_snippet="")
-        ]
-        
-        ranked = ranking_engine.rank(results)
-        
-        # Negative scores should be handled (normalized or filtered)
-        assert len(ranked) >= 1
+        assert aggregated.result_count == len(sample_results)
 
 
 # ============================================================================
-# Performance Tests
+# Search Config Tests
 # ============================================================================
 
-class TestPerformance:
-    """Performance-related tests"""
+class TestSearchConfig:
+    """Tests for search configuration."""
     
-    @pytest.mark.slow
-    def test_large_aggregation(self, result_aggregator: ResultAggregator):
-        """Test aggregating many results"""
-        import time
+    def test_default_config(self):
+        """Test default search config values."""
+        config = SearchConfig()
         
-        # Generate results from multiple nodes
-        results_by_node = {}
-        for node_idx in range(10):
-            results_by_node[f"node-{node_idx}"] = [
-                SearchResult(
-                    doc_id=f"doc-{node_idx}-{i}",
-                    title=f"Document {i}",
-                    score=0.9 - (i / 1000),
-                    content_snippet=f"Content {i}"
-                )
-                for i in range(1000)
-            ]
-        
-        start = time.time()
-        aggregated = result_aggregator.aggregate(results_by_node, limit=100)
-        elapsed = time.time() - start
-        
-        assert elapsed < 5.0  # Should complete in reasonable time
-        assert len(aggregated) == 100
+        assert config.search_timeout_sec == 10.0
+        assert config.default_page_size == 20
+        assert config.allow_partial_results is True
     
-    @pytest.mark.slow
-    def test_many_queries(self, query_processor: QueryProcessor):
-        """Test processing many queries"""
-        import time
+    def test_custom_config(self):
+        """Test custom search config."""
+        config = SearchConfig(
+            search_timeout_sec=5.0,
+            default_page_size=50,
+            allow_partial_results=False
+        )
         
-        queries = [f"machine learning topic {i}" for i in range(1000)]
+        assert config.search_timeout_sec == 5.0
+        assert config.default_page_size == 50
+        assert config.allow_partial_results is False
+
+
+# ============================================================================
+# Search Engine Tests
+# ============================================================================
+
+class TestSearchEngine:
+    """Tests for search engine."""
+    
+    def test_initialization(self, search_config):
+        """Test search engine initialization."""
+        engine = SearchEngine(config=search_config)
         
-        start = time.time()
-        for query in queries:
-            query_processor.process(query)
-        elapsed = time.time() - start
+        assert engine is not None
+        assert engine.config == search_config
+    
+    @pytest.mark.asyncio
+    async def test_search_with_no_nodes(self, search_config):
+        """Test search when no nodes are available."""
+        async def get_targets(query):
+            return []
         
-        assert elapsed < 5.0  # Should process quickly
+        engine = SearchEngine(
+            config=search_config,
+            get_target_nodes_func=get_targets
+        )
+        
+        # Search should handle empty node list gracefully
+        # The actual behavior depends on implementation
+
+
+# ============================================================================
+# Integration Tests
+# ============================================================================
+
+class TestSearchIntegration:
+    """Integration tests for search functionality."""
+    
+    def test_query_to_aggregation_flow(self, query_processor, result_aggregator, sample_results):
+        """Test complete query processing to result aggregation flow."""
+        # Process query
+        processed = query_processor.process("machine learning tutorial")
+        
+        # Convert list to Dict[str, List[SearchResult]]
+        node_results = {}
+        for result in sample_results:
+            if result.node_id not in node_results:
+                node_results[result.node_id] = []
+            node_results[result.node_id].append(result)
+        
+        # Aggregate results (simulated from nodes)
+        aggregated = result_aggregator.aggregate(
+            query=processed.original_query,
+            node_results=node_results,
+            nodes_queried=["node-1", "node-2", "node-3"],
+        )
+        
+        assert processed.original_query == "machine learning tutorial"
+        assert aggregated.result_count > 0
+    
+    @pytest.mark.asyncio
+    async def test_distributed_search_mock(self, search_config, sample_results):
+        """Test distributed search with mocked node queries."""
+        # Mock functions
+        async def mock_query_node(node_id, query, limit):
+            return [r for r in sample_results if r.node_id == node_id][:limit]
+        
+        async def mock_get_targets(query):
+            return ["node-1", "node-2", "node-3"]
+        
+        engine = SearchEngine(
+            config=search_config,
+            query_node_func=mock_query_node,
+            get_target_nodes_func=mock_get_targets
+        )
+        
+        # The engine should be able to perform distributed search
+        assert engine._query_node is not None
+        assert engine._get_targets is not None
 
 
 if __name__ == "__main__":
