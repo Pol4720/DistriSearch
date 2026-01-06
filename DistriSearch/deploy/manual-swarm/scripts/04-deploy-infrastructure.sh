@@ -5,13 +5,12 @@
 # Ejecutar SOLO en el MANAGER
 # 
 # ARQUITECTURA AP (ACTUAL):
-# - SQLite (Raft-replicado): Usuarios, nodos, particiones ← Reemplaza MongoDB
-# - MongoDB LOCAL por nodo: Solo para documentos (opcional en Master)
+# - SQLite (Raft-replicado): Usuarios, nodos, particiones (metadatos cluster)
 # - Redis: Cache de sesiones y coordinación
 # - Cada SLAVE tendrá su propio MongoDB + Redis LOCAL (script 06)
 #
-# NOTA: Los metadatos del cluster (nodos, particiones) ahora se almacenan
-# en SQLite, NO en MongoDB. MongoDB solo se usa para documentos.
+# NOTA: El MASTER NO necesita MongoDB. Los metadatos del cluster están en
+# SQLite. Solo los SLAVES tienen MongoDB para almacenar documentos.
 # ============================================================================
 
 set -e
@@ -36,9 +35,9 @@ log_skip() { echo -e "${YELLOW}[SKIP]${NC} $1 (ya existe)"; }
 echo ""
 echo -e "${CYAN}Arquitectura AP (Almacenamiento):${NC}"
 echo "  • SQLite (Raft): Usuarios, nodos, particiones (metadatos cluster)"
-echo "  • MongoDB LOCAL: Documentos (cada nodo tiene su instancia)"
-echo "  • Redis LOCAL: Cache de sesiones, vectores, coordinación"
+echo "  • Redis: Cache de sesiones, coordinación"
 echo "  • Gossip Protocol: UserDocumentRegistry (user->docs mapping)"
+echo "  • NOTA: El Master NO almacena documentos, solo coordina"
 echo ""
 
 # ============================================================================
@@ -53,49 +52,27 @@ fi
 log_info "Nodo Manager confirmado"
 
 # ============================================================================
-# 2. Verificar red
+# 2. Verificar/Crear red overlay
 # ============================================================================
-if docker network ls | grep -q "distrisearch-network"; then
-    log_skip "Red distrisearch-network"
+NETWORK_EXISTS=$(docker network ls --filter name=distrisearch-network --filter driver=overlay --format "{{.Name}}" 2>/dev/null)
+
+if [ "$NETWORK_EXISTS" = "distrisearch-network" ]; then
+    log_skip "Red distrisearch-network (overlay)"
 else
+    # Eliminar red si existe pero no es overlay
+    docker network rm distrisearch-network 2>/dev/null || true
+    
     log_info "Creando red overlay..."
     docker network create \
         --driver overlay \
         --attachable \
         --subnet 10.0.10.0/24 \
         distrisearch-network
+    log_info "Red overlay creada"
 fi
 
 # ============================================================================
-# 3. Desplegar MongoDB del MASTER (documentos locales, OPCIONAL)
-# ============================================================================
-# NOTA: MongoDB en el Master solo almacena documentos locales (si los hay).
-# Los metadatos del cluster (nodos, particiones) están en SQLite.
-# ============================================================================
-if docker service inspect master-mongo &>/dev/null; then
-    log_skip "master-mongo"
-else
-    log_info "Desplegando MongoDB para el Master (documentos locales)..."
-    
-    # Crear volumen para persistencia
-    docker volume create master-mongo-data 2>/dev/null || true
-    
-    docker service create \
-        --name master-mongo \
-        --network distrisearch-network \
-        --mount type=volume,source=master-mongo-data,target=/data/db \
-        --replicas 1 \
-        --env MONGO_INITDB_DATABASE=distrisearch_master \
-        --constraint 'node.role==manager' \
-        --publish 27017:27017 \
-        mongo:7.0 \
-        mongod --bind_ip_all
-    
-    log_info "MongoDB del Master desplegado"
-fi
-
-# ============================================================================
-# 4. Desplegar Redis del MASTER (coordinación y cache de sesiones)
+# 3. Desplegar Redis del MASTER (coordinación y cache de sesiones)
 # ============================================================================
 if docker service inspect master-redis &>/dev/null; then
     log_skip "master-redis"
@@ -118,19 +95,9 @@ else
 fi
 
 # ============================================================================
-# 5. Esperar a que estén listos
+# 4. Esperar a que esté listo
 # ============================================================================
-log_info "Esperando a que los servicios estén listos..."
-
-echo -n "Master MongoDB: "
-for i in {1..30}; do
-    if docker service ps master-mongo --format "{{.CurrentState}}" | grep -q "Running"; then
-        echo -e "${GREEN}OK${NC}"
-        break
-    fi
-    echo -n "."
-    sleep 2
-done
+log_info "Esperando a que Redis esté listo..."
 
 echo -n "Master Redis: "
 for i in {1..30}; do
@@ -143,7 +110,7 @@ for i in {1..30}; do
 done
 
 # ============================================================================
-# 6. Crear directorio para SQLite (cluster metadata + usuarios)
+# 5. Crear directorio para SQLite (cluster metadata + usuarios)
 # ============================================================================
 log_info "Preparando directorio para SQLite..."
 
@@ -152,7 +119,7 @@ mkdir -p /opt/distrisearch/data/raft
 chmod 755 /opt/distrisearch/data/sqlite /opt/distrisearch/data/raft
 
 # ============================================================================
-# 7. Verificar estado
+# 6. Verificar estado
 # ============================================================================
 echo ""
 echo "=============================================="
@@ -160,19 +127,18 @@ echo -e "${GREEN}  Infraestructura Master Desplegada${NC}"
 echo "=============================================="
 echo ""
 log_info "Estado de los servicios:"
-docker service ls | grep -E "master-mongo|master-redis"
+docker service ls | grep -E "master-redis"
 echo ""
 
 echo -e "${BLUE}Arquitectura de Datos (AP Mode):${NC}"
 echo ""
-echo "  MASTER:"
+echo "  MASTER (Coordinador):"
 echo "    • SQLite (Raft-replicado)"
 echo "      └─ Tablas: users, nodes, partitions (metadatos cluster)"
 echo "      └─ Ubicación: /app/data/sqlite/master.db"
-echo "    • MongoDB (master-mongo:27017) - OPCIONAL"
-echo "      └─ Solo para documentos locales del master"
 echo "    • Redis (master-redis:6379)"
 echo "      └─ Cache de sesiones JWT, coordinación"
+echo "    • NO tiene MongoDB (no almacena documentos)"
 echo ""
 echo "  SLAVES (se crean en script 06):"
 echo "    • SQLite (réplica Raft)"

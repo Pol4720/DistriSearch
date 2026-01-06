@@ -6,12 +6,11 @@
 # 
 # El Master Coordinator:
 # - SQLite (Raft-replicado): Usuarios, nodos, particiones (metadatos cluster)
-# - MongoDB local: Para documentos (si el master almacena alguno)
 # - Redis: Cache de sesiones y coordinación
 # - Gossip: UserDocumentRegistry (user->docs mapping)
 #
-# NOTA: Los metadatos del cluster (nodos, particiones) están en SQLite,
-# NO en MongoDB. Esto permite operación durante particiones de red.
+# NOTA: El Master NO tiene MongoDB. No almacena documentos, solo coordina.
+# Los documentos se almacenan en los SLAVES.
 # ============================================================================
 
 set -e
@@ -57,11 +56,10 @@ check_service() {
 }
 
 DEPS_OK=true
-check_service master-mongo || DEPS_OK=false
 check_service master-redis || DEPS_OK=false
 
 if [ "$DEPS_OK" != "true" ]; then
-    log_error "Faltan servicios de infraestructura"
+    log_error "Falta el servicio Redis"
     echo "Ejecuta primero: ./04-deploy-infrastructure.sh"
     exit 1
 fi
@@ -143,9 +141,6 @@ docker service create \
     --env NODE_ID=master-001 \
     --env NODE_ROLE=master \
     --env NODE_ADDRESS=$MANAGER_IP \
-    --env LOCAL_MONGODB_URI=mongodb://master-mongo:27017 \
-    --env MONGODB_URI=mongodb://master-mongo:27017/distrisearch_master \
-    --env MONGODB_DATABASE=distrisearch_master \
     --env REDIS_URL=redis://master-redis:6379 \
     --env USERS_DB_PATH=/app/users/users.db \
     --env CLUSTER_SIZE=$NUM_WORKERS \
@@ -224,10 +219,10 @@ echo "  gRPC:     $MANAGER_IP:50051"
 echo ""
 echo -e "${BLUE}Arquitectura AP del Master:${NC}"
 echo "  • SQLite (Raft-replicado) → Usuarios, nodos, particiones"
-echo "  • MongoDB (master-mongo)  → Documentos locales (opcional)"
 echo "  • Redis (master-redis)    → Cache sesiones, coordinación"
 echo "  • Raft                    → Consenso para SQLite"
 echo "  • Gossip                  → UserDocumentRegistry distribuido"
+echo "  • NO tiene MongoDB        → No almacena documentos"
 echo ""
 echo -e "${BLUE}Configuración CAP:${NC}"
 echo "  Modo:                   AP (Disponibilidad + Tolerancia a Particiones)"
