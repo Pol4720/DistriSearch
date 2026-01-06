@@ -514,6 +514,7 @@ class SearchEngine:
             Search results dictionary
         """
         import re
+        import aiohttp
         
         # Increment search counter (local)
         self._total_searches += 1
@@ -526,9 +527,70 @@ class SearchEngine:
         except Exception as e:
             logger.warning(f"Failed to increment Redis counter: {e}")
         
-        results = []
+        all_results = []
+        searched_nodes = 0
         query_terms = [w for w in re.findall(r'\b\w+\b', query.lower()) if len(w) > 2]
         query_term_set = set(query_terms)
+        
+        # If we have a cluster_manager and it's the master, federate to all slaves
+        if cluster_manager and hasattr(cluster_manager, 'is_master') and cluster_manager.is_master:
+            # Get all healthy slave nodes
+            nodes = cluster_manager._nodes
+            slave_nodes = [
+                node for node_id, node in nodes.items() 
+                if node.role.value == 'slave'
+            ]
+            
+            if slave_nodes:
+                logger.info(f"Federating search to {len(slave_nodes)} slave nodes")
+                
+                # Query each slave node in parallel
+                async def query_slave(node):
+                    try:
+                        url = f"http://{node.address}/api/v1/search/"
+                        async with aiohttp.ClientSession() as session:
+                            async with session.post(
+                                url,
+                                json={
+                                    "query": query,
+                                    "search_type": search_type,
+                                    "top_k": top_k,
+                                    "filters": filters
+                                },
+                                timeout=aiohttp.ClientTimeout(total=timeout_ms/1000)
+                            ) as resp:
+                                if resp.status == 200:
+                                    data = await resp.json()
+                                    return node.node_id, data.get("results", [])
+                    except Exception as e:
+                        logger.warning(f"Failed to query slave {node.node_id}: {e}")
+                    return node.node_id, []
+                
+                # Execute queries in parallel
+                tasks = [query_slave(node) for node in slave_nodes]
+                node_results = await asyncio.gather(*tasks, return_exceptions=True)
+                
+                # Aggregate results from all nodes
+                for result in node_results:
+                    if isinstance(result, tuple):
+                        node_id, results = result
+                        searched_nodes += 1
+                        for r in results:
+                            if isinstance(r, dict):
+                                all_results.append(r)
+                
+                # Sort by score and limit to top_k
+                all_results.sort(key=lambda x: x.get("score", 0), reverse=True)
+                all_results = all_results[:top_k]
+                
+                return {
+                    "results": all_results,
+                    "total": len(all_results),
+                    "searched_nodes": searched_nodes
+                }
+        
+        # Local search (for slaves or when no cluster_manager)
+        results = []
         
         if document_repository:
             # Search locally using repository

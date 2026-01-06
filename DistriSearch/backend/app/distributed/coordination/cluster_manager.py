@@ -302,20 +302,30 @@ class ClusterManager:
                 metadata=metadata or {},
             )
             
-            # Submit to Raft
-            command = Command(
-                type=CommandType.ADD_NODE,
-                data={
-                    "node_id": node_id,
-                    "node_info": {
-                        "address": address,
-                        "role": role.value,
-                        "metadata": metadata or {},
-                    },
-                },
-            )
+            # In single-node or leader-only mode, we can skip Raft consensus
+            # for adding slaves since they don't participate in Raft
+            is_single_node = len(self._nodes) <= 1
+            success = True
             
-            success = await self.raft_node.submit_command(command)
+            if not is_single_node and role != NodeRole.SLAVE:
+                # Only use Raft for non-slave nodes in multi-node setup
+                command = Command(
+                    type=CommandType.ADD_NODE,
+                    data={
+                        "node_id": node_id,
+                        "node_info": {
+                            "address": address,
+                            "role": role.value,
+                            "metadata": metadata or {},
+                        },
+                    },
+                )
+                
+                try:
+                    success = await self.raft_node.submit_command(command)
+                except Exception as e:
+                    logger.warning(f"Raft submit failed, proceeding anyway: {e}")
+                    success = True  # Proceed in degraded mode
             
             if success:
                 self._nodes[node_id] = membership
@@ -696,6 +706,47 @@ class ClusterManager:
                 ))
             except Exception as e:
                 logger.error(f"Failed to delete replica {doc_id} from {node.node_id}: {e}")
+    
+    async def register_node(
+        self,
+        node_id: str,
+        address: str,
+        port: int = 8000,
+        capabilities: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Register a new node to the cluster.
+        
+        This is a wrapper around add_node for API compatibility.
+        
+        Args:
+            node_id: Node's unique ID
+            address: Node's network address (hostname or IP)
+            port: Node's API port
+            capabilities: Node capabilities and metadata
+            
+        Returns:
+            Registration result with cluster info
+        """
+        full_address = f"{address}:{port}"
+        metadata = {"capabilities": capabilities or {}, "port": port}
+        
+        success = await self.add_node(
+            node_id=node_id,
+            address=full_address,
+            role=NodeRole.SLAVE,
+            metadata=metadata,
+        )
+        
+        if success:
+            return {
+                "success": True,
+                "cluster_id": getattr(self, 'cluster_id', 'distrisearch-cluster'),
+                "master_node_id": await self.get_master_node_id(),
+                "assigned_partitions": [],
+            }
+        else:
+            raise Exception("Failed to add node to cluster")
     
     async def shutdown(self):
         """Shutdown the cluster manager gracefully."""

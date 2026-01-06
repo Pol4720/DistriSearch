@@ -300,35 +300,49 @@ async def join_cluster(
     to register with the cluster.
     """
     try:
-        # Check if node already exists
+        # Check if node already exists in database
         existing = await node_repo.find_by_id(request.node_id)
-        if existing:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Node already registered: {request.node_id}"
+        
+        # Check if node is already in ClusterManager (memory)
+        node_in_memory = request.node_id in cluster_manager._nodes
+        
+        if existing and node_in_memory:
+            # Node fully registered, return success
+            return NodeJoinResponse(
+                success=True,
+                message="Node already in cluster",
+                cluster_id=getattr(cluster_manager, 'cluster_id', 'distrisearch-cluster'),
+                master_node_id=await cluster_manager.get_master_node_id() or "",
+                assigned_partitions=[]
             )
         
-        # Register the node
-        result = await cluster_manager.register_node(
-            node_id=request.node_id,
-            address=request.address,
-            port=request.port,
-            capabilities=request.capabilities
-        )
+        # Register the node in ClusterManager if not in memory
+        if not node_in_memory:
+            result = await cluster_manager.register_node(
+                node_id=request.node_id,
+                address=request.address,
+                port=request.port,
+                capabilities=request.capabilities
+            )
+        else:
+            result = {
+                "cluster_id": getattr(cluster_manager, 'cluster_id', 'distrisearch-cluster'),
+                "master_node_id": await cluster_manager.get_master_node_id(),
+            }
         
-        # Store node in database
-        await node_repo.create({
-            "_id": request.node_id,
-            "address": request.address,
-            "port": request.port,
-            "role": "slave",
-            "status": "healthy",
-            "document_count": 0,
-            "partition_count": 0,
-            "capabilities": request.capabilities,
-            "joined_at": datetime.utcnow(),
-            "last_heartbeat": datetime.utcnow()
-        })
+        # Store node in database if not exists
+        if not existing:
+            from ..storage.models import NodeModel, NodeRole as ModelNodeRole, NodeStatus as ModelNodeStatus
+            node_model = NodeModel(
+                id=request.node_id,
+                name=request.node_id,
+                address=request.address,
+                port=request.port,
+                role=ModelNodeRole.SLAVE,
+                status=ModelNodeStatus.ACTIVE,
+                metadata={"capabilities": request.capabilities or {}},
+            )
+            await node_repo.create(node_model)
         
         logger.info(f"Node joined cluster: {request.node_id}")
         
