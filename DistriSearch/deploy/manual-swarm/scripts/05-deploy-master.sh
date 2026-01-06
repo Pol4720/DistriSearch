@@ -5,10 +5,13 @@
 # Ejecutar SOLO en el MANAGER
 # 
 # El Master Coordinator:
-# - Gestiona la topología del cluster (nodos, particiones VP-Tree)
-# - Coordina el consenso Raft para elección de líder
-# - Mantiene la BD de usuarios (SQLite) y la replica a slaves
-# - Propaga UserDocumentRegistry via Gossip
+# - SQLite (Raft-replicado): Usuarios, nodos, particiones (metadatos cluster)
+# - MongoDB local: Para documentos (si el master almacena alguno)
+# - Redis: Cache de sesiones y coordinación
+# - Gossip: UserDocumentRegistry (user->docs mapping)
+#
+# NOTA: Los metadatos del cluster (nodos, particiones) están en SQLite,
+# NO en MongoDB. Esto permite operación durante particiones de red.
 # ============================================================================
 
 set -e
@@ -27,6 +30,7 @@ NC='\033[0m'
 log_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+log_skip() { echo -e "${YELLOW}[SKIP]${NC} $1 (ya existe)"; }
 
 # ============================================================================
 # 1. Verificar que somos manager
@@ -63,33 +67,31 @@ if [ "$DEPS_OK" != "true" ]; then
 fi
 
 # ============================================================================
-# 3. Obtener imagen
+# 3. Obtener/Construir imagen
 # ============================================================================
-IMAGE_NAME=${1:-"distrisearch/backend:latest"}
+IMAGE_NAME=${1:-"distrisearch/master:latest"}
 
-log_info "Usando imagen: $IMAGE_NAME"
+log_info "Verificando imagen: $IMAGE_NAME"
 
-# Verificar si la imagen existe localmente
-if ! docker image inspect $IMAGE_NAME &>/dev/null; then
-    log_warn "Imagen no encontrada localmente"
-    echo ""
-    echo "Opciones:"
-    echo "  1. Construir la imagen localmente desde el código"
-    echo "  2. Especificar otra imagen como parámetro"
-    echo ""
-    read -p "¿Construir imagen desde ./backend? (s/n): " build_confirm
+if docker image inspect $IMAGE_NAME &>/dev/null; then
+    log_skip "Imagen $IMAGE_NAME"
+else
+    log_info "Imagen no encontrada. Intentando construir..."
     
-    if [ "$build_confirm" == "s" ]; then
-        BACKEND_PATH="/opt/distrisearch/code/backend"
-        if [ -d "$BACKEND_PATH" ]; then
-            log_info "Construyendo imagen..."
-            docker build -t $IMAGE_NAME $BACKEND_PATH
-        else
-            log_error "No se encuentra el código en $BACKEND_PATH"
-            echo "Clona el repositorio o especifica la imagen correcta"
-            exit 1
-        fi
+    # Buscar el Dockerfile del master
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+    
+    if [ -f "$PROJECT_ROOT/docker/master/Dockerfile" ]; then
+        log_info "Construyendo imagen desde $PROJECT_ROOT..."
+        docker build -t $IMAGE_NAME -f "$PROJECT_ROOT/docker/master/Dockerfile" "$PROJECT_ROOT"
+    elif [ -f "/opt/distrisearch/code/docker/master/Dockerfile" ]; then
+        log_info "Construyendo imagen desde /opt/distrisearch/code..."
+        docker build -t $IMAGE_NAME -f "/opt/distrisearch/code/docker/master/Dockerfile" "/opt/distrisearch/code"
     else
+        log_error "No se encontró el Dockerfile del master"
+        echo "Construye la imagen manualmente:"
+        echo "  docker build -t distrisearch/master:latest -f docker/master/Dockerfile ."
         exit 1
     fi
 fi
@@ -105,10 +107,19 @@ docker volume create master-users-db 2>/dev/null || true
 # ============================================================================
 # 5. Desplegar Master
 # ============================================================================
-log_info "Desplegando Master Coordinator..."
+if docker service inspect distrisearch-master &>/dev/null; then
+    log_skip "distrisearch-master"
+    echo ""
+    echo "El Master ya está desplegado. Para redesplegar:"
+    echo "  docker service rm distrisearch-master"
+    echo "  ./05-deploy-master.sh"
+    echo ""
+    # Mostrar estado actual
+    docker service ls | grep distrisearch-master
+    exit 0
+fi
 
-# Eliminar servicio anterior si existe
-docker service rm distrisearch-master 2>/dev/null || true
+log_info "Desplegando Master Coordinator..."
 
 # Número de workers en el cluster
 NUM_WORKERS=$(docker node ls --format "{{.ID}}" | wc -l)
@@ -212,11 +223,11 @@ echo "  Cluster:  http://$MANAGER_IP:8000/cluster/status"
 echo "  gRPC:     $MANAGER_IP:50051"
 echo ""
 echo -e "${BLUE}Arquitectura AP del Master:${NC}"
-echo "  • MongoDB (master-mongo) → Metadatos cluster, particiones"
-echo "  • Redis (master-redis)   → Cache sesiones, coordinación"
-echo "  • SQLite (/app/users)    → Base de datos de usuarios"
-echo "  • Raft                   → Consenso y replicación de usuarios"
-echo "  • Gossip                 → UserDocumentRegistry distribuido"
+echo "  • SQLite (Raft-replicado) → Usuarios, nodos, particiones"
+echo "  • MongoDB (master-mongo)  → Documentos locales (opcional)"
+echo "  • Redis (master-redis)    → Cache sesiones, coordinación"
+echo "  • Raft                    → Consenso para SQLite"
+echo "  • Gossip                  → UserDocumentRegistry distribuido"
 echo ""
 echo -e "${BLUE}Configuración CAP:${NC}"
 echo "  Modo:                   AP (Disponibilidad + Tolerancia a Particiones)"

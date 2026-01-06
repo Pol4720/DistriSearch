@@ -3,6 +3,12 @@
 # 08-verify-cluster.sh - Verifica el estado completo del cluster
 # ============================================================================
 # Ejecutar en el MANAGER para verificar que todo funciona
+#
+# Servicios esperados:
+# - master-mongo, master-redis (infraestructura master)
+# - distrisearch-master (coordinador)
+# - distrisearch-slave-N (slaves con Backend+Frontend integrado)
+# - slaveN-mongodb, slaveN-redis (infraestructura por slave)
 # ============================================================================
 
 set -e
@@ -100,11 +106,30 @@ check_service() {
     fi
 }
 
-check_service "mongo" 1
-check_service "redis" 1
+check_service "master-mongo" 1
+check_service "master-redis" 1
 check_service "distrisearch-master" 1
-check_service "distrisearch-slave" 1
-check_service "distrisearch-frontend" 1
+
+# Verificar slaves dinámicamente
+log_check "$PASS" "Verificando slaves desplegados..."
+SLAVE_SERVICES=$(docker service ls --filter "name=distrisearch-slave" --format "{{.Name}}" 2>/dev/null)
+SLAVE_COUNT=0
+for SLAVE in $SLAVE_SERVICES; do
+    if [[ $SLAVE =~ distrisearch-slave-([0-9]+) ]]; then
+        SLAVE_NUM=${BASH_REMATCH[1]}
+        check_service "$SLAVE" 1
+        check_service "slave${SLAVE_NUM}-mongodb" 1
+        check_service "slave${SLAVE_NUM}-redis" 1
+        ((SLAVE_COUNT++))
+    fi
+done
+
+if [ $SLAVE_COUNT -eq 0 ]; then
+    log_check "$WARN" "No hay slaves desplegados"
+    ((WARNINGS++))
+else
+    log_check "$PASS" "Total slaves encontrados: $SLAVE_COUNT"
+fi
 
 # ============================================================================
 # 4. VERIFICAR CONECTIVIDAD
@@ -122,11 +147,19 @@ else
     ((ERRORS++))
 fi
 
-# Verificar Frontend
-if curl -s -f http://$MANAGER_IP:3000 &>/dev/null; then
-    log_check "$PASS" "Frontend respondiendo (puerto 3000)"
-else
-    log_check "$WARN" "Frontend no responde (puede no estar desplegado)"
+# Verificar Frontend en slaves (el frontend está integrado en cada slave)
+FRONTEND_OK=false
+for i in $(seq 1 5); do
+    HTTP_PORT=$((8080 + i))
+    if curl -s -f http://$MANAGER_IP:$HTTP_PORT &>/dev/null 2>&1; then
+        log_check "$PASS" "Frontend Slave-$i respondiendo (puerto $HTTP_PORT)"
+        FRONTEND_OK=true
+        break
+    fi
+done
+
+if [ "$FRONTEND_OK" = false ]; then
+    log_check "$WARN" "Ningún frontend de slave responde (pueden no estar desplegados)"
     ((WARNINGS++))
 fi
 
@@ -250,17 +283,25 @@ echo ""
 
 # Mostrar URLs de acceso
 echo -e "${BLUE}URLs de Acceso:${NC}"
-echo "  Frontend:     http://$MANAGER_IP:3000"
-echo "  API:          http://$MANAGER_IP:8000"
+echo "  API Master:   http://$MANAGER_IP:8000"
 echo "  API Docs:     http://$MANAGER_IP:8000/docs"
+echo ""
+echo "  Frontend (integrado en cada slave):"
+for i in $(seq 1 $SLAVE_COUNT); do
+    HTTP_PORT=$((8080 + i))
+    HTTPS_PORT=$((4430 + i))
+    API_PORT=$((8000 + i))
+    echo "    Slave-$i: http://$MANAGER_IP:$HTTP_PORT | https://$MANAGER_IP:$HTTPS_PORT | API: $API_PORT"
+done
 echo ""
 
 # Comandos útiles
 echo -e "${BLUE}Comandos Útiles:${NC}"
-echo "  docker service ls                          # Ver servicios"
-echo "  docker service logs -f distrisearch-master # Ver logs del master"
-echo "  docker node ls                             # Ver nodos"
-echo "  docker service ps distrisearch-slave       # Ver distribución de slaves"
+echo "  docker service ls                            # Ver servicios"
+echo "  docker service logs -f distrisearch-master   # Ver logs del master"
+echo "  docker service logs -f distrisearch-slave-1  # Ver logs del slave 1"
+echo "  docker node ls                               # Ver nodos"
+echo "  docker service ps distrisearch-slave-1       # Ver dónde corre slave 1"
 echo ""
 
 exit $ERRORS

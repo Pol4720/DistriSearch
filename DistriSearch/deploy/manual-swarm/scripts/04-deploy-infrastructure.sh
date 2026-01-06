@@ -4,11 +4,14 @@
 # ============================================================================
 # Ejecutar SOLO en el MANAGER
 # 
-# ARQUITECTURA AP:
-# - Master tiene MongoDB para metadatos del cluster (nodos, particiones)
-# - Master tiene Redis para cache de sesiones y coordinación
-# - Master tiene SQLite embebido para usuarios (replicado via Raft)
+# ARQUITECTURA AP (ACTUAL):
+# - SQLite (Raft-replicado): Usuarios, nodos, particiones ← Reemplaza MongoDB
+# - MongoDB LOCAL por nodo: Solo para documentos (opcional en Master)
+# - Redis: Cache de sesiones y coordinación
 # - Cada SLAVE tendrá su propio MongoDB + Redis LOCAL (script 06)
+#
+# NOTA: Los metadatos del cluster (nodos, particiones) ahora se almacenan
+# en SQLite, NO en MongoDB. MongoDB solo se usa para documentos.
 # ============================================================================
 
 set -e
@@ -28,13 +31,14 @@ NC='\033[0m'
 log_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+log_skip() { echo -e "${YELLOW}[SKIP]${NC} $1 (ya existe)"; }
 
 echo ""
-echo -e "${CYAN}Arquitectura AP:${NC}"
-echo "  • Cada nodo (Master + Slaves) tiene su propio MongoDB + Redis"
-echo "  • SQLite para usuarios, replicada via Raft entre todos los nodos"
-echo "  • Documentos distribuidos con VP-Tree, cada slave almacena local"
-echo "  • UserDocumentRegistry via Gossip para saber qué docs tiene cada user"
+echo -e "${CYAN}Arquitectura AP (Almacenamiento):${NC}"
+echo "  • SQLite (Raft): Usuarios, nodos, particiones (metadatos cluster)"
+echo "  • MongoDB LOCAL: Documentos (cada nodo tiene su instancia)"
+echo "  • Redis LOCAL: Cache de sesiones, vectores, coordinación"
+echo "  • Gossip Protocol: UserDocumentRegistry (user->docs mapping)"
 echo ""
 
 # ============================================================================
@@ -51,7 +55,9 @@ log_info "Nodo Manager confirmado"
 # ============================================================================
 # 2. Verificar red
 # ============================================================================
-if ! docker network ls | grep -q "distrisearch-network"; then
+if docker network ls | grep -q "distrisearch-network"; then
+    log_skip "Red distrisearch-network"
+else
     log_info "Creando red overlay..."
     docker network create \
         --driver overlay \
@@ -61,49 +67,55 @@ if ! docker network ls | grep -q "distrisearch-network"; then
 fi
 
 # ============================================================================
-# 3. Desplegar MongoDB del MASTER (metadatos del cluster)
+# 3. Desplegar MongoDB del MASTER (documentos locales, OPCIONAL)
 # ============================================================================
-log_info "Desplegando MongoDB para el Master (metadatos cluster)..."
-
-# Crear volumen para persistencia
-docker volume create master-mongo-data 2>/dev/null || true
-
-# Eliminar servicio anterior si existe
-docker service rm master-mongo 2>/dev/null || true
-
-docker service create \
-    --name master-mongo \
-    --network distrisearch-network \
-    --mount type=volume,source=master-mongo-data,target=/data/db \
-    --replicas 1 \
-    --env MONGO_INITDB_DATABASE=distrisearch_master \
-    --constraint 'node.role==manager' \
-    --publish 27017:27017 \
-    mongo:6.0
-
-log_info "MongoDB del Master desplegado"
+# NOTA: MongoDB en el Master solo almacena documentos locales (si los hay).
+# Los metadatos del cluster (nodos, particiones) están en SQLite.
+# ============================================================================
+if docker service inspect master-mongo &>/dev/null; then
+    log_skip "master-mongo"
+else
+    log_info "Desplegando MongoDB para el Master (documentos locales)..."
+    
+    # Crear volumen para persistencia
+    docker volume create master-mongo-data 2>/dev/null || true
+    
+    docker service create \
+        --name master-mongo \
+        --network distrisearch-network \
+        --mount type=volume,source=master-mongo-data,target=/data/db \
+        --replicas 1 \
+        --env MONGO_INITDB_DATABASE=distrisearch_master \
+        --constraint 'node.role==manager' \
+        --publish 27017:27017 \
+        mongo:7.0 \
+        mongod --bind_ip_all
+    
+    log_info "MongoDB del Master desplegado"
+fi
 
 # ============================================================================
 # 4. Desplegar Redis del MASTER (coordinación y cache de sesiones)
 # ============================================================================
-log_info "Desplegando Redis para el Master (coordinación)..."
-
-# Crear volumen para persistencia
-docker volume create master-redis-data 2>/dev/null || true
-
-# Eliminar servicio anterior si existe
-docker service rm master-redis 2>/dev/null || true
-
-docker service create \
-    --name master-redis \
-    --network distrisearch-network \
-    --mount type=volume,source=master-redis-data,target=/data \
-    --replicas 1 \
-    --constraint 'node.role==manager' \
-    --publish 6379:6379 \
-    redis:7-alpine redis-server --appendonly yes
-
-log_info "Redis del Master desplegado"
+if docker service inspect master-redis &>/dev/null; then
+    log_skip "master-redis"
+else
+    log_info "Desplegando Redis para el Master (coordinación/cache)..."
+    
+    # Crear volumen para persistencia
+    docker volume create master-redis-data 2>/dev/null || true
+    
+    docker service create \
+        --name master-redis \
+        --network distrisearch-network \
+        --mount type=volume,source=master-redis-data,target=/data \
+        --replicas 1 \
+        --constraint 'node.role==manager' \
+        --publish 6379:6379 \
+        redis:7-alpine redis-server --appendonly yes
+    
+    log_info "Redis del Master desplegado"
+fi
 
 # ============================================================================
 # 5. Esperar a que estén listos
@@ -131,12 +143,13 @@ for i in {1..30}; do
 done
 
 # ============================================================================
-# 6. Crear directorio para SQLite (usuarios)
+# 6. Crear directorio para SQLite (cluster metadata + usuarios)
 # ============================================================================
-log_info "Preparando directorio para SQLite de usuarios..."
+log_info "Preparando directorio para SQLite..."
 
-mkdir -p /opt/distrisearch/data/users
-chmod 755 /opt/distrisearch/data/users
+mkdir -p /opt/distrisearch/data/sqlite
+mkdir -p /opt/distrisearch/data/raft
+chmod 755 /opt/distrisearch/data/sqlite /opt/distrisearch/data/raft
 
 # ============================================================================
 # 7. Verificar estado
@@ -150,25 +163,30 @@ log_info "Estado de los servicios:"
 docker service ls | grep -E "master-mongo|master-redis"
 echo ""
 
-echo -e "${BLUE}Arquitectura de Datos:${NC}"
+echo -e "${BLUE}Arquitectura de Datos (AP Mode):${NC}"
 echo ""
 echo "  MASTER:"
-echo "    • MongoDB (master-mongo:27017)"
-echo "      └─ Colecciones: nodes, partitions, cluster_state"
+echo "    • SQLite (Raft-replicado)"
+echo "      └─ Tablas: users, nodes, partitions (metadatos cluster)"
+echo "      └─ Ubicación: /app/data/sqlite/master.db"
+echo "    • MongoDB (master-mongo:27017) - OPCIONAL"
+echo "      └─ Solo para documentos locales del master"
 echo "    • Redis (master-redis:6379)"
-echo "      └─ Cache de sesiones JWT, coordinación Raft"
-echo "    • SQLite (/opt/distrisearch/data/users/users.db)"
-echo "      └─ Tabla users - replicada via Raft a slaves"
+echo "      └─ Cache de sesiones JWT, coordinación"
 echo ""
 echo "  SLAVES (se crean en script 06):"
-echo "    • Cada slave tendrá su propio MongoDB local"
-echo "      └─ Colecciones: documents (solo los asignados a ese nodo)"
-echo "    • Cada slave tendrá su propio Redis local"
+echo "    • SQLite (réplica Raft)"
+echo "      └─ Réplica de users, nodes, partitions"
+echo "    • MongoDB local"
+echo "      └─ Documentos asignados a ese nodo (VP-Tree)"
+echo "    • Redis local"
 echo "      └─ Cache de vectores, resultados de búsqueda"
-echo "    • Réplica read-only de SQLite de usuarios"
 echo ""
-echo -e "${YELLOW}Nota:${NC} Los documentos se distribuyen entre slaves según VP-Tree."
-echo "Cada slave solo almacena los documentos de sus particiones asignadas."
+echo -e "${CYAN}Protocolos:${NC}"
+echo "  • Raft: Consenso para SQLite (users, nodes, partitions)"
+echo "  • Gossip: UserDocumentRegistry (user->docs mapping)"
+echo "  • VP-Tree: Distribución de documentos entre slaves"
+echo ""
 echo ""
 echo "Próximos pasos:"
 echo "  1. Ejecutar 05-deploy-master.sh para desplegar el coordinador"
