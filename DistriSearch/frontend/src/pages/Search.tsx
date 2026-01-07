@@ -353,7 +353,7 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({ result, index, onCl
 
 // Document Viewer Modal Component
 interface DocumentViewerModalProps {
-  document: { title: string; content: string };
+  document: { id: string; title: string; content: string };
   onClose: () => void;
   onDownload: () => void;
 }

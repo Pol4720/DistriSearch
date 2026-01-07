@@ -39,8 +39,10 @@ ENV PATH="/opt/venv/bin:$PATH"
 
 # Copy and install Python dependencies
 COPY backend/requirements.txt ./
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+# Increase pip default timeout to better handle slow networks
+ENV PIP_DEFAULT_TIMEOUT=120
+# Install Python dependencies without upgrading pip to avoid extra downloads
+RUN pip install --no-cache-dir -r requirements.txt --timeout 120
 
 # ============================================================================
 # Stage 3: Final Runtime Image
