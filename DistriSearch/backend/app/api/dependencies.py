@@ -120,7 +120,7 @@ async def init_dependencies(settings: Settings):
     global _local_mongodb_client, _local_document_repository
     global _raft_node, _persistent_state_machine
     global _heartbeat_service, _message_broker, _cluster_manager
-    global _search_engine, _settings
+    global _search_engine, _settings, _search_history_repository
     
     _settings = settings
     node_id = settings.node_id
@@ -151,29 +151,36 @@ async def init_dependencies(settings: Settings):
     logger.info("UserDocumentRegistry initialized for Gossip protocol")
     
     # =========================================================================
-    # 3. Initialize Local MongoDB (documents only)
+    # 3. Initialize Local MongoDB (documents only - SLAVES ONLY)
     # =========================================================================
-    # Each slave node has its OWN MongoDB instance
-    # The URI should point to LOCAL MongoDB, not shared
-    local_mongo_uri = settings.local_mongodb_uri or settings.mongodb_uri
-    local_mongo_db = f"distrisearch_{node_id}"
+    # Master does NOT use MongoDB - it only coordinates via SQLite + Redis
+    # Each slave node has its OWN MongoDB instance for document storage
     
-    _local_mongodb_client = MongoDBClient(
-        uri=local_mongo_uri,
-        database_name=local_mongo_db
-    )
-    await _local_mongodb_client.connect()
-    
-    _local_document_repository = DocumentRepository(_local_mongodb_client)
-    await _local_document_repository.ensure_indexes()
-    
-    # Initialize Search History Repository
-    global _search_history_repository
-    from ..storage.mongodb import SearchHistoryRepository
-    _search_history_repository = SearchHistoryRepository(_local_mongodb_client)
-    await _search_history_repository.ensure_indexes()
-    
-    logger.info(f"Local MongoDB initialized: {local_mongo_db}")
+    if settings.is_master:
+        logger.info("Master node: Skipping MongoDB initialization (no document storage)")
+        _local_mongodb_client = None
+        _local_document_repository = None
+        _search_history_repository = None
+    else:
+        # Slave node: Initialize local MongoDB
+        local_mongo_uri = settings.local_mongodb_uri or settings.mongodb_uri
+        local_mongo_db = f"distrisearch_{node_id}"
+        
+        _local_mongodb_client = MongoDBClient(
+            uri=local_mongo_uri,
+            database_name=local_mongo_db
+        )
+        await _local_mongodb_client.connect()
+        
+        _local_document_repository = DocumentRepository(_local_mongodb_client)
+        await _local_document_repository.ensure_indexes()
+        
+        # Initialize Search History Repository
+        from ..storage.mongodb import SearchHistoryRepository
+        _search_history_repository = SearchHistoryRepository(_local_mongodb_client)
+        await _search_history_repository.ensure_indexes()
+        
+        logger.info(f"Local MongoDB initialized: {local_mongo_db}")
     
     # =========================================================================
     # 4. Initialize Raft and Persistent State Machine

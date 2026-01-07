@@ -131,7 +131,8 @@ docker service create \
     --network distrisearch-network \
     --replicas 1 \
     --constraint 'node.role==manager' \
-    --publish 8000:8000 \
+    --no-resolve-image \
+    --publish 8001:8001 \
     --publish 50051:50051 \
     --mount type=volume,source=master-data,target=/app/data \
     --mount type=volume,source=master-users-db,target=/app/users \
@@ -151,7 +152,7 @@ docker service create \
     --env RAFT_HEARTBEAT_INTERVAL=50 \
     --env GOSSIP_INTERVAL=1000 \
     --env GOSSIP_FANOUT=3 \
-    --health-cmd "curl -f http://localhost:8000/health || exit 1" \
+    --health-cmd "curl -f http://localhost:8001/api/v1/health/live || exit 1" \
     --health-interval 30s \
     --health-timeout 10s \
     --health-retries 3 \
