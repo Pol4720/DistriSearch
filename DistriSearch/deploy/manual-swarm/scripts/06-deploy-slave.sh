@@ -281,10 +281,11 @@ for i in $(seq 1 $NUM_REPLICAS); do
         --mount type=volume,source="slave${i}-sqlite",target=/app/data/sqlite \
         --mount type=volume,source="slave${i}-raft",target=/app/data/raft \
         --mount type=volume,source="slave${i}-docs",target=/app/data/documents \
-        --health-cmd "curl -f http://localhost:8000/api/v1/health/live || exit 1" \
+        --health-cmd "curl -sf http://localhost:8000/api/v1/health/live || curl -sf http://localhost/health || exit 1" \
         --health-interval 30s \
-        --health-timeout 10s \
-        --health-retries 3 \
+        --health-timeout 15s \
+        --health-retries 5 \
+        --health-start-period 60s \
         "$IMAGE_NAME"
     
     echo -e "  ${CYAN}Puertos:${NC} HTTP=$HTTP_PORT, HTTPS=$HTTPS_PORT, API=$API_PORT"
