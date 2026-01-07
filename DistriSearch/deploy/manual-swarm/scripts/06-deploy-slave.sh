@@ -90,8 +90,8 @@ fi
 # ============================================================================
 log_info "Obteniendo lista de workers..."
 
-# Obtener workers activos
-mapfile -t WORKERS < <(docker node ls --filter "role=worker" --filter "availability=active" --format "{{.Hostname}}")
+# Obtener workers activos (Ready)
+mapfile -t WORKERS < <(docker node ls --filter "role=worker" --format "{{.Hostname}} {{.Status}}" | grep "Ready" | awk '{print $1}' | sort -u)
 NUM_WORKERS=${#WORKERS[@]}
 
 if [ "$NUM_WORKERS" -eq 0 ]; then
