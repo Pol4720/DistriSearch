@@ -68,14 +68,66 @@ if [ "$SWARM_STATUS" == "active" ]; then
 fi
 
 # ============================================================================
-# 4. Inicializar Swarm
+# 4. Configurar firewall para Docker Swarm Routing Mesh
+# ============================================================================
+log_info "Configurando firewall para Docker Swarm..."
+
+configure_firewall() {
+    # Puertos requeridos para Docker Swarm
+    # 2377/tcp - Cluster management
+    # 7946/tcp+udp - Node communication  
+    # 4789/udp - Overlay network (VXLAN)
+    # Puertos de la aplicación
+    # 8001 - Master API
+    # 8081-8089 - Slave HTTP
+    # 4431-4439 - Slave HTTPS
+    # 8002-8009 - Slave API
+    
+    # Detectar si usamos ufw o iptables
+    if command -v ufw &> /dev/null && ufw status | grep -q "active"; then
+        log_info "Configurando UFW..."
+        ufw allow 2377/tcp comment "Docker Swarm management"
+        ufw allow 7946/tcp comment "Docker Swarm node communication"
+        ufw allow 7946/udp comment "Docker Swarm node communication"
+        ufw allow 4789/udp comment "Docker Swarm overlay network VXLAN"
+        ufw allow 8001/tcp comment "DistriSearch Master API"
+        ufw allow 8081:8089/tcp comment "DistriSearch Slave HTTP"
+        ufw allow 4431:4439/tcp comment "DistriSearch Slave HTTPS"
+        ufw allow 8002:8009/tcp comment "DistriSearch Slave API"
+        ufw reload
+    else
+        log_info "Configurando iptables..."
+        # Docker Swarm ports
+        iptables -A INPUT -p tcp --dport 2377 -j ACCEPT 2>/dev/null || true
+        iptables -A INPUT -p tcp --dport 7946 -j ACCEPT 2>/dev/null || true
+        iptables -A INPUT -p udp --dport 7946 -j ACCEPT 2>/dev/null || true
+        iptables -A INPUT -p udp --dport 4789 -j ACCEPT 2>/dev/null || true
+        # Application ports
+        iptables -A INPUT -p tcp --dport 8001 -j ACCEPT 2>/dev/null || true
+        iptables -A INPUT -p tcp --dport 8081:8089 -j ACCEPT 2>/dev/null || true
+        iptables -A INPUT -p tcp --dport 4431:4439 -j ACCEPT 2>/dev/null || true
+        iptables -A INPUT -p tcp --dport 8002:8009 -j ACCEPT 2>/dev/null || true
+        
+        # Guardar reglas si es posible
+        if command -v iptables-save &> /dev/null; then
+            iptables-save > /etc/iptables.rules 2>/dev/null || true
+        fi
+    fi
+    
+    log_info "Firewall configurado para Docker Swarm"
+}
+
+configure_firewall
+
+# ============================================================================
+# 5. Inicializar Swarm
 # ============================================================================
 log_info "Inicializando Docker Swarm..."
 
 docker swarm init --advertise-addr $MANAGER_IP
 
 # ============================================================================
-# 5. Crear red overlay
+# 6. Crear red overlay
 # ============================================================================
 log_info "Creando red overlay para DistriSearch..."
 
@@ -92,7 +144,7 @@ else
 fi
 
 # ============================================================================
-# 6. Guardar tokens
+# 7. Guardar tokens
 # ============================================================================
 log_info "Guardando tokens de acceso..."
 
@@ -120,7 +172,7 @@ EOF
 chmod 600 /opt/distrisearch/config/swarm-tokens.env
 
 # ============================================================================
-# 7. Mostrar información
+# 8. Mostrar información
 # ============================================================================
 echo ""
 echo "=============================================="
