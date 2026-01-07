@@ -126,6 +126,18 @@ class MongoDBClient:
         """Create database indexes."""
         # Documents collection indexes
         documents = self.db.documents
+        
+        # Drop any existing text indexes to avoid conflicts
+        try:
+            existing_indexes = await documents.index_information()
+            for index_name, index_info in existing_indexes.items():
+                # Check if it's a text index (has _fts key)
+                if any(key == '_fts' for key, _ in index_info.get('key', [])):
+                    logger.info(f"Dropping existing text index: {index_name}")
+                    await documents.drop_index(index_name)
+        except Exception as e:
+            logger.warning(f"Could not check existing indexes: {e}")
+        
         await documents.create_indexes([
             IndexModel([("status", ASCENDING)]),
             IndexModel([("primary_node_id", ASCENDING)]),

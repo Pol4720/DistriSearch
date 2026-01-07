@@ -80,12 +80,11 @@ export const Documents: React.FC = () => {
 
   const handleDownload = async (doc: Document) => {
     try {
-      const response = await documentService.get(doc.id);
-      const blob = new Blob([response.content], { type: 'text/plain' });
+      const { blob, filename } = await documentService.download(doc.id);
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = doc.filename || doc.title || 'document.txt';
+      a.download = filename || doc.filename || doc.title || 'document';
       a.click();
       window.URL.revokeObjectURL(url);
     } catch (error) {

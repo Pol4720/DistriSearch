@@ -4,6 +4,7 @@ CRUD endpoints for document management in DistriSearch
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Query
+from fastapi.responses import Response
 from typing import List, Optional
 from datetime import datetime
 from pathlib import Path
@@ -408,6 +409,75 @@ async def get_document(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get document: {str(e)}"
+        )
+
+
+@router.get(
+    "/{document_id}/download",
+    summary="Download the original file",
+    responses={
+        200: {"description": "File content"},
+        404: {"model": ErrorResponse, "description": "Document or file not found"},
+        500: {"model": ErrorResponse, "description": "Internal server error"}
+    }
+)
+async def download_document(
+    document_id: str,
+    doc_repo: DocumentRepository = Depends(get_document_repository)
+):
+    """
+    Download the original uploaded file.
+    
+    Returns the file with proper content-type and filename headers.
+    """
+    try:
+        doc = await doc_repo.find_by_id(document_id)
+        
+        if not doc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Document not found: {document_id}"
+            )
+        
+        metadata = doc.get("metadata", {})
+        file_path = metadata.get("file_path")
+        
+        if not file_path:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No file associated with this document"
+            )
+        
+        # Read file content
+        file_content = await file_handler.get_file(file_path)
+        
+        if file_content is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="File not found on storage"
+            )
+        
+        # Get original filename and content type
+        original_filename = metadata.get("filename", "download")
+        content_type = metadata.get("content_type", "application/octet-stream")
+        
+        # Return file with proper headers
+        return Response(
+            content=file_content,
+            media_type=content_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{original_filename}"',
+                "Content-Length": str(len(file_content)),
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error downloading document: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to download document: {str(e)}"
         )
 
 

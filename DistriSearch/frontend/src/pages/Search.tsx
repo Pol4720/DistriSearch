@@ -33,7 +33,7 @@ export const SearchPage: React.FC = () => {
   const [query, setQuery] = useState(searchParams.get('q') || '');
   const [showHistory, setShowHistory] = useState(false);
   const [searchType, setSearchType] = useState<SearchType>('hybrid');
-  const [viewingDocument, setViewingDocument] = useState<{ title: string; content: string } | null>(null);
+  const [viewingDocument, setViewingDocument] = useState<{ id: string; title: string; content: string } | null>(null);
   const [loadingDocument, setLoadingDocument] = useState(false);
 
   const searchMutation = useSearchMutation();
@@ -64,6 +64,7 @@ export const SearchPage: React.FC = () => {
       setLoadingDocument(true);
       const doc = await documentService.get(result.document_id);
       setViewingDocument({
+        id: result.document_id,
         title: doc.title || result.title || 'Documento',
         content: doc.content || 'Sin contenido disponible'
       });
@@ -76,12 +77,11 @@ export const SearchPage: React.FC = () => {
 
   const handleDownload = async (result: SearchResult) => {
     try {
-      const doc = await documentService.get(result.document_id);
-      const blob = new Blob([doc.content], { type: 'text/plain' });
+      const { blob, filename } = await documentService.download(result.document_id);
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = result.title || result.document?.title || 'document.txt';
+      a.download = filename || result.title || result.document?.title || 'document';
       a.click();
       window.URL.revokeObjectURL(url);
     } catch (error) {
@@ -268,14 +268,18 @@ export const SearchPage: React.FC = () => {
         <DocumentViewerModal
           document={viewingDocument}
           onClose={() => setViewingDocument(null)}
-          onDownload={() => {
-            const blob = new Blob([viewingDocument.content], { type: 'text/plain' });
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = viewingDocument.title || 'document.txt';
-            a.click();
-            window.URL.revokeObjectURL(url);
+          onDownload={async () => {
+            try {
+              const { blob, filename } = await documentService.download(viewingDocument.id);
+              const url = window.URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = filename || viewingDocument.title || 'document';
+              a.click();
+              window.URL.revokeObjectURL(url);
+            } catch (error) {
+              console.error('Download failed:', error);
+            }
           }}
         />
       )}

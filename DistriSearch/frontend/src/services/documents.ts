@@ -101,4 +101,31 @@ export const documentService = {
     );
     return response.data;
   },
+
+  /**
+   * Download the original file
+   */
+  async download(id: string): Promise<{ blob: Blob; filename: string; contentType: string }> {
+    const response = await api.get(`${DOCUMENTS_ENDPOINT}/${id}/download`, {
+      responseType: 'blob',
+    });
+    
+    // Extract filename from Content-Disposition header
+    const contentDisposition = response.headers['content-disposition'];
+    let filename = 'download';
+    if (contentDisposition) {
+      const filenameMatch = contentDisposition.match(/filename="?([^";\n]+)"?/);
+      if (filenameMatch) {
+        filename = filenameMatch[1];
+      }
+    }
+    
+    const contentType = response.headers['content-type'] || 'application/octet-stream';
+    
+    return {
+      blob: response.data,
+      filename,
+      contentType,
+    };
+  },
 };
