@@ -69,8 +69,8 @@ class FileHandler:
     - Storage management
     """
     
-    # Supported file types
-    SUPPORTED_TYPES = {
+    # Known file types with extractable content
+    EXTRACTABLE_TYPES = {
         # Documents
         "application/pdf": ".pdf",
         "application/msword": ".doc",
@@ -92,8 +92,53 @@ class FileHandler:
         "application/epub+zip": ".epub",
     }
     
-    # Maximum file size (50 MB)
-    MAX_FILE_SIZE = 50 * 1024 * 1024
+    # All known file types (for extension mapping)
+    KNOWN_TYPES = {
+        **EXTRACTABLE_TYPES,
+        # Images
+        "image/jpeg": ".jpg",
+        "image/png": ".png",
+        "image/gif": ".gif",
+        "image/webp": ".webp",
+        "image/svg+xml": ".svg",
+        "image/bmp": ".bmp",
+        "image/tiff": ".tiff",
+        # Audio
+        "audio/mpeg": ".mp3",
+        "audio/wav": ".wav",
+        "audio/ogg": ".ogg",
+        "audio/flac": ".flac",
+        "audio/aac": ".aac",
+        "audio/webm": ".weba",
+        # Video
+        "video/mp4": ".mp4",
+        "video/webm": ".webm",
+        "video/ogg": ".ogv",
+        "video/quicktime": ".mov",
+        "video/x-msvideo": ".avi",
+        "video/x-matroska": ".mkv",
+        # Archives
+        "application/zip": ".zip",
+        "application/x-rar-compressed": ".rar",
+        "application/x-7z-compressed": ".7z",
+        "application/gzip": ".gz",
+        "application/x-tar": ".tar",
+        # Code
+        "text/javascript": ".js",
+        "text/css": ".css",
+        "text/x-python": ".py",
+        "text/x-java-source": ".java",
+        "text/x-c": ".c",
+        "text/x-c++": ".cpp",
+        # Other
+        "application/octet-stream": "",
+    }
+    
+    # Backward compatibility
+    SUPPORTED_TYPES = KNOWN_TYPES
+    
+    # Maximum file size (500 MB for any file type)
+    MAX_FILE_SIZE = 500 * 1024 * 1024
     
     def __init__(
         self,
@@ -135,12 +180,8 @@ class FileHandler:
             UploadedFile object
             
         Raises:
-            ValueError: If file type not supported or too large
+            ValueError: If file is too large
         """
-        # Validate file type
-        if content_type not in self.SUPPORTED_TYPES:
-            raise ValueError(f"Unsupported file type: {content_type}")
-        
         # Validate file size
         if len(file_data) > self.max_file_size:
             raise ValueError(
@@ -159,7 +200,14 @@ class FileHandler:
         
         # Use safe filename
         safe_filename = self._sanitize_filename(filename)
-        extension = self.SUPPORTED_TYPES.get(content_type, "")
+        
+        # Get extension from MIME type or original filename
+        extension = self.KNOWN_TYPES.get(content_type, "")
+        if not extension:
+            # Try to get extension from original filename
+            original_ext = Path(filename).suffix.lower() if filename else ""
+            extension = original_ext if original_ext else ""
+        
         storage_filename = f"{file_id}{extension}"
         file_path = dir_path / storage_filename
         

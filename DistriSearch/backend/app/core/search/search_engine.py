@@ -422,7 +422,7 @@ class SearchEngine:
         Vectorize a document for indexing.
         
         Args:
-            content: Document content
+            content: Document content (can be empty for binary files)
             title: Document title (optional)
             
         Returns:
@@ -431,8 +431,28 @@ class SearchEngine:
         import hashlib
         import re
         
+        # Handle empty or very short content
+        if not content or len(content.strip()) < 2:
+            # Return minimal vectors for filename-only searchable documents
+            return {
+                "tfidf": [0.0],
+                "minhash": [0] * 16,
+                "textrank": [],
+                "lda": [0.33, 0.33, 0.34]  # Uniform distribution
+            }
+        
         # Simple TF-IDF-like representation (word frequencies as float list)
         words = re.findall(r'\b\w+\b', content.lower())
+        
+        # Handle case where no words are found
+        if not words:
+            return {
+                "tfidf": [0.0],
+                "minhash": [0] * 16,
+                "textrank": [],
+                "lda": [0.33, 0.33, 0.34]
+            }
+        
         word_freq = {}
         for word in words:
             if len(word) > 2:  # Skip very short words
@@ -440,7 +460,7 @@ class SearchEngine:
         
         # Top words as TF-IDF approximation - convert to float list
         sorted_words = sorted(word_freq.items(), key=lambda x: x[1], reverse=True)[:50]
-        tfidf_vector = [float(c) / len(words) for _, c in sorted_words]
+        tfidf_vector = [float(c) / max(len(words), 1) for _, c in sorted_words] if sorted_words else [0.0]
         
         # MinHash signature (simple hash-based approach) - list of ints
         content_hash = hashlib.md5(content.encode()).hexdigest()

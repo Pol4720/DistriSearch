@@ -6,6 +6,7 @@ CRUD endpoints for document management in DistriSearch
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Query
 from typing import List, Optional
 from datetime import datetime
+from pathlib import Path
 import logging
 import uuid
 
@@ -160,24 +161,27 @@ async def upload_document(
     """
     Upload and process a document file.
     
-    Supported formats: PDF, DOCX, TXT, HTML
-    Maximum file size: 50MB
+    Supports ANY file type. For text-based files (PDF, DOCX, TXT, HTML, etc.),
+    content will be extracted for full-text search. For binary files (images,
+    audio, video, etc.), the file will be searchable by filename only.
+    
+    Maximum file size: 500MB
     
     The document will be:
-    1. Content extracted from the file
-    2. Vectorized using TF-IDF, MinHash, and LDA
+    1. Content extracted from the file (if possible)
+    2. Vectorized using TF-IDF, MinHash, and LDA (or filename-based for binary files)
     3. Assigned to a partition using VP-Tree
     4. Stored on the appropriate node
     """
     try:
         # Validate file
-        max_size = 50 * 1024 * 1024  # 50MB
+        max_size = 500 * 1024 * 1024  # 500MB
         content = await file.read()
         
         if len(content) > max_size:
             raise HTTPException(
                 status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                detail="File size exceeds maximum limit of 50MB"
+                detail="File size exceeds maximum limit of 500MB"
             )
         
         # Save file and get metadata
@@ -187,7 +191,7 @@ async def upload_document(
             content_type=file.content_type
         )
         
-        # Extract text content
+        # Extract text content (may return empty for binary files)
         extraction_result = await content_extractor.extract(
             file_data=content,
             filename=file.filename,
@@ -195,19 +199,26 @@ async def upload_document(
         )
         extracted_content = extraction_result.text
         
-        if not extracted_content or not extracted_content.strip():
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Could not extract text content from file"
-            )
-        
+        # For files without extractable content, use filename for search
         doc_id = str(uuid.uuid4())
         now = datetime.utcnow()
-        doc_title = title or file.filename or "Untitled Document"
+        doc_title = title or extraction_result.title or file.filename or "Untitled Document"
         doc_tags = tags.split(",") if tags else []
         
-        # Generate vectors
-        vectors = await search_engine.vectorize_document(extracted_content)
+        # Determine searchable text: use extracted content or filename
+        searchable_text = extracted_content.strip() if extracted_content else ""
+        is_content_extracted = bool(searchable_text)
+        
+        if not searchable_text:
+            # Use filename (without extension) as searchable text for binary files
+            filename_without_ext = Path(file.filename).stem if file.filename else "unnamed"
+            # Also include the extension as a searchable term
+            file_ext = Path(file.filename).suffix.lower() if file.filename else ""
+            searchable_text = f"{filename_without_ext} {file_ext.replace('.', '')}"
+            logger.info(f"No content extracted from {file.filename}, using filename for search")
+        
+        # Generate vectors from searchable text
+        vectors = await search_engine.vectorize_document(searchable_text)
         
         # Determine partition assignment
         partition_id = await cluster_manager.assign_partition(vectors)
@@ -217,12 +228,14 @@ async def upload_document(
         doc_data = {
             "_id": doc_id,
             "title": doc_title,
-            "content": extracted_content,
+            "content": extracted_content if is_content_extracted else "",
             "metadata": {
                 "filename": file.filename,
                 "content_type": file.content_type,
                 "file_size": len(content),
-                "file_path": file_metadata.storage_path
+                "file_path": file_metadata.storage_path,
+                "content_extracted": is_content_extracted,
+                "extraction_metadata": extraction_result.metadata,
             },
             "tags": doc_tags,
             "owner_id": auth_user.get("user_id") or auth_user.get("id") or auth_user.get("sub"),
@@ -244,13 +257,15 @@ async def upload_document(
         if node_id != current_node["node_id"]:
             await cluster_manager.replicate_document(doc_id, node_id)
         
-        logger.info(f"Document uploaded: {doc_id}, file: {file.filename}")
+        logger.info(f"Document uploaded: {doc_id}, file: {file.filename}, content_extracted: {is_content_extracted}")
+        
+        content_preview = extracted_content[:500] if is_content_extracted else f"[Binary file: {file.filename}]"
         
         return DocumentUploadResponse(
             id=doc_id,
             filename=file.filename,
             title=doc_title,
-            content_preview=extracted_content[:500],
+            content_preview=content_preview,
             file_size=len(content),
             content_type=file.content_type,
             node_id=node_id,

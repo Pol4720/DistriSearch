@@ -6,7 +6,6 @@ import {
   Clock,
   CheckCircle,
   AlertCircle,
-  Server,
 } from 'lucide-react';
 import {
   LineChart,
@@ -111,21 +110,13 @@ export const Dashboard: React.FC = () => {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <StatCard
           title="Mis Documentos"
           value={documents?.total || 0}
           icon={<FileText className="w-6 h-6" />}
           color="blue"
           link="/documents"
-        />
-        <StatCard
-          title="Sistema"
-          value={health?.status === 'healthy' ? 'Operativo' : 'Degradado'}
-          subtitle={`${clusterStatus?.active_nodes ?? clusterStatus?.healthy_nodes ?? 0} nodos activos`}
-          icon={<Server className="w-6 h-6" />}
-          color="green"
-          link="/cluster"
         />
         <StatCard
           title="Búsquedas Realizadas"

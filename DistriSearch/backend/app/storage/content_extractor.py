@@ -115,7 +115,23 @@ class ContentExtractor:
             extractor = self._extractors.get(extension)
         
         if extractor is None:
-            raise ValueError(f"No extractor for {extension} ({content_type})")
+            # No extractor available - return empty content with filename as title
+            # This allows storing any file type, searchable by filename
+            logger.info(
+                f"No content extractor for {extension} ({content_type}). "
+                f"File will be searchable by filename only."
+            )
+            extraction_time = (datetime.now() - start_time).total_seconds() * 1000
+            return ExtractedContent(
+                text="",
+                title=Path(filename).stem if filename else None,
+                metadata={
+                    "extraction_method": "none",
+                    "reason": f"No extractor for {extension}",
+                    "content_type": content_type,
+                },
+                extraction_time_ms=extraction_time,
+            )
         
         try:
             # Run extraction in thread pool for blocking operations
@@ -129,7 +145,7 @@ class ContentExtractor:
             
             extraction_time = (datetime.now() - start_time).total_seconds() * 1000
             result.extraction_time_ms = extraction_time
-            result.word_count = len(result.text.split())
+            result.word_count = len(result.text.split()) if result.text else 0
             
             logger.debug(
                 f"Extracted {result.word_count} words from {filename} "
@@ -139,8 +155,19 @@ class ContentExtractor:
             return result
             
         except Exception as e:
-            logger.error(f"Extraction error for {filename}: {e}")
-            raise
+            # If extraction fails, return empty content instead of raising
+            logger.warning(f"Extraction failed for {filename}: {e}. Using filename only.")
+            extraction_time = (datetime.now() - start_time).total_seconds() * 1000
+            return ExtractedContent(
+                text="",
+                title=Path(filename).stem if filename else None,
+                metadata={
+                    "extraction_method": "failed",
+                    "error": str(e),
+                    "content_type": content_type,
+                },
+                extraction_time_ms=extraction_time,
+            )
     
     def _extension_from_mime(self, content_type: str) -> str:
         """Get file extension from MIME type."""

@@ -131,7 +131,13 @@ class MongoDBClient:
             IndexModel([("primary_node_id", ASCENDING)]),
             IndexModel([("partition_id", ASCENDING)]),
             IndexModel([("created_at", DESCENDING)]),
-            IndexModel([("content", TEXT)]),
+            # Full-text index on title, content, and filename for comprehensive search
+            IndexModel([
+                ("title", TEXT),
+                ("content", TEXT),
+                ("metadata.filename", TEXT),
+                ("tags", TEXT),
+            ], name="text_search_index"),
         ])
         
         # Nodes collection indexes
