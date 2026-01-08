@@ -121,9 +121,25 @@ if [ "$CLEAN_VOLUMES" = true ]; then
     log_info "Eliminando volúmenes de datos..."
     sleep 5  # Esperar a que los servicios se detengan
     
-    docker volume ls --format "{{.Name}}" | grep -E "^node[0-9]+-|^slave[0-9]+-|^master-|^coordinator-" | while read vol; do
-        docker volume rm "$vol" 2>/dev/null && echo "  Eliminado: $vol" || true
-    done
+    # Listar todos los volúmenes relacionados con DistriSearch
+    log_info "Buscando volúmenes de DistriSearch..."
+    
+    # Patrones de volúmenes a eliminar
+    VOLUME_PATTERNS="^node[0-9]+-|^slave[0-9]+-|^master-|^coordinator-|distrisearch|mongodb-data|redis-data"
+    
+    VOLUMES_TO_DELETE=$(docker volume ls --format "{{.Name}}" | grep -E "$VOLUME_PATTERNS" || true)
+    
+    if [ -n "$VOLUMES_TO_DELETE" ]; then
+        echo "$VOLUMES_TO_DELETE" | while read vol; do
+            docker volume rm "$vol" 2>/dev/null && echo "  Eliminado: $vol" || echo "  No se pudo eliminar: $vol (puede estar en uso)"
+        done
+    else
+        echo "  No se encontraron volúmenes de DistriSearch"
+    fi
+    
+    # Opcionalmente limpiar volúmenes huérfanos
+    log_info "Limpiando volúmenes huérfanos..."
+    docker volume prune -f 2>/dev/null || true
 fi
 
 # ============================================================================
