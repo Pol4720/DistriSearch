@@ -4,9 +4,9 @@
 # ═══════════════════════════════════════════════════════════════════════════
 
 # ═══════════════════════════════════════════════════════════════════════════
-# ZONA PRINCIPAL: distrisearch.local
+# ZONA PRINCIPAL: distrisearch.local (puerto 5353 para evitar conflicto con systemd-resolved)
 # ═══════════════════════════════════════════════════════════════════════════
-distrisearch.local:53 {
+distrisearch.local:5353 {
     # Enable logging for debugging
     log
     errors
@@ -45,7 +45,7 @@ distrisearch.local:53 {
 # ═══════════════════════════════════════════════════════════════════════════
 # ZONA DE SERVICIOS: services.distrisearch.local
 # ═══════════════════════════════════════════════════════════════════════════
-services.distrisearch.local:53 {
+services.distrisearch.local:5353 {
     log
     errors
     
@@ -61,9 +61,9 @@ services.distrisearch.local:53 {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════
-# DEFAULT: Forward all other queries
+# DEFAULT: Forward all other queries (puerto 5353)
 # ═══════════════════════════════════════════════════════════════════════════
-. {
+.:5353 {
     log
     errors
     
