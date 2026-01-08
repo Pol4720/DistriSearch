@@ -90,6 +90,7 @@ class LeaderElection:
         state: RaftState,
         log_store: LogStore,
         send_request_vote: RequestVoteSender,
+        on_become_leader: Optional[Callable[[], Awaitable[None]]] = None,
     ):
         """
         Initialize leader election.
@@ -98,10 +99,12 @@ class LeaderElection:
             state: Raft state manager
             log_store: Log entry storage
             send_request_vote: Function to send RequestVote RPC to a node
+            on_become_leader: Callback when this node becomes leader
         """
         self.state = state
         self.log_store = log_store
         self.send_request_vote = send_request_vote
+        self._on_become_leader = on_become_leader
         
         # Election state
         self._election_timer: Optional[asyncio.Task] = None
@@ -298,6 +301,13 @@ class LeaderElection:
         
         # Clear votes
         self._votes_received = {}
+        
+        # Call the callback to start heartbeats, etc.
+        if self._on_become_leader:
+            try:
+                await self._on_become_leader()
+            except Exception as e:
+                logger.error(f"Error in on_become_leader callback: {e}")
     
     async def handle_request_vote(
         self,

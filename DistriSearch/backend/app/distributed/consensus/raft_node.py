@@ -80,17 +80,19 @@ class RaftNode:
         # Initialize log store
         self.log_store = LogStore(storage_path=self.storage_path)
         
-        # Initialize components
-        self.election = LeaderElection(
-            state=self.state,
-            log_store=self.log_store,
-            send_request_vote=self._send_request_vote,
-        )
-        
+        # Initialize replicator first (needed by callback)
         self.replicator = LogReplicator(
             state=self.state,
             log_store=self.log_store,
             send_append_entries=self._send_append_entries,
+        )
+        
+        # Initialize components with callback
+        self.election = LeaderElection(
+            state=self.state,
+            log_store=self.log_store,
+            send_request_vote=self._send_request_vote,
+            on_become_leader=self._become_leader_callback,
         )
         
         self.state_machine = StateMachine(
@@ -306,8 +308,14 @@ class RaftNode:
             logger.warning("No RPC sender configured")
             return None
         
+        # Get target address from cluster nodes
+        target_address = self.state.cluster_nodes.get(target_id)
+        if not target_address:
+            logger.debug(f"Unknown target node: {target_id}")
+            return None
+        
         try:
-            response = await self._rpc_sender(target_id, {
+            response = await self._rpc_sender(target_address, {
                 "type": "request_vote",
                 "data": args.to_dict(),
             })
@@ -330,8 +338,14 @@ class RaftNode:
             logger.warning("No RPC sender configured")
             return None
         
+        # Get target address from cluster nodes
+        target_address = self.state.cluster_nodes.get(target_id)
+        if not target_address:
+            logger.debug(f"Unknown target node: {target_id}")
+            return None
+        
         try:
-            response = await self._rpc_sender(target_id, {
+            response = await self._rpc_sender(target_address, {
                 "type": "append_entries",
                 "data": args.to_dict(),
             })

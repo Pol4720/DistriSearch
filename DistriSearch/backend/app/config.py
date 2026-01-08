@@ -60,6 +60,8 @@ class Settings(BaseSettings):
     raft_election_timeout_min: int = Field(default=150, alias="RAFT_ELECTION_TIMEOUT_MIN")
     raft_election_timeout_max: int = Field(default=300, alias="RAFT_ELECTION_TIMEOUT_MAX")
     raft_heartbeat_interval: int = Field(default=50, alias="RAFT_HEARTBEAT_INTERVAL")
+    raft_peers: str = Field(default="", alias="RAFT_PEERS")  # Comma-separated list: "node1:8000,node2:8000"
+    raft_cluster_size: int = Field(default=1, alias="RAFT_CLUSTER_SIZE")
     
     # Heartbeat (seconds)
     heartbeat_interval: int = Field(default=5, alias="HEARTBEAT_INTERVAL")
@@ -146,6 +148,13 @@ class Settings(BaseSettings):
         if self.cors_origins == "*":
             return ["*"]
         return [origin.strip() for origin in self.cors_origins.split(",")]
+    
+    @property
+    def raft_peers_list(self) -> List[str]:
+        """Parse RAFT_PEERS string into list of addresses."""
+        if not self.raft_peers:
+            return []
+        return [peer.strip() for peer in self.raft_peers.split(",") if peer.strip()]
     
     @property
     def max_upload_size_bytes(self) -> int:
