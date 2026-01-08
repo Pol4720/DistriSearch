@@ -221,6 +221,30 @@ async def init_dependencies(settings: Settings):
     logger.info("Raft and PersistentStateMachine initialized")
     
     # =========================================================================
+    # 4.5. Add Raft peers from configuration
+    # =========================================================================
+    raft_peers = settings.raft_peers_list
+    if raft_peers:
+        logger.info(f"Adding {len(raft_peers)} Raft peers from configuration: {raft_peers}")
+        for peer_address in raft_peers:
+            # Extract peer_id from address (e.g., "distrisearch-node-2:8000" -> "node-2")
+            peer_host = peer_address.split(":")[0]
+            if peer_host.startswith("distrisearch-"):
+                peer_id = peer_host.replace("distrisearch-", "")
+            else:
+                peer_id = peer_host
+            
+            # Skip self by comparing node_id
+            if peer_id == node_id:
+                logger.debug(f"Skipping self: {peer_id}")
+                continue
+            
+            logger.info(f"Adding Raft peer: {peer_id} at {peer_address}")
+            await _raft_node.add_peer(peer_id, peer_address)
+    else:
+        logger.warning("No Raft peers configured - node will be single-node cluster")
+    
+    # =========================================================================
     # 5. Initialize Distributed Services
     # =========================================================================
     node_role = NodeRole.MASTER if settings.is_master else NodeRole.SLAVE

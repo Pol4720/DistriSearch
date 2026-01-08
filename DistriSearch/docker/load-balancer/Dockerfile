@@ -25,9 +25,10 @@ COPY nginx.conf /etc/nginx/nginx.conf
 COPY update-upstreams.sh /usr/local/bin/update-upstreams.sh
 RUN chmod +x /usr/local/bin/update-upstreams.sh
 
-# Create initial empty upstream config
+# Create initial upstream config (includes master_api for HA mode)
 RUN echo 'upstream slave_api { server 127.0.0.1:8000; }' > /etc/nginx/conf.d/upstreams/slaves.conf \
-    && echo 'upstream slave_frontend { server 127.0.0.1:80; }' >> /etc/nginx/conf.d/upstreams/slaves.conf
+    && echo 'upstream slave_frontend { server 127.0.0.1:80; }' >> /etc/nginx/conf.d/upstreams/slaves.conf \
+    && echo 'upstream master_api { server 127.0.0.1:8000; }' >> /etc/nginx/conf.d/upstreams/slaves.conf
 
 # Copy supervisor configuration
 COPY supervisord-lb.conf /etc/supervisor/conf.d/supervisord.conf

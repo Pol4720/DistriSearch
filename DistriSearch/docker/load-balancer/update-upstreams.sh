@@ -1,15 +1,21 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════════════════════
 # Script para actualizar upstreams de Nginx dinámicamente
-# Consulta al Master para obtener lista de slaves activos
+# Compatible con arquitectura HA donde el líder es elegido por Raft
 # ═══════════════════════════════════════════════════════════════════════════
 
 set -e
 
 UPSTREAM_DIR="/etc/nginx/conf.d/upstreams"
+# Para HA, usamos el servicio de nodos (tasks.node) en vez de un master fijo
+NODE_SERVICE="${NODE_SERVICE:-tasks.node}"
+NODE_PORT="${NODE_PORT:-8000}"
+# Fallback al master fijo (compatibilidad hacia atrás)
 MASTER_HOST="${MASTER_HOST:-master}"
 MASTER_PORT="${MASTER_PORT:-8001}"
 UPDATE_INTERVAL="${UPDATE_INTERVAL:-30}"
+# Modo HA: descubre nodos dinámicamente
+HA_MODE="${HA_MODE:-false}"
 
 mkdir -p "$UPSTREAM_DIR"
 
@@ -17,8 +23,132 @@ log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
 }
 
+# Descubrir el líder actual consultando cualquier nodo
+discover_leader() {
+    local nodes=("$@")
+    for node in "${nodes[@]}"; do
+        LEADER_INFO=$(curl -sf "http://${node}:${NODE_PORT}/api/v1/cluster/master" 2>/dev/null || echo "")
+        if [ -n "$LEADER_INFO" ] && [ "$LEADER_INFO" != "null" ]; then
+            LEADER_ADDRESS=$(echo "$LEADER_INFO" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('address',''))" 2>/dev/null)
+            LEADER_PORT=$(echo "$LEADER_INFO" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('port',8000))" 2>/dev/null)
+            if [ -n "$LEADER_ADDRESS" ]; then
+                echo "${LEADER_ADDRESS}:${LEADER_PORT}"
+                return 0
+            fi
+        fi
+    done
+    return 1
+}
+
+# Descubrir todos los nodos del servicio Docker Swarm
+discover_swarm_nodes() {
+    # Resolver tasks.node para obtener todas las IPs de los contenedores
+    getent hosts ${NODE_SERVICE} 2>/dev/null | awk '{print $1}' || true
+}
+
+# Generar configuración de fallback cuando no hay nodos disponibles
+generate_fallback_config() {
+    cat > "${UPSTREAM_DIR}/slaves.conf" << EOF
+# Fallback configuration - no nodes available
+upstream slave_api {
+    server 127.0.0.1:8000;
+    keepalive 16;
+}
+
+upstream slave_frontend {
+    server 127.0.0.1:80;
+    keepalive 8;
+}
+
+upstream master_api {
+    server 127.0.0.1:8000;
+    keepalive 8;
+}
+EOF
+    log "Generated fallback configuration"
+}
+
+# Generar configuración HA con todos los nodos descubiertos
+generate_ha_upstream_config() {
+    local nodes=("$@")
+    local config_file="${UPSTREAM_DIR}/slaves.conf"
+    
+    {
+        echo "# HA Mode - Generated upstream configuration"
+        echo "# Generated at: $(date)"
+        echo "# Nodes discovered: ${#nodes[@]}"
+        echo ""
+        
+        # API upstream - todos los nodos pueden servir la API
+        echo "upstream slave_api {"
+        echo "    least_conn;"
+        for node in "${nodes[@]}"; do
+            echo "    server ${node}:${NODE_PORT} max_fails=3 fail_timeout=30s;"
+        done
+        echo "    keepalive 32;"
+        echo "}"
+        echo ""
+        
+        # Frontend upstream - todos los nodos sirven el frontend
+        echo "upstream slave_frontend {"
+        echo "    least_conn;"
+        for node in "${nodes[@]}"; do
+            echo "    server ${node}:80 max_fails=3 fail_timeout=30s;"
+        done
+        echo "    keepalive 16;"
+        echo "}"
+        echo ""
+        
+        # Master API upstream - el líder actual (con fallback a todos los nodos)
+        # En HA, cualquier nodo puede responder /api/v1/cluster/master para redirigir
+        echo "upstream master_api {"
+        echo "    least_conn;"
+        for node in "${nodes[@]}"; do
+            echo "    server ${node}:${NODE_PORT} max_fails=2 fail_timeout=10s;"
+        done
+        echo "    keepalive 8;"
+        echo "}"
+        
+    } > "$config_file"
+    
+    log "Generated HA upstream configuration with ${#nodes[@]} nodes"
+    return 0
+}
+
 generate_upstreams() {
-    log "Fetching active nodes from master..."
+    log "Fetching active nodes..."
+    
+    # En modo HA, descubrimos los nodos del servicio Docker Swarm
+    if [ "$HA_MODE" = "true" ]; then
+        log "HA Mode: Discovering nodes from Swarm service ${NODE_SERVICE}"
+        
+        NODE_IPS=$(discover_swarm_nodes)
+        if [ -z "$NODE_IPS" ]; then
+            log "WARNING: No nodes discovered from Swarm service"
+            generate_fallback_config
+            return 1
+        fi
+        
+        # Convertir a array
+        IFS=$'\n' read -rd '' -a NODES_ARRAY <<< "$NODE_IPS" || true
+        log "Discovered ${#NODES_ARRAY[@]} node(s): ${NODES_ARRAY[*]}"
+        
+        # Descubrir el líder actual
+        LEADER=$(discover_leader "${NODES_ARRAY[@]}")
+        if [ -n "$LEADER" ]; then
+            log "Current Raft leader: $LEADER"
+        else
+            log "WARNING: Could not determine Raft leader, using first node as reference"
+            LEADER="${NODES_ARRAY[0]}:${NODE_PORT}"
+        fi
+        
+        # Generar configuración con todos los nodos descubiertos
+        generate_ha_upstream_config "${NODES_ARRAY[@]}"
+        return $?
+    fi
+    
+    # Modo legacy: consultar al master fijo
+    log "Legacy Mode: Fetching nodes from master ${MASTER_HOST}:${MASTER_PORT}"
     
     # Intentar obtener nodos del master - primero el cluster status, luego nodes
     NODES_JSON=$(curl -sf "http://${MASTER_HOST}:${MASTER_PORT}/api/v1/cluster/nodes" 2>/dev/null || \
@@ -144,7 +274,7 @@ reload_nginx() {
 
 # Generar configuración inicial vacía
 cat > "${UPSTREAM_DIR}/slaves.conf" << 'EOF'
-# Initial configuration - waiting for slaves to register
+# Initial configuration - waiting for nodes to register
 upstream slave_api {
     server 127.0.0.1:8000;
     keepalive 16;
@@ -154,9 +284,14 @@ upstream slave_frontend {
     server 127.0.0.1:80;
     keepalive 8;
 }
+
+upstream master_api {
+    server 127.0.0.1:8000;
+    keepalive 8;
+}
 EOF
 
-log "Starting upstream update daemon (interval: ${UPDATE_INTERVAL}s)"
+log "Starting upstream update daemon (interval: ${UPDATE_INTERVAL}s, HA_MODE: ${HA_MODE})"
 
 # Loop principal
 while true; do

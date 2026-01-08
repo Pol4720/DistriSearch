@@ -11,6 +11,7 @@ from .cluster import router as cluster_router
 from .health import router as health_router
 from .websocket import router as websocket_router
 from .auth import router as auth_router
+from .internal import router as internal_router
 
 # Create main API router
 api_router = APIRouter(prefix="/api/v1")
@@ -22,6 +23,7 @@ api_router.include_router(search_router)
 api_router.include_router(cluster_router)
 api_router.include_router(health_router)
 api_router.include_router(websocket_router)
+api_router.include_router(internal_router)  # Internal endpoints for node-to-node communication
 
 
 # Root endpoint
