@@ -297,8 +297,8 @@ for i in $(seq 1 $NUM_NODES); do
         --publish published=$HTTPS_PORT,target=443 \
         --publish published=$API_PORT,target=8000 \
         --env NODE_ID="node-$i" \
-        --env NODE_ROLE=dual \
-        --env NODE_TYPE=dual \
+        --env NODE_ROLE=slave \
+        --env NODE_TYPE=slave \
         --env CLUSTER_ID=distrisearch-cluster \
         --env LOCAL_MONGODB_URI="mongodb://node${i}-mongodb:27017" \
         --env MONGODB_URI="mongodb://node${i}-mongodb:27017/distrisearch_node${i}" \
@@ -310,9 +310,9 @@ for i in $(seq 1 $NUM_NODES); do
         --env NODE_ADDRESS="distrisearch-node-$i" \
         --env RAFT_ENABLED=true \
         --env RAFT_PEERS="$RAFT_PEERS" \
-        --env RAFT_ELECTION_TIMEOUT_MIN=150 \
-        --env RAFT_ELECTION_TIMEOUT_MAX=300 \
-        --env RAFT_HEARTBEAT_INTERVAL=50 \
+        --env RAFT_ELECTION_TIMEOUT_MIN=3000 \
+        --env RAFT_ELECTION_TIMEOUT_MAX=6000 \
+        --env RAFT_HEARTBEAT_INTERVAL=1000 \
         --env CLUSTER_SIZE=$NUM_NODES \
         --env REPLICATION_FACTOR=2 \
         --env LOG_LEVEL=INFO \
