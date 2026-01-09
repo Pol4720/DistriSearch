@@ -78,7 +78,8 @@ async def get_cluster_status(
                 node_status = NodeStatus(node_status_str)
             except ValueError:
                 node_status = NodeStatus.UNKNOWN
-                
+            
+            # Count healthy vs unhealthy (dead, suspect, unknown = unhealthy)
             if node_status == NodeStatus.HEALTHY:
                 healthy_count += 1
             else:

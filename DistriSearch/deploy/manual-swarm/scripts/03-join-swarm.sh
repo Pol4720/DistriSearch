@@ -1,15 +1,18 @@
 #!/bin/bash
 # ============================================================================
-# 03-join-swarm.sh - Une un nodo worker al cluster Swarm
+# 03-join-swarm.sh - Une un nodo MANAGER al cluster Swarm (para HA)
 # ============================================================================
-# Ejecutar en cada máquina WORKER
-# Uso: ./03-join-swarm.sh <MANAGER_IP> <TOKEN>
+# Ejecutar en cada máquina que se unirá como MANAGER adicional
+# Uso: ./03-join-swarm.sh <MANAGER_IP> <MANAGER_TOKEN>
+# 
+# IMPORTANTE: Para Alta Disponibilidad, TODOS los nodos deben ser managers.
+# Use el MANAGER_TOKEN (no el worker token) del script 02-init-swarm.sh
 # ============================================================================
 
 set -e
 
 echo "=============================================="
-echo "  DistriSearch - Unir Nodo al Swarm"
+echo "  DistriSearch - Unir Nodo Manager al Swarm"
 echo "=============================================="
 
 # Colores
@@ -29,12 +32,14 @@ MANAGER_IP=$1
 TOKEN=$2
 
 if [ -z "$MANAGER_IP" ] || [ -z "$TOKEN" ]; then
-    echo "Uso: $0 <MANAGER_IP> <TOKEN>"
+    echo "Uso: $0 <MANAGER_IP> <MANAGER_TOKEN>"
     echo ""
     echo "Ejemplo:"
     echo "  $0 192.168.1.10 SWMTKN-1-xxx..."
     echo ""
-    echo "El token y la IP te los proporciona el manager al ejecutar 02-init-swarm.sh"
+    echo "El MANAGER_TOKEN y la IP te los proporciona el manager inicial al ejecutar 02-init-swarm.sh"
+    echo ""
+    echo -e "${YELLOW}IMPORTANTE: Use el MANAGER_TOKEN para alta disponibilidad, no el worker token${NC}"
     exit 1
 fi
 
@@ -141,9 +146,9 @@ if [ "$SWARM_STATUS" == "active" ]; then
 fi
 
 # ============================================================================
-# 7. Unirse al Swarm
+# 7. Unirse al Swarm como MANAGER
 # ============================================================================
-log_info "Uniendo nodo al Swarm..."
+log_info "Uniendo nodo al Swarm como MANAGER..."
 
 docker swarm join --token $TOKEN $MANAGER_IP:2377
 
@@ -152,15 +157,32 @@ docker swarm join --token $TOKEN $MANAGER_IP:2377
 # ============================================================================
 echo ""
 echo "=============================================="
-echo -e "${GREEN}  Nodo Unido al Swarm Correctamente${NC}"
+echo -e "${GREEN}  Nodo Manager Unido al Swarm Correctamente${NC}"
 echo "=============================================="
 echo ""
 log_info "Estado local del nodo:"
 docker info --format 'Swarm: {{.Swarm.LocalNodeState}}'
 docker info --format 'Manager: {{.Swarm.ControlAvailable}}'
 docker info --format 'NodeID: {{.Swarm.NodeID}}'
+
+# Verificar si somos manager
+IS_MANAGER=$(docker info --format '{{.Swarm.ControlAvailable}}')
+if [ "$IS_MANAGER" == "true" ]; then
+    echo ""
+    echo -e "${GREEN}✓ Este nodo es ahora un MANAGER${NC}"
+    echo ""
+    log_info "Lista de nodos en el cluster:"
+    docker node ls
+else
+    echo ""
+    echo -e "${YELLOW}⚠ Este nodo se unió como WORKER, no como MANAGER${NC}"
+    echo "Asegúrate de usar el MANAGER_TOKEN del script 02-init-swarm.sh"
+fi
+
 echo ""
 echo "Próximos pasos:"
-echo "  1. Repetir este proceso en todos los workers"
-echo "  2. En el MANAGER, verificar con: docker node ls"
-echo "  3. En el MANAGER, ejecutar 05-deploy-master.sh"
+echo "  1. Repetir este proceso en todos los nodos adicionales"
+echo "  2. En cualquier MANAGER, verificar con: docker node ls"
+echo "  3. Ejecutar 03b-distribute-images.sh para distribuir imágenes"
+echo "  4. Ejecutar 03c-create-secrets.sh para crear secrets"
+echo "  5. Ejecutar 04-deploy-infrastructure-ha.sh"

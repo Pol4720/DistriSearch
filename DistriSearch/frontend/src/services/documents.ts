@@ -8,7 +8,7 @@ import type {
   DocumentVectors,
 } from '../types';
 
-const DOCUMENTS_ENDPOINT = '/documents/';
+const DOCUMENTS_ENDPOINT = '/documents';
 
 export const documentService = {
   /**

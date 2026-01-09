@@ -157,6 +157,8 @@ class NodeStatus(str, Enum):
     DEGRADED = "degraded"
     UNHEALTHY = "unhealthy"
     UNKNOWN = "unknown"
+    DEAD = "dead"
+    SUSPECT = "suspect"
 
 
 class NodeRole(str, Enum):

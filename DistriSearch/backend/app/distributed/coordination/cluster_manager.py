@@ -192,6 +192,16 @@ class ClusterManager:
         """Check if this node is the leader."""
         return self._leader_id == self.node_id
     
+    @property
+    def leader_address(self) -> Optional[str]:
+        """Get current leader's address for forwarding requests."""
+        if self._leader_id is None:
+            return None
+        if self._leader_id in self._nodes:
+            leader_node = self._nodes[self._leader_id]
+            return leader_node.address
+        return None
+    
     def on_node_joined(self, callback: NodeJoinedCallback):
         """Register node joined callback."""
         self._on_node_joined.append(callback)
@@ -211,8 +221,9 @@ class ClusterManager:
         
         self._running = True
         
-        # Start Raft node
-        await self.raft_node.start()
+        # Start Raft node (if available)
+        if self.raft_node is not None:
+            await self.raft_node.start()
         
         # Start state check task
         self._state_check_task = asyncio.create_task(self._state_check_loop())
@@ -233,7 +244,8 @@ class ClusterManager:
             except asyncio.CancelledError:
                 pass
         
-        await self.raft_node.stop()
+        if self.raft_node is not None:
+            await self.raft_node.stop()
         
         logger.info("ClusterManager stopped")
     
@@ -255,7 +267,8 @@ class ClusterManager:
                 # Add seed node as peer
                 # In real implementation, would discover node ID from seed
                 seed_id = f"seed_{seed_address.replace(':', '_')}"
-                await self.raft_node.add_peer(seed_id, seed_address)
+                if self.raft_node is not None:
+                    await self.raft_node.add_peer(seed_id, seed_address)
                 
                 logger.info(f"Connected to seed node at {seed_address}")
                 return True
@@ -322,7 +335,10 @@ class ClusterManager:
                 )
                 
                 try:
-                    success = await self.raft_node.submit_command(command)
+                    if self.raft_node is not None:
+                        success = await self.raft_node.submit_command(command)
+                    else:
+                        success = True  # No Raft, proceed anyway
                 except Exception as e:
                     logger.warning(f"Raft submit failed, proceeding anyway: {e}")
                     success = True  # Proceed in degraded mode
@@ -330,7 +346,8 @@ class ClusterManager:
             if success:
                 self._nodes[node_id] = membership
                 await self.heartbeat_service.register_node(node_id, address)
-                await self.raft_node.add_peer(node_id, address)
+                if self.raft_node is not None:
+                    await self.raft_node.add_peer(node_id, address)
                 
                 # Notify callbacks
                 for callback in self._on_node_joined:
@@ -367,18 +384,22 @@ class ClusterManager:
             if node_id not in self._nodes:
                 return True
             
-            # Submit to Raft
+            # Submit to Raft (if available)
             command = Command(
                 type=CommandType.REMOVE_NODE,
                 data={"node_id": node_id},
             )
             
-            success = await self.raft_node.submit_command(command)
+            if self.raft_node is not None:
+                success = await self.raft_node.submit_command(command)
+            else:
+                success = True  # No Raft, proceed anyway
             
             if success:
                 del self._nodes[node_id]
                 await self.heartbeat_service.unregister_node(node_id)
-                await self.raft_node.remove_peer(node_id)
+                if self.raft_node is not None:
+                    await self.raft_node.remove_peer(node_id)
                 
                 # Notify callbacks
                 for callback in self._on_node_left:
@@ -457,8 +478,12 @@ class ClusterManager:
         """Periodically check and update cluster state."""
         try:
             while self._running:
-                # Check leader status
-                new_leader = self.raft_node.leader_id
+                # Check leader status (if Raft is available)
+                if self.raft_node is not None:
+                    new_leader = self.raft_node.leader_id
+                else:
+                    new_leader = self._leader_id  # Keep current leader (set by Bully)
+                
                 if new_leader != self._leader_id:
                     old_leader = self._leader_id
                     self._leader_id = new_leader
@@ -479,6 +504,10 @@ class ClusterManager:
                         },
                     ))
                 
+                # Periodically check health of all nodes (if we are leader)
+                if self.is_leader:
+                    await self._check_all_nodes_health()
+                
                 # Update cluster state
                 await self._update_cluster_state()
                 
@@ -488,6 +517,26 @@ class ClusterManager:
             pass
         except Exception as e:
             logger.error(f"State check error: {e}")
+    
+    async def _check_all_nodes_health(self):
+        """Check health of all registered nodes."""
+        for node_id, node in list(self._nodes.items()):
+            if node_id == self.node_id:
+                continue  # Skip self
+            
+            # Build address with port
+            address = node.address
+            port = getattr(node, 'port', 8000) or 8000
+            if ':' not in address:
+                address = f"{address}:{port}"
+            
+            is_healthy = await self._check_peer_health(address)
+            old_status = node.status
+            new_status = NodeStatus.HEALTHY if is_healthy else NodeStatus.DEAD
+            
+            if old_status != new_status:
+                node.status = new_status
+                logger.info(f"Node {node_id} status changed: {old_status.value} -> {new_status.value}")
     
     async def _update_cluster_state(self):
         """Update overall cluster state based on node health."""
@@ -664,8 +713,17 @@ class ClusterManager:
         # Fallback to self
         return self.node_id
     
-    async def replicate_document(self, doc_id: str, primary_node_id: str):
-        """Initiate document replication to other nodes."""
+    async def replicate_document(self, doc_id: str, primary_node_id: str, document_data: dict = None):
+        """
+        Initiate document replication to other nodes via HTTP.
+        
+        Args:
+            doc_id: Document ID to replicate
+            primary_node_id: Node ID where the primary copy is stored
+            document_data: Full document data to replicate (if None, will fetch from primary)
+        """
+        import aiohttp
+        
         replication_factor = getattr(self, 'replication_factor', 2)
         healthy_nodes = [
             n for n in self.get_healthy_nodes()
@@ -676,36 +734,116 @@ class ClusterManager:
         replica_count = min(replication_factor - 1, len(healthy_nodes))
         if replica_count <= 0:
             logger.debug(f"No nodes available for replicating {doc_id}")
-            return
+            return {"replicated_to": [], "failed": []}
         
         # Sort by load to prefer less loaded nodes
         replica_nodes = sorted(healthy_nodes, key=lambda n: n.load)[:replica_count]
         
+        replicated_to = []
+        failed = []
+        
         for node in replica_nodes:
             try:
-                await self.message_broker.publish(Message(
-                    type=MessageType.REPLICA_CREATED,
-                    target=node.node_id,
-                    payload={
-                        "document_id": doc_id,
-                        "primary_node_id": primary_node_id,
-                    },
-                ))
-                logger.debug(f"Requested replication of {doc_id} to {node.node_id}")
+                # Get port from node or use default
+                port = getattr(node, 'port', 8000) or 8000
+                address = node.address
+                if ':' not in address:
+                    address = f"{address}:{port}"
+                
+                url = f"http://{address}/api/v1/internal/document/replicate"
+                
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(
+                        url,
+                        json={
+                            "document_id": doc_id,
+                            "source_node_id": primary_node_id,
+                            "document_data": document_data or {}
+                        },
+                        timeout=aiohttp.ClientTimeout(total=30)
+                    ) as resp:
+                        result = await resp.json()
+                        if resp.status == 200 and result.get("status") in ["replicated", "already_exists"]:
+                            replicated_to.append(node.node_id)
+                            logger.info(f"Replicated {doc_id} to {node.node_id}")
+                        else:
+                            failed.append({"node": node.node_id, "error": result.get("message", "Unknown error")})
+                            logger.warning(f"Failed to replicate {doc_id} to {node.node_id}: {result}")
+                            
             except Exception as e:
+                failed.append({"node": node.node_id, "error": str(e)})
                 logger.error(f"Failed to replicate {doc_id} to {node.node_id}: {e}")
+        
+        return {"replicated_to": replicated_to, "failed": failed}
     
     async def delete_document_replicas(self, doc_id: str):
-        """Delete document replicas from all nodes."""
-        for node in self.get_healthy_nodes():
+        """
+        Delete document replicas from all other nodes via HTTP.
+        
+        This implements eventual consistency - we try to delete from all nodes
+        but don't fail if some nodes are unreachable.
+        
+        Args:
+            doc_id: Document ID to delete
+        """
+        import aiohttp
+        import asyncio
+        
+        deleted_from = []
+        failed = []
+        
+        # Get all healthy nodes except ourselves
+        other_nodes = [
+            n for n in self.get_healthy_nodes()
+            if n.node_id != self.node_id
+        ]
+        
+        if not other_nodes:
+            logger.debug(f"No other nodes to delete replica {doc_id} from")
+            return {"deleted_from": [], "failed": []}
+        
+        async def delete_from_node(node):
             try:
-                await self.message_broker.publish(Message(
-                    type=MessageType.REPLICA_DELETED,
-                    target=node.node_id,
-                    payload={"document_id": doc_id},
-                ))
+                port = getattr(node, 'port', 8000) or 8000
+                address = node.address
+                if ':' not in address:
+                    address = f"{address}:{port}"
+                
+                url = f"http://{address}/api/v1/internal/document/delete"
+                
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(
+                        url,
+                        json={
+                            "document_id": doc_id,
+                            "propagate": False  # Don't propagate further
+                        },
+                        timeout=aiohttp.ClientTimeout(total=10)
+                    ) as resp:
+                        result = await resp.json()
+                        if resp.status == 200 and result.get("status") in ["deleted", "not_found"]:
+                            return ("success", node.node_id)
+                        else:
+                            return ("failed", node.node_id, result.get("message", "Unknown error"))
+                            
             except Exception as e:
-                logger.error(f"Failed to delete replica {doc_id} from {node.node_id}: {e}")
+                return ("failed", node.node_id, str(e))
+        
+        # Delete from all nodes in parallel
+        tasks = [delete_from_node(node) for node in other_nodes]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        for result in results:
+            if isinstance(result, Exception):
+                logger.error(f"Exception during replica deletion: {result}")
+            elif result[0] == "success":
+                deleted_from.append(result[1])
+                logger.info(f"Deleted replica {doc_id} from {result[1]}")
+            else:
+                failed.append({"node": result[1], "error": result[2] if len(result) > 2 else "Unknown"})
+                logger.warning(f"Failed to delete replica {doc_id} from {result[1]}: {result[2] if len(result) > 2 else 'Unknown'}")
+        
+        return {"deleted_from": deleted_from, "failed": failed}
     
     async def register_node(
         self,
@@ -753,3 +891,85 @@ class ClusterManager:
         logger.info("Shutting down cluster manager...")
         await self.stop()
         logger.info("Cluster manager shutdown complete")
+    
+    async def handle_leader_elected(self, leader_id: str, peers: Optional[Dict[str, str]] = None):
+        """
+        Handle leader election from Bully algorithm.
+        
+        Args:
+            leader_id: The ID of the newly elected leader
+            peers: Dictionary of peer_id -> address (for registering nodes)
+        """
+        async with self._lock:
+            old_leader = self._leader_id
+            self._leader_id = leader_id
+            
+            # Update role
+            if leader_id == self.node_id:
+                self._role = NodeRole.MASTER
+                logger.info(f"This node ({self.node_id}) is now the MASTER")
+                
+                # Register ourselves first
+                if self.node_id not in self._nodes:
+                    membership = NodeMembership(
+                        node_id=self.node_id,
+                        address=self._address,
+                        role=NodeRole.MASTER,
+                        status=NodeStatus.HEALTHY,
+                        metadata={},
+                    )
+                    self._nodes[self.node_id] = membership
+                else:
+                    self._nodes[self.node_id].role = NodeRole.MASTER
+                    self._nodes[self.node_id].status = NodeStatus.HEALTHY
+                
+                # Register all peers as nodes - check their actual health
+                if peers:
+                    for peer_id, peer_address in peers.items():
+                        # Check if peer is actually reachable
+                        is_healthy = await self._check_peer_health(peer_address)
+                        peer_status = NodeStatus.HEALTHY if is_healthy else NodeStatus.DEAD
+                        
+                        if peer_id not in self._nodes:
+                            membership = NodeMembership(
+                                node_id=peer_id,
+                                address=peer_address.split(":")[0],  # Remove port
+                                role=NodeRole.SLAVE,
+                                status=peer_status,
+                                metadata={},
+                            )
+                            self._nodes[peer_id] = membership
+                            logger.info(f"Registered peer {peer_id} as {peer_status.value}")
+                        else:
+                            self._nodes[peer_id].status = peer_status
+            else:
+                self._role = NodeRole.SLAVE
+                logger.info(f"Node {leader_id} is now the MASTER, we are SLAVE")
+            
+            # Notify callbacks
+            if old_leader != leader_id:
+                for callback in self._on_leader_change:
+                    try:
+                        await callback(old_leader, leader_id)
+                    except Exception as e:
+                        logger.error(f"Leader change callback error: {e}")
+                
+                # Broadcast event
+                await self.message_broker.publish(Message(
+                    type=MessageType.LEADER_ELECTED,
+                    payload={
+                        "old_leader": old_leader,
+                        "new_leader": leader_id,
+                    },
+                ))
+    
+    async def _check_peer_health(self, peer_address: str) -> bool:
+        """Check if a peer is reachable and healthy."""
+        import aiohttp
+        try:
+            url = f"http://{peer_address}/api/v1/health/live"
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=2)) as resp:
+                    return resp.status == 200
+        except Exception:
+            return False

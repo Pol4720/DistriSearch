@@ -231,6 +231,11 @@ generate_peer_list() {
 RAFT_PEERS=$(generate_peer_list)
 log_info "Peers Raft: $RAFT_PEERS"
 
+# Generar un JWT_SECRET compartido para todos los nodos (sesiones válidas en cualquier nodo)
+# Usar un secret fijo o generarlo una vez y almacenarlo en Redis/archivo
+JWT_SECRET="${JWT_SECRET:-distrisearch-cluster-shared-jwt-secret-$(date +%Y%m%d)}"
+log_info "JWT Secret compartido configurado (sesiones válidas en todos los nodos)"
+
 # ============================================================================
 # 8. Desplegar nodos HA
 # ============================================================================
@@ -290,7 +295,7 @@ for i in $(seq 1 $NUM_NODES); do
     
     create_service_safe "distrisearch-node-$i" \
         --name "distrisearch-node-$i" \
-        --network distrisearch-network \
+        --network name=distrisearch-network,alias=distrisearch-node \
         --replicas 1 \
         --constraint "node.hostname==$NODE_HOSTNAME" \
         --publish published=$HTTP_PORT,target=80 \
@@ -317,6 +322,7 @@ for i in $(seq 1 $NUM_NODES); do
         --env REPLICATION_FACTOR=2 \
         --env LOG_LEVEL=INFO \
         --env IS_INITIAL_CANDIDATE="$IS_INITIAL_LEADER" \
+        --env JWT_SECRET="$JWT_SECRET" \
         --mount type=volume,source="node${i}-sqlite",target=/app/data/sqlite \
         --mount type=volume,source="node${i}-raft",target=/app/data/raft \
         --mount type=volume,source="node${i}-docs",target=/app/data/documents \

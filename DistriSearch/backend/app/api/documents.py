@@ -108,11 +108,14 @@ async def create_document(
         # Store document
         await doc_repo.create(doc_data)
         
-        # If not on the target node, forward to correct node
-        if node_id != current_node["node_id"]:
-            await cluster_manager.replicate_document(doc_id, node_id)
+        # Replicate to other nodes (replication factor k=2)
+        replication_result = await cluster_manager.replicate_document(
+            doc_id=doc_id, 
+            primary_node_id=node_id,
+            document_data=doc_data
+        )
         
-        logger.info(f"Document created: {doc_id} on node {node_id}")
+        logger.info(f"Document created: {doc_id} on node {node_id}, replicated_to: {replication_result.get('replicated_to', [])}")
         
         return DocumentResponse(
             id=doc_id,
@@ -254,11 +257,15 @@ async def upload_document(
         
         await doc_repo.create(doc_data)
         
-        # Replicate if needed
-        if node_id != current_node["node_id"]:
-            await cluster_manager.replicate_document(doc_id, node_id)
+        # Replicate to other nodes (replication factor k=2 means document exists on 2 nodes)
+        # Always replicate from the node that stored it
+        replication_result = await cluster_manager.replicate_document(
+            doc_id=doc_id, 
+            primary_node_id=node_id,
+            document_data=doc_data
+        )
         
-        logger.info(f"Document uploaded: {doc_id}, file: {file.filename}, content_extracted: {is_content_extracted}")
+        logger.info(f"Document uploaded: {doc_id}, file: {file.filename}, content_extracted: {is_content_extracted}, replicated_to: {replication_result.get('replicated_to', [])}")
         
         content_preview = extracted_content[:500] if is_content_extracted else f"[Binary file: {file.filename}]"
         
@@ -582,6 +589,7 @@ async def update_document(
     responses={
         204: {"description": "Document deleted successfully"},
         401: {"description": "Authentication required"},
+        403: {"model": ErrorResponse, "description": "Not authorized to delete this document"},
         404: {"model": ErrorResponse, "description": "Document not found"},
         500: {"model": ErrorResponse, "description": "Internal server error"}
     }
@@ -596,6 +604,7 @@ async def delete_document(
     Delete a document by its ID.
     
     The document will be removed from all replicas.
+    Only the document owner or an admin can delete a document.
     """
     try:
         # Check if document exists
@@ -606,10 +615,22 @@ async def delete_document(
                 detail=f"Document not found: {document_id}"
             )
         
-        # Delete from all replicas
-        await cluster_manager.delete_document_replicas(document_id)
+        # Check authorization: user must be owner or admin
+        user_id = auth_user.get("user_id") or auth_user.get("id") or auth_user.get("sub")
+        user_role = auth_user.get("role", "user")
+        doc_owner = doc.get("owner_id")
         
-        # Delete from database
+        if user_role != "admin" and doc_owner and doc_owner != user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to delete this document. Only the owner can delete it."
+            )
+        
+        # Delete from all replicas across the cluster (eventual consistency)
+        deletion_result = await cluster_manager.delete_document_replicas(document_id)
+        logger.info(f"Replica deletion result for {document_id}: {deletion_result}")
+        
+        # Delete from local database
         await doc_repo.delete(document_id)
         
         # Clean up file if exists
@@ -619,7 +640,7 @@ async def delete_document(
             except Exception as e:
                 logger.warning(f"Failed to delete file: {e}")
         
-        logger.info(f"Document deleted: {document_id}")
+        logger.info(f"Document deleted: {document_id} by user {user_id}")
         
     except HTTPException:
         raise

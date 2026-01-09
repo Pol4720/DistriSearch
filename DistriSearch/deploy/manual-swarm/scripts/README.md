@@ -1,15 +1,16 @@
 # Scripts de Despliegue Manual - Docker Swarm
 
-## Arquitectura
+## Arquitectura HA (Alta Disponibilidad)
 
-Cada **Slave** contiene Backend (FastAPI) + Frontend (React/Nginx) integrados en un solo container.
-No se necesita un servicio de frontend separado.
+Sistema distribuido donde **TODOS los nodos son MANAGERS** para máxima tolerancia a fallos.
+Cada nodo contiene Backend (FastAPI) + Frontend (React/Nginx) integrados en un solo container.
+El algoritmo Bully elige dinámicamente quién es el líder del cluster.
 
 ## Orden de Ejecución
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    FLUJO DE DESPLIEGUE                          │
+│                    FLUJO DE DESPLIEGUE HA                       │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  EN CADA MÁQUINA:                                               │
@@ -19,37 +20,48 @@ No se necesita un servicio de frontend separado.
 │  └─────────────────────────────────────────────────────────┘    │
 │                           │                                     │
 │                           ▼                                     │
-│  EN EL MANAGER (primera máquina):                               │
+│  EN EL PRIMER NODO (Manager inicial):                           │
 │  ┌─────────────────────────────────────────────────────────┐    │
 │  │  02-init-swarm.sh <IP_MANAGER>                          │    │
 │  │  → Inicializa Swarm, crea red, genera tokens            │    │
+│  │  → IMPORTANTE: Usa el MANAGER_TOKEN para HA             │    │
 │  └─────────────────────────────────────────────────────────┘    │
 │                           │                                     │
 │                           ▼                                     │
-│  EN CADA WORKER:                                                │
+│  EN CADA NODO ADICIONAL (unir como MANAGER):                    │
 │  ┌─────────────────────────────────────────────────────────┐    │
-│  │  03-join-swarm.sh <IP_MANAGER> <TOKEN>                  │    │
-│  │  → Une el nodo al cluster Swarm                         │    │
+│  │  03-join-swarm.sh <IP_MANAGER> <MANAGER_TOKEN>          │    │
+│  │  → Une el nodo al cluster como MANAGER (para HA)        │    │
 │  └─────────────────────────────────────────────────────────┘    │
 │                           │                                     │
 │                           ▼                                     │
-│  EN EL MANAGER (despliegue):                                    │
+│  EN CUALQUIER MANAGER (distribuir imágenes):                    │
 │  ┌─────────────────────────────────────────────────────────┐    │
-│  │  04-deploy-infrastructure.sh                            │    │
-│  │  → Despliega MongoDB y Redis del Master                 │    │
+│  │  03b-distribute-images.sh                               │    │
+│  │  → Distribuye imágenes Docker a todos los nodos         │    │
 │  ├─────────────────────────────────────────────────────────┤    │
-│  │  05-deploy-master.sh                                    │    │
-│  │  → Despliega el coordinador Master                      │    │
+│  │  03c-create-secrets.sh                                  │    │
+│  │  → Crea secrets para TLS y JWT                          │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│                           │                                     │
+│                           ▼                                     │
+│  EN CUALQUIER MANAGER (despliegue):                             │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │  04-deploy-infrastructure-ha.sh                         │    │
+│  │  → Despliega CoreDNS, Redis Coordinador, Load Balancer  │    │
 │  ├─────────────────────────────────────────────────────────┤    │
-│  │  06-deploy-slave.sh [NUM_REPLICAS]                      │    │
-│  │  → Despliega Slaves (Backend+Frontend+MongoDB+Redis)    │    │
+│  │  05-deploy-nodes-ha.sh                                  │    │
+│  │  → Despliega nodos DistriSearch (Backend+Frontend+DB)   │    │
 │  └─────────────────────────────────────────────────────────┘    │
 │                           │                                     │
 │                           ▼                                     │
 │  VERIFICACIÓN:                                                  │
 │  ┌─────────────────────────────────────────────────────────┐    │
-│  │  07-verify-cluster.sh                                   │    │
-│  │  → Verifica estado del cluster                          │    │
+│  │  06-verify-ha-cluster.sh                                │    │
+│  │  → Verifica estado del cluster HA                       │    │
+│  ├─────────────────────────────────────────────────────────┤    │
+│  │  07-test-failover.sh                                    │    │
+│  │  → Prueba tolerancia a fallos                           │    │
 │  ├─────────────────────────────────────────────────────────┤    │
 │  │  08-test-distributed-features.sh                        │    │
 │  │  → Prueba características distribuidas                  │    │
@@ -57,7 +69,7 @@ No se necesita un servicio de frontend separado.
 │                                                                 │
 │  LIMPIEZA (opcional):                                           │
 │  ┌─────────────────────────────────────────────────────────┐    │
-│  │  09-cleanup.sh                                          │    │
+│  │  09-cleanup-ha.sh / 10-full-cleanup.sh                  │    │
 │  │  → Elimina todo el despliegue                           │    │
 │  └─────────────────────────────────────────────────────────┘    │
 │                                                                 │
@@ -69,35 +81,37 @@ No se necesita un servicio de frontend separado.
 | Script | Ejecutar en | Descripción |
 |--------|-------------|-------------|
 | `01-prepare-node.sh` | Todas las máquinas | Prepara el sistema: Docker, firewall, optimizaciones |
-| `02-init-swarm.sh` | Solo Manager | Inicializa el cluster Swarm |
-| `03-join-swarm.sh` | Solo Workers | Une workers al cluster |
-| `04-deploy-infrastructure.sh` | Manager | Despliega MongoDB y Redis del Master |
-| `05-deploy-master.sh` | Manager | Despliega el coordinador Master |
-| `06-deploy-slave.sh` | Manager | Despliega Slaves (Backend+Frontend integrado) |
-| `07-verify-cluster.sh` | Manager | Verifica estado del cluster |
-| `08-test-distributed-features.sh` | Manager | Prueba funcionalidades distribuidas |
-| `09-cleanup.sh` | Manager | Limpia todo el despliegue |
+| `02-init-swarm.sh` | Primer nodo | Inicializa el cluster Swarm |
+| `03-join-swarm.sh` | Nodos adicionales | Une nodos como MANAGERS (para HA) |
+| `03b-distribute-images.sh` | Cualquier Manager | Distribuye imágenes Docker |
+| `03c-create-secrets.sh` | Cualquier Manager | Crea secrets TLS y JWT |
+| `04-deploy-infrastructure-ha.sh` | Cualquier Manager | Despliega infraestructura HA |
+| `05-deploy-nodes-ha.sh` | Cualquier Manager | Despliega nodos DistriSearch |
+| `06-verify-ha-cluster.sh` | Cualquier Manager | Verifica estado del cluster |
+| `07-test-failover.sh` | Cualquier Manager | Prueba tolerancia a fallos |
+| `08-test-distributed-features.sh` | Cualquier Manager | Prueba funcionalidades distribuidas |
+| `09-cleanup-ha.sh` | Cualquier Manager | Limpia servicios |
+| `10-full-cleanup.sh` | Cualquier Manager | Limpieza completa |
 
 ## Arquitectura de Almacenamiento
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    ALMACENAMIENTO AP                            │
+│                    ALMACENAMIENTO HA                            │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  SQLite (Raft-replicado):                                       │
-│    • Usuarios, nodos, particiones (metadatos cluster)           │
-│    • Cada nodo tiene réplica sincronizada via Raft              │
+│  SQLite (LOCAL por nodo):                                       │
+│    • Usuarios sincronizados entre nodos                         │
+│    • Cada nodo tiene su propia base de usuarios                 │
 │                                                                 │
 │  MongoDB (LOCAL por nodo):                                      │
-│    • Solo documentos asignados a ese nodo                       │
-│    • Master: master-mongo                                       │
-│    • Slaves: slaveN-mongodb                                     │
+│    • Documentos con replicación k=2                             │
+│    • Cada documento existe en 2 nodos distintos                 │
+│    • nodeN-mongodb                                              │
 │                                                                 │
-│  Redis (LOCAL por nodo):                                        │
-│    • Cache de sesiones, vectores, resultados                    │
-│    • Master: master-redis                                       │
-│    • Slaves: slaveN-redis                                       │
+│  Redis (LOCAL + Coordinador):                                   │
+│    • nodeN-redis: Cache local                                   │
+│    • coordinator-redis: Sesiones globales                       │
 │                                                                 │
 │  Gossip Protocol:                                               │
 │    • UserDocumentRegistry (mapeo user → documentos)             │
@@ -114,38 +128,43 @@ chmod +x *.sh
 # En TODAS las máquinas
 sudo ./01-prepare-node.sh
 
-# En el MANAGER
+# En el PRIMER NODO (Manager inicial)
 sudo ./02-init-swarm.sh 192.168.1.10
+# ¡IMPORTANTE! Copia el MANAGER_TOKEN para HA
 
-# En cada WORKER (usar el token que muestra el paso anterior)
+# En cada NODO ADICIONAL (unir como MANAGER para HA)
 sudo ./03-join-swarm.sh 192.168.1.10 SWMTKN-1-xxx...
 
-# Volver al MANAGER y desplegar
-./04-deploy-infrastructure.sh
-./05-deploy-master.sh
-./06-deploy-slave.sh
+# Desde cualquier MANAGER: distribuir imágenes y crear secrets
+./03b-distribute-images.sh
+./03c-create-secrets.sh
+
+# Desplegar infraestructura y nodos
+./04-deploy-infrastructure-ha.sh
+./05-deploy-nodes-ha.sh
 
 # Verificar
-./07-verify-cluster.sh
+./06-verify-ha-cluster.sh
+./07-test-failover.sh
 ./08-test-distributed-features.sh
 ```
 
 ## Puertos por Servicio
 
-### Master (en nodo Manager)
+### Nodos DistriSearch
 | Puerto | Uso |
 |--------|-----|
-| 8000 | API Master (FastAPI) |
-| 27017 | MongoDB Master |
-| 6379 | Redis Master |
-| 50051 | gRPC |
+| 8001, 8002, 8003 | API Backend (FastAPI) - Node 1, 2, 3 |
+| 8081, 8082, 8083 | Frontend HTTP (Nginx) - Node 1, 2, 3 |
+| 4431, 4432, 4433 | Frontend HTTPS (Nginx) - Node 1, 2, 3 |
 
-### Slaves (en Workers)
+### Infraestructura
 | Puerto | Uso |
 |--------|-----|
-| 8081, 8082... | Frontend HTTP (Nginx) - Slave 1, 2... |
-| 4431, 4432... | Frontend HTTPS (Nginx) - Slave 1, 2... |
-| 8001, 8002... | API Backend (FastAPI) - Slave 1, 2... |
+| 80 | Load Balancer HTTP |
+| 443 | Load Balancer HTTPS |
+| 6379 | Redis Coordinator |
+| 53 | CoreDNS |
 
 ### Docker Swarm
 | Puerto | Protocolo | Uso |
@@ -156,13 +175,25 @@ sudo ./03-join-swarm.sh 192.168.1.10 SWMTKN-1-xxx...
 
 ## Acceso a la Aplicación
 
-El frontend está integrado en cada slave. Accede a cualquier slave:
+El frontend está integrado en cada nodo. Accede mediante Load Balancer o directamente:
 
 ```
-http://<worker-ip>:8081   # Slave 1
-http://<worker-ip>:8082   # Slave 2
-...
+# Via Load Balancer (recomendado)
+http://<cualquier-ip>:80   
+
+# Acceso directo a nodos
+http://<cualquier-ip>:8081   # Node 1
+http://<cualquier-ip>:8082   # Node 2
+http://<cualquier-ip>:8083   # Node 3
 ```
+
+## Alta Disponibilidad (HA)
+
+Con todos los nodos como **MANAGERS**:
+- El cluster sigue funcionando si falla cualquier nodo
+- Para 3 nodos, tolera 1 fallo de manager
+- Para 5 nodos, tolera 2 fallos de manager
+- El algoritmo Bully elige líder automáticamente
 
 ## Ver la Guía Completa
 

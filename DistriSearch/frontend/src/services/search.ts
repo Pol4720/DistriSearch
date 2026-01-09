@@ -5,7 +5,7 @@ import type {
   SearchHistoryItem,
 } from '../types';
 
-const SEARCH_ENDPOINT = '/search/';
+const SEARCH_ENDPOINT = '/search';
 
 export const searchService = {
   /**

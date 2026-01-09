@@ -12,6 +12,8 @@ from typing import Optional
 from datetime import datetime, timedelta
 import logging
 import re
+import aiohttp
+import asyncio
 
 from ..middleware.auth import jwt_handler, require_auth
 from ..storage.sqlite_user_repository import SQLiteUserRepository
@@ -40,6 +42,54 @@ async def get_user_repository() -> SQLiteUserRepository:
             detail="User repository not initialized"
         )
     return _user_repository
+
+
+async def _sync_user_to_peers(user: UserModel) -> None:
+    """
+    Synchronize a user to all known peer nodes.
+    
+    This is called after a user is created locally to ensure
+    the user exists on all nodes in the cluster.
+    """
+    from .dependencies import get_cluster_peers
+    
+    peers = get_cluster_peers()
+    if not peers:
+        logger.debug("No peers to sync user to")
+        return
+    
+    sync_data = {
+        "id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "password_hash": user.password_hash,
+        "salt": user.salt,
+        "role": user.role,
+        "status": user.status.value if hasattr(user.status, 'value') else str(user.status),
+        "full_name": user.full_name,
+    }
+    
+    async def sync_to_peer(peer_id: str, peer_address: str):
+        """Sync user to a single peer."""
+        try:
+            url = f"http://{peer_address}/api/v1/internal/sync/user"
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    url, 
+                    json=sync_data,
+                    timeout=aiohttp.ClientTimeout(total=5)
+                ) as resp:
+                    if resp.status == 200:
+                        result = await resp.json()
+                        logger.info(f"Synced user {user.username} to {peer_id}: {result.get('status')}")
+                    else:
+                        logger.warning(f"Failed to sync user to {peer_id}: status {resp.status}")
+        except Exception as e:
+            logger.warning(f"Error syncing user to {peer_id}: {e}")
+    
+    # Sync to all peers in parallel
+    tasks = [sync_to_peer(pid, addr) for pid, addr in peers.items()]
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 
 # Request/Response Models
@@ -158,6 +208,9 @@ async def register(
         
         # Save to database
         created_user = await user_repo.create(user)
+        
+        # Sync user to all peers (non-blocking in background)
+        asyncio.create_task(_sync_user_to_peers(created_user))
         
         # Generate tokens
         token_data = {
@@ -399,23 +452,33 @@ async def get_current_user(
 ):
     """
     Get current authenticated user's information.
+    
+    Falls back to JWT data if user not found in local DB (cluster failover support).
     """
     user = await user_repo.find_by_id(current_user["user_id"])
     
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
+    if user:
+        return UserResponse(
+            id=user.id,
+            username=user.username,
+            email=user.email,
+            full_name=user.full_name,
+            role=user.role,
+            status=user.status,
+            created_at=user.created_at.isoformat() if user.created_at else ""
         )
     
+    # Fallback to JWT data if user not in local DB (supports cluster failover)
+    # The JWT is still valid, so we can trust the data in it
+    logger.warning(f"User {current_user['user_id']} not found in local DB, using JWT data")
     return UserResponse(
-        id=user.id,
-        username=user.username,
-        email=user.email,
-        full_name=user.full_name,
-        role=user.role,
-        status=user.status,
-        created_at=user.created_at.isoformat() if user.created_at else ""
+        id=current_user.get("user_id", current_user.get("sub", "")),
+        username=current_user.get("username", "unknown"),
+        email=current_user.get("email", ""),
+        full_name=current_user.get("full_name"),
+        role=current_user.get("roles", ["user"])[0] if current_user.get("roles") else "user",
+        status="active",
+        created_at=""
     )
 
 

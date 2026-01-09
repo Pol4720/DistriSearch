@@ -132,7 +132,7 @@ async def readiness_check(
     - Node is registered
     """
     # Import mongodb client getter
-    from .dependencies import _mongodb_client as get_mongodb_client_var
+    from .dependencies import _local_mongodb_client
     
     checks = {}
     all_ready = True
@@ -141,7 +141,7 @@ async def readiness_check(
     try:
         # Access the global variable directly from dependencies module
         from . import dependencies
-        mongodb_client = dependencies._mongodb_client
+        mongodb_client = dependencies._local_mongodb_client
         if mongodb_client and mongodb_client.client:
             await mongodb_client.client.admin.command('ping')
             checks["database"] = True
@@ -286,7 +286,7 @@ async def _check_mongodb_health() -> ComponentHealth:
     try:
         # Access the global variable directly from dependencies module
         from . import dependencies
-        mongodb_client = dependencies._mongodb_client
+        mongodb_client = dependencies._local_mongodb_client
         if mongodb_client and mongodb_client.client:
             start = time.time()
             await mongodb_client.client.admin.command('ping')

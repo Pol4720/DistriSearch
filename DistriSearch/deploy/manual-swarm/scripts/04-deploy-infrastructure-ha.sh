@@ -52,10 +52,15 @@ log_info "Nodo Manager confirmado"
 # Obtener información del cluster
 MANAGER_IP=$(docker node inspect self --format '{{.Status.Addr}}')
 NUM_NODES=$(docker node ls --format "{{.ID}}" | wc -l)
-NUM_WORKERS=$(docker node ls --filter "role=worker" --format "{{.ID}}" | wc -l)
+NUM_MANAGERS=$(docker node ls --filter "role=manager" --format "{{.ID}}" | wc -l)
 
 log_info "Manager IP: $MANAGER_IP"
-log_info "Nodos totales: $NUM_NODES (Workers: $NUM_WORKERS)"
+log_info "Nodos totales: $NUM_NODES (Managers: $NUM_MANAGERS)"
+
+if [ "$NUM_MANAGERS" -lt "$NUM_NODES" ]; then
+    log_warn "Para Alta Disponibilidad, todos los nodos deberían ser managers"
+    log_warn "Use el MANAGER_TOKEN al unir nodos con 03-join-swarm.sh"
+fi
 
 # ============================================================================
 # 2. Verificar/Crear red overlay
@@ -179,11 +184,13 @@ else
         --mode global \
         --constraint 'node.role==manager' \
         --env HA_MODE=true \
-        --env NODE_SERVICE=tasks.node \
+        --env NODE_SERVICE=distrisearch-node \
         --env NODE_PORT=8000 \
-        --env UPDATE_INTERVAL=15 \
+        --env UPDATE_INTERVAL=10 \
         --publish published=80,target=80,mode=ingress \
         --publish published=443,target=443,mode=ingress \
+        --secret source=tls-cert,target=/run/secrets/tls-cert \
+        --secret source=tls-key,target=/run/secrets/tls-key \
         --health-cmd "curl -f http://localhost/health || exit 1" \
         --health-interval 30s \
         --health-timeout 10s \

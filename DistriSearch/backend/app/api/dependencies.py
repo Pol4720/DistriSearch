@@ -14,6 +14,7 @@ from pathlib import Path
 import os
 import logging
 import aiohttp
+import asyncio
 
 # Storage imports
 from ..storage.sqlite_client import SQLiteClient
@@ -26,10 +27,12 @@ from ..storage.user_document_registry import UserDocumentRegistry
 from ..storage.mongodb import MongoDBClient, DocumentRepository
 
 # Distributed imports
-from ..distributed.consensus import (
-    RaftNode,
-    PersistentStateMachine,
-)
+# NOTE: Raft is DISABLED - using Bully election instead
+# from ..distributed.consensus import (
+#     RaftNode,
+#     PersistentStateMachine,
+# )
+from ..distributed.consensus.bully_election import BullyElection
 from ..distributed.communication import HeartbeatService, MessageBroker
 from ..distributed.coordination import ClusterManager
 from ..distributed.coordination.cluster_manager import NodeRole
@@ -60,8 +63,11 @@ _node_repository: Optional[Any] = None
 _cluster_repository: Optional[Any] = None
 
 # Distributed services
-_raft_node: Optional[RaftNode] = None
-_persistent_state_machine: Optional[PersistentStateMachine] = None
+# NOTE: Raft is DISABLED - using Bully election for leader election
+# _raft_node: Optional[RaftNode] = None
+# _persistent_state_machine: Optional[PersistentStateMachine] = None
+_bully_election: Optional[BullyElection] = None
+_bully_peers: Dict[str, str] = {}  # Peer ID -> address mapping
 _heartbeat_service: Optional[HeartbeatService] = None
 _message_broker: Optional[MessageBroker] = None
 _cluster_manager: Optional[ClusterManager] = None
@@ -81,25 +87,47 @@ def get_settings() -> Settings:
     return _settings
 
 
+def get_cluster_peers() -> Dict[str, str]:
+    """Get all known cluster peers (node_id -> address)."""
+    return _bully_peers.copy()
+
+
+def get_node_id() -> Optional[str]:
+    """Get current node ID."""
+    if _settings:
+        return _settings.node_id
+    return None
+
+
+
 # =============================================================================
-# RPC Sender for Raft
+# RPC Sender for Raft - DISABLED
+# =============================================================================
+# NOTE: Raft is disabled. This function is kept for reference but not used.
+# async def _create_rpc_sender(settings: Settings):
+#     """Create an RPC sender function for Raft communication."""
+#     ...
+
+
+# =============================================================================
+# Message Sender for Bully Election
 # =============================================================================
 
-async def _create_rpc_sender(settings: Settings):
-    """Create an RPC sender function for Raft communication."""
-    async def send_rpc(target_address: str, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Send RPC to target node."""
+async def _create_bully_sender(settings: Settings):
+    """Create a message sender function for Bully election."""
+    async def send_message(target_address: str, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Send Bully message to target node."""
         try:
             async with aiohttp.ClientSession() as session:
-                url = f"http://{target_address}/api/v1/internal/raft"
-                async with session.post(url, json=data, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                url = f"http://{target_address}/api/v1/internal/bully"
+                async with session.post(url, json=data, timeout=aiohttp.ClientTimeout(total=3)) as resp:
                     if resp.status == 200:
                         return await resp.json()
                     return None
         except Exception as e:
-            logger.debug(f"RPC to {target_address} failed: {e}")
+            logger.debug(f"Bully message to {target_address} failed: {e}")
             return None
-    return send_rpc
+    return send_message
 
 
 # =============================================================================
@@ -118,7 +146,7 @@ async def init_dependencies(settings: Settings):
     global _sqlite_client, _sqlite_user_repository, _sqlite_node_repository
     global _sqlite_partition_repository, _document_registry
     global _local_mongodb_client, _local_document_repository
-    global _raft_node, _persistent_state_machine
+    # NOTE: Raft disabled - using Bully election
     global _heartbeat_service, _message_broker, _cluster_manager
     global _search_engine, _settings, _search_history_repository
     
@@ -183,66 +211,70 @@ async def init_dependencies(settings: Settings):
         logger.info(f"Local MongoDB initialized: {local_mongo_db}")
     
     # =========================================================================
-    # 4. Initialize Raft and Persistent State Machine
+    # 4. RAFT DISABLED - Using Bully Election for leader election
     # =========================================================================
+    # Raft was causing issues with persistent state machine loops.
+    # Bully election is simpler and works better for our use case.
+    
     node_address = f"{settings.node_address}:{settings.api_port}"
     
-    # Create storage path for Raft logs
-    raft_path = Path(settings.data_dir) / "raft" / node_id
-    raft_path.mkdir(parents=True, exist_ok=True)
-    
-    # Initialize RPC sender
-    rpc_sender = await _create_rpc_sender(settings)
-    
-    # Initialize Raft node
-    _raft_node = RaftNode(
-        node_id=node_id,
-        storage_path=raft_path,
-        rpc_sender=rpc_sender,
-        election_timeout_min=settings.raft_election_timeout_min / 1000.0,
-        election_timeout_max=settings.raft_election_timeout_max / 1000.0,
-        heartbeat_interval=settings.raft_heartbeat_interval / 1000.0,
-    )
-    
-    # Initialize Persistent State Machine with SQLite
-    from ..distributed.consensus.log_entry import LogStore
-    log_store = LogStore(storage_path=raft_path)
-    await log_store.initialize()
-    
-    _persistent_state_machine = PersistentStateMachine(
-        state=_raft_node.state,  # Share Raft state
-        log_store=log_store,
-        sqlite_client=_sqlite_client,
-        document_registry=_document_registry,
-    )
-    await _persistent_state_machine.initialize()
-    await _persistent_state_machine.start()
-    
-    logger.info("Raft and PersistentStateMachine initialized")
+    logger.info("Raft DISABLED - using Bully election for leader election")
     
     # =========================================================================
-    # 4.5. Add Raft peers from configuration
+    # 4.5. Get peers from configuration (used by Bully)
     # =========================================================================
     raft_peers = settings.raft_peers_list
+    # Peers are extracted from raft_peers config but used for Bully election
+    
+    # =========================================================================
+    # 4.6. Initialize Bully Election (simpler leader election)
+    # =========================================================================
+    global _bully_election, _bully_peers
+    
+    bully_peers: Dict[str, str] = {}
     if raft_peers:
-        logger.info(f"Adding {len(raft_peers)} Raft peers from configuration: {raft_peers}")
         for peer_address in raft_peers:
-            # Extract peer_id from address (e.g., "distrisearch-node-2:8000" -> "node-2")
             peer_host = peer_address.split(":")[0]
             if peer_host.startswith("distrisearch-"):
                 peer_id = peer_host.replace("distrisearch-", "")
             else:
                 peer_id = peer_host
             
-            # Skip self by comparing node_id
-            if peer_id == node_id:
-                logger.debug(f"Skipping self: {peer_id}")
-                continue
-            
-            logger.info(f"Adding Raft peer: {peer_id} at {peer_address}")
-            await _raft_node.add_peer(peer_id, peer_address)
-    else:
-        logger.warning("No Raft peers configured - node will be single-node cluster")
+            if peer_id != node_id:
+                bully_peers[peer_id] = peer_address
+    
+    # Store globally for access by other modules
+    _bully_peers = bully_peers.copy()
+    
+    bully_sender = await _create_bully_sender(settings)
+    
+    async def on_become_leader():
+        """Callback when this node becomes the Bully leader."""
+        logger.info(f"Node {node_id} is now the BULLY LEADER")
+        # Update cluster manager with all known peers
+        if _cluster_manager:
+            await _cluster_manager.handle_leader_elected(node_id, bully_peers)
+    
+    async def on_leader_change(new_leader_id: str):
+        """Callback when leader changes."""
+        logger.info(f"New Bully leader: {new_leader_id}")
+        if _cluster_manager:
+            # Pass peers so the new leader can register them
+            await _cluster_manager.handle_leader_elected(new_leader_id, bully_peers if new_leader_id == node_id else None)
+    
+    _bully_election = BullyElection(
+        node_id=node_id,
+        peers=bully_peers,
+        send_message=bully_sender,
+        on_become_leader=on_become_leader,
+        on_leader_change=on_leader_change,
+        election_timeout=10.0,  # 10 seconds timeout
+        heartbeat_interval=3.0,  # 3 seconds heartbeat
+    )
+    
+    # Start Bully election
+    await _bully_election.start()
+    logger.info(f"Bully Election initialized with {len(bully_peers)} peers")
     
     # =========================================================================
     # 5. Initialize Distributed Services
@@ -264,7 +296,7 @@ async def init_dependencies(settings: Settings):
         node_id=node_id,
         address=node_address,
         role=node_role,
-        raft_node=_raft_node,
+        raft_node=None,  # Raft disabled - using Bully election
         heartbeat_service=_heartbeat_service,
         message_broker=_message_broker,
         min_healthy_nodes=1,
@@ -277,6 +309,17 @@ async def init_dependencies(settings: Settings):
     logger.info(f"ClusterManager started for node {node_id} as {node_role.value}")
     
     # =========================================================================
+    # 5.1. Sync ClusterManager with Bully election state
+    # =========================================================================
+    # Bully may have elected a leader before ClusterManager was ready
+    if _bully_election and _bully_election.is_leader:
+        logger.info("Syncing ClusterManager with Bully leader state")
+        await _cluster_manager.handle_leader_elected(node_id, _bully_peers)
+    elif _bully_election and _bully_election.leader_id:
+        logger.info(f"Syncing ClusterManager: leader is {_bully_election.leader_id}")
+        await _cluster_manager.handle_leader_elected(_bully_election.leader_id, None)
+    
+    # =========================================================================
     # 6. Initialize Search Engine
     # =========================================================================
     _search_engine = SearchEngine()
@@ -287,28 +330,103 @@ async def init_dependencies(settings: Settings):
     from .auth import set_sqlite_user_repository
     set_sqlite_user_repository(_sqlite_user_repository)
     
+    # =========================================================================
+    # 8. Initial User Sync from Peers
+    # =========================================================================
+    # Schedule a background task to sync users from peers after a delay
+    # This ensures we have all users from other nodes when we start
+    asyncio.create_task(_sync_users_from_peers_delayed(bully_peers, 10.0))
+    
     logger.info("Dependencies initialized successfully")
+
+
+async def _sync_users_from_peers_delayed(peers: Dict[str, str], delay: float):
+    """
+    Sync users from peer nodes after a delay.
+    
+    This runs as a background task after initialization to populate
+    local user database with users from other nodes.
+    """
+    await asyncio.sleep(delay)
+    
+    if not peers:
+        logger.debug("No peers to sync users from")
+        return
+    
+    logger.info(f"Starting initial user sync from {len(peers)} peers")
+    
+    for peer_id, peer_address in peers.items():
+        try:
+            async with aiohttp.ClientSession() as session:
+                url = f"http://{peer_address}/api/v1/internal/sync/users"
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        if data.get("status") == "ok":
+                            users = data.get("users", [])
+                            logger.info(f"Got {len(users)} users from {peer_id}")
+                            
+                            # Sync each user locally
+                            for user_data in users:
+                                await _sync_single_user(user_data)
+                    else:
+                        logger.warning(f"Failed to get users from {peer_id}: status {resp.status}")
+        except Exception as e:
+            logger.warning(f"Error syncing users from {peer_id}: {e}")
+
+
+async def _sync_single_user(user_data: Dict[str, Any]) -> None:
+    """Sync a single user to local database."""
+    from .auth import get_user_repository
+    from ..storage.models import UserModel, UserStatus
+    
+    try:
+        user_repo = await get_user_repository()
+        
+        # Check if already exists
+        existing = await user_repo.find_by_email(user_data.get("email", ""))
+        if existing:
+            return
+        
+        existing = await user_repo.find_by_username(user_data.get("username", ""))
+        if existing:
+            return
+        
+        # Create user
+        user = UserModel(
+            id=user_data["id"],
+            username=user_data["username"],
+            email=user_data["email"],
+            password_hash=user_data["password_hash"],
+            salt=user_data["salt"],
+            role=user_data.get("role", "user"),
+            status=UserStatus.ACTIVE,
+            full_name=user_data.get("full_name"),
+        )
+        
+        await user_repo.create(user)
+        logger.info(f"Synced user {user.username} from peer")
+        
+    except Exception as e:
+        logger.debug(f"Could not sync user: {e}")
 
 
 async def shutdown_dependencies():
     """Cleanup dependencies at application shutdown."""
     global _sqlite_client, _local_mongodb_client
-    global _cluster_manager, _raft_node, _persistent_state_machine
+    global _cluster_manager, _bully_election
     global _heartbeat_service, _message_broker
     
     logger.info("Shutting down dependencies...")
     
-    if _persistent_state_machine:
-        await _persistent_state_machine.stop()
-        _persistent_state_machine = None
+    # Stop Bully election
+    if _bully_election:
+        await _bully_election.stop()
+        _bully_election = None
     
     if _cluster_manager:
         await _cluster_manager.shutdown()
         _cluster_manager = None
-    
-    if _raft_node:
-        await _raft_node.stop()
-        _raft_node = None
     
     if _heartbeat_service:
         await _heartbeat_service.stop()
@@ -399,14 +517,12 @@ async def get_document_repository() -> DocumentRepository:
     return await get_local_document_repository()
 
 
-async def get_persistent_state_machine() -> PersistentStateMachine:
-    """Get persistent state machine."""
-    if _persistent_state_machine is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Persistent state machine not initialized"
-        )
-    return _persistent_state_machine
+async def get_persistent_state_machine():
+    """DEPRECATED: Raft is disabled. PersistentStateMachine not available."""
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Raft is disabled. PersistentStateMachine not available."
+    )
 
 
 async def get_search_engine() -> SearchEngine:
@@ -429,14 +545,22 @@ async def get_cluster_manager() -> ClusterManager:
     return _cluster_manager
 
 
-async def get_raft_node() -> RaftNode:
-    """Get Raft node instance."""
-    if _raft_node is None:
+async def get_raft_node():
+    """DEPRECATED: Raft is disabled. Use get_bully_election() instead."""
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Raft is disabled. Use Bully election instead."
+    )
+
+
+async def get_bully_election() -> BullyElection:
+    """Get Bully election instance."""
+    if _bully_election is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Raft node not initialized"
+            detail="Bully election not initialized"
         )
-    return _raft_node
+    return _bully_election
 
 
 def get_current_node() -> dict:

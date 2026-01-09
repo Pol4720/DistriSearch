@@ -84,6 +84,11 @@ services:
         published: 443
         protocol: tcp
         mode: ingress
+    environment:
+      - HA_MODE=true
+      - NODE_SERVICE=tasks.distrisearch-slave
+      - NODE_PORT=8000
+      - UPDATE_INTERVAL=10
     networks:
       - distrisearch-network
       - ingress-network

@@ -552,22 +552,74 @@ class SearchEngine:
         query_terms = [w for w in re.findall(r'\b\w+\b', query.lower()) if len(w) > 2]
         query_term_set = set(query_terms)
         
-        # If we have a cluster_manager and it's the master, federate to all slaves
-        if cluster_manager and hasattr(cluster_manager, 'is_master') and cluster_manager.is_master:
-            # Get all healthy slave nodes
+        # BM25 parameters (used in local search)
+        k1 = 1.5  # Term frequency saturation
+        b = 0.75  # Length normalization
+        
+        # If we have a cluster_manager and we're the leader, federate to all OTHER nodes
+        is_leader = False
+        if cluster_manager:
+            # Check if we're the leader (works with Bully algorithm)
+            is_leader = getattr(cluster_manager, 'is_leader', False)
+            if not is_leader and hasattr(cluster_manager, 'is_master'):
+                is_leader = cluster_manager.is_master
+        
+        # If we're NOT the leader, forward the search to the leader
+        if cluster_manager and not is_leader:
+            leader_address = getattr(cluster_manager, 'leader_address', None)
+            if leader_address:
+                logger.info(f"Forwarding search to leader at {leader_address}")
+                try:
+                    # Forward to leader using the main search endpoint
+                    if ':' not in leader_address:
+                        leader_address = f"{leader_address}:8000"
+                    url = f"http://{leader_address}/api/v1/search"
+                    async with aiohttp.ClientSession() as session:
+                        async with session.post(
+                            url,
+                            json={
+                                "query": query,
+                                "search_type": search_type,
+                                "top_k": top_k,
+                                "filters": filters,
+                                "timeout_ms": timeout_ms
+                            },
+                            timeout=aiohttp.ClientTimeout(total=timeout_ms/1000)
+                        ) as resp:
+                            if resp.status == 200:
+                                data = await resp.json()
+                                # Return the aggregated results from the leader
+                                return {
+                                    "results": data.get("results", []),
+                                    "total": data.get("total", 0),
+                                    "searched_nodes": data.get("searched_nodes", 1),
+                                    "forwarded_to_leader": True
+                                }
+                            else:
+                                logger.warning(f"Leader returned status {resp.status}, falling back to local search")
+                except Exception as e:
+                    logger.warning(f"Failed to forward search to leader: {e}, falling back to local search")
+        
+        if cluster_manager and is_leader:
+            # Get all healthy nodes EXCEPT ourselves
             nodes = cluster_manager._nodes
-            slave_nodes = [
+            other_nodes = [
                 node for node_id, node in nodes.items() 
-                if node.role.value == 'slave'
+                if node_id != cluster_manager.node_id and node.status.value == 'healthy'
             ]
             
-            if slave_nodes:
-                logger.info(f"Federating search to {len(slave_nodes)} slave nodes")
+            if other_nodes:
+                logger.info(f"Federating search to {len(other_nodes)} other nodes")
                 
-                # Query each slave node in parallel
-                async def query_slave(node):
+                # Query each node in parallel
+                async def query_node(node):
                     try:
-                        url = f"http://{node.address}/api/v1/search/"
+                        # Get port from address or use default
+                        port = getattr(node, 'port', 8000) or 8000
+                        address = node.address
+                        if ':' not in address:
+                            address = f"{address}:{port}"
+                        url = f"http://{address}/api/v1/internal/search"
                         async with aiohttp.ClientSession() as session:
                             async with session.post(
                                 url,
@@ -575,7 +627,8 @@ class SearchEngine:
                                     "query": query,
                                     "search_type": search_type,
                                     "top_k": top_k,
-                                    "filters": filters
+                                    "filters": filters,
+                                    "local_only": True  # Prevent infinite recursion
                                 },
                                 timeout=aiohttp.ClientTimeout(total=timeout_ms/1000)
                             ) as resp:
@@ -583,11 +636,11 @@ class SearchEngine:
                                     data = await resp.json()
                                     return node.node_id, data.get("results", [])
                     except Exception as e:
-                        logger.warning(f"Failed to query slave {node.node_id}: {e}")
+                        logger.warning(f"Failed to query node {node.node_id}: {e}")
                     return node.node_id, []
                 
                 # Execute queries in parallel
-                tasks = [query_slave(node) for node in slave_nodes]
+                tasks = [query_node(node) for node in other_nodes]
                 node_results = await asyncio.gather(*tasks, return_exceptions=True)
                 
                 # Aggregate results from all nodes
@@ -598,6 +651,86 @@ class SearchEngine:
                         for r in results:
                             if isinstance(r, dict):
                                 all_results.append(r)
+                
+                # ALSO search locally on this leader node
+                if document_repository:
+                    local_docs = await document_repository.find_many({}, limit=1000)
+                    my_node_id = cluster_manager.node_id if cluster_manager else "leader"
+                    
+                    # Same BM25 scoring for local docs
+                    local_doc_count = len(local_docs)
+                    local_avg_len = 0
+                    local_term_doc_freq = {}
+                    local_doc_data_list = []
+                    
+                    for doc in local_docs:
+                        doc_dict = doc if isinstance(doc, dict) else doc.dict()
+                        content = doc_dict.get("content", "").lower()
+                        title = doc_dict.get("title", "").lower()
+                        full_text = title + " " + content
+                        
+                        doc_terms = [w for w in re.findall(r'\b\w+\b', full_text) if len(w) > 2]
+                        local_avg_len += len(doc_terms)
+                        
+                        unique_terms = set(doc_terms)
+                        for term in unique_terms:
+                            local_term_doc_freq[term] = local_term_doc_freq.get(term, 0) + 1
+                        
+                        term_freq = {}
+                        for term in doc_terms:
+                            term_freq[term] = term_freq.get(term, 0) + 1
+                        
+                        local_doc_data_list.append({
+                            "doc_dict": doc_dict,
+                            "doc_terms": doc_terms,
+                            "term_freq": term_freq,
+                            "doc_length": len(doc_terms)
+                        })
+                    
+                    local_avg_len = local_avg_len / local_doc_count if local_doc_count > 0 else 1
+                    query_lower = query.lower().strip()
+                    
+                    for doc_data in local_doc_data_list:
+                        doc_dict = doc_data["doc_dict"]
+                        doc_terms_set = set(doc_data["doc_terms"])
+                        matched_terms = query_term_set & doc_terms_set
+                        
+                        title_lower = doc_dict.get("title", "").lower()
+                        filename_lower = doc_dict.get("filename", doc_dict.get("title", "")).lower()
+                        is_substring_match = query_lower in title_lower or query_lower in filename_lower
+                        
+                        if not matched_terms and not is_substring_match:
+                            continue
+                        
+                        bm25_score = 0.0
+                        for term in query_terms:
+                            if term not in doc_data["term_freq"]:
+                                continue
+                            tf = doc_data["term_freq"][term]
+                            df = local_term_doc_freq.get(term, 1)
+                            idf = math.log((local_doc_count - df + 0.5) / (df + 0.5) + 1)
+                            doc_len = doc_data["doc_length"]
+                            tf_component = (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * doc_len / local_avg_len))
+                            bm25_score += idf * tf_component
+                        
+                        if is_substring_match:
+                            bm25_score += 5.0
+                        
+                        doc_id = doc_dict.get("id") or doc_dict.get("_id", "")
+                        if hasattr(doc_id, '__str__'):
+                            doc_id = str(doc_id)
+                        
+                        all_results.append({
+                            "document_id": doc_id,
+                            "title": doc_dict.get("title", "Untitled"),
+                            "content": doc_dict.get("content", "")[:500],
+                            "score": bm25_score,
+                            "node_id": my_node_id,
+                            "matched_terms": list(matched_terms),
+                            "metadata": doc_dict.get("metadata", {})
+                        })
+                    
+                    searched_nodes += 1  # Count ourselves
                 
                 # Sort by score and limit to top_k
                 all_results.sort(key=lambda x: x.get("score", 0), reverse=True)

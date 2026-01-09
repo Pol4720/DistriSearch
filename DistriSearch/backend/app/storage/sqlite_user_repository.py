@@ -296,7 +296,34 @@ class SQLiteUserRepository:
                     "failed_login_attempts": user.failed_login_attempts + 1,
                     "locked_until": locked_until.isoformat() if locked_until else None,
                 })
-    
+
+    async def increment_failed_login(self, user_id: str) -> int:
+        """
+        Increment failed login attempts counter.
+        
+        Args:
+            user_id: User ID
+            
+        Returns:
+            New count of failed attempts
+        """
+        user = await self.find_by_id(user_id)
+        if user:
+            new_count = user.failed_login_attempts + 1
+            await self.update(user_id, {"failed_login_attempts": new_count})
+            return new_count
+        return 0
+
+    async def lock_account(self, user_id: str, until: datetime) -> None:
+        """
+        Lock user account until specified time.
+        
+        Args:
+            user_id: User ID
+            until: Lock expiration datetime
+        """
+        await self.update(user_id, {"locked_until": until.isoformat()})
+
     async def update_refresh_token(
         self,
         user_id: str,
