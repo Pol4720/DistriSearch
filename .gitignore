@@ -224,3 +224,4 @@ central_shared
 *.lot
 
 DistriSearch/frontend/node_modules/
+DistriSearch/deploy/manual-swarm/certs
