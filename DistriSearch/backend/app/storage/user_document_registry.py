@@ -381,6 +381,25 @@ class UserDocumentRegistry:
         
         return updated
     
+    async def get_all_entries(self, include_deleted: bool = False) -> List[DocumentRegistryEntry]:
+        """
+        Get all entries in the registry.
+        
+        Args:
+            include_deleted: Include soft-deleted entries
+            
+        Returns:
+            List of all entries
+        """
+        where = "1=1"
+        if not include_deleted:
+            where = "is_deleted = 0"
+        
+        rows = await self.client.fetch_all(
+            f"SELECT * FROM {self.TABLE_NAME} WHERE {where}"
+        )
+        return [DocumentRegistryEntry.from_dict(row) for row in rows]
+    
     async def get_updates_since(
         self,
         since: datetime,
@@ -447,12 +466,22 @@ class UserDocumentRegistry:
     
     async def _gossip_loop(self) -> None:
         """Background loop for gossip propagation."""
+        import aiohttp
         try:
             while self._running:
                 await asyncio.sleep(self.gossip_interval)
                 
+                # Send pending updates to peers
                 if self._pending_updates and self._peer_addresses:
                     await self._send_gossip()
+                
+                # Periodically do full sync with peers (every 30 seconds)
+                if hasattr(self, '_last_full_sync'):
+                    if (datetime.now() - self._last_full_sync).total_seconds() > 30:
+                        await self._full_sync_with_peers()
+                        self._last_full_sync = datetime.now()
+                else:
+                    self._last_full_sync = datetime.now()
                 
         except asyncio.CancelledError:
             pass
@@ -460,16 +489,55 @@ class UserDocumentRegistry:
             logger.error(f"Gossip loop error: {e}")
     
     async def _send_gossip(self) -> None:
-        """Send pending updates to peers."""
+        """Send pending updates to peers via HTTP."""
+        import aiohttp
+        
         if not self._pending_updates:
             return
         
         updates = self._pending_updates.copy()
         self._pending_updates.clear()
         
-        # In a real implementation, this would use HTTP/gRPC to send to peers
-        # For now, log the intent
-        logger.debug(f"Would gossip {len(updates)} updates to {len(self._peer_addresses)} peers")
+        # Convert entries to dicts for JSON serialization
+        updates_data = [entry.to_dict() for entry in updates]
+        
+        for peer_address in self._peer_addresses:
+            try:
+                url = f"http://{peer_address}/api/v1/internal/sync/registry"
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(
+                        url,
+                        json={"entries": updates_data, "source_node": self.node_id},
+                        timeout=aiohttp.ClientTimeout(total=5)
+                    ) as resp:
+                        if resp.status == 200:
+                            logger.debug(f"Gossiped {len(updates)} updates to {peer_address}")
+                        else:
+                            logger.warning(f"Gossip to {peer_address} failed: {resp.status}")
+            except Exception as e:
+                logger.debug(f"Failed to gossip to {peer_address}: {e}")
+    
+    async def _full_sync_with_peers(self) -> None:
+        """Do a full sync with all peers to ensure consistency."""
+        import aiohttp
+        
+        for peer_address in self._peer_addresses:
+            try:
+                # Get all entries from peer
+                url = f"http://{peer_address}/api/v1/internal/sync/registry/all"
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(
+                        url,
+                        timeout=aiohttp.ClientTimeout(total=10)
+                    ) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            entries = [DocumentRegistryEntry.from_dict(e) for e in data.get("entries", [])]
+                            if entries:
+                                merged = await self.merge_entries(entries)
+                                logger.debug(f"Full sync from {peer_address}: merged {merged} entries")
+            except Exception as e:
+                logger.debug(f"Full sync with {peer_address} failed: {e}")
     
     def _vector_clock_greater(
         self,

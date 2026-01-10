@@ -639,3 +639,184 @@ async def internal_list_documents(request: DocumentListRequest) -> Dict[str, Any
             "documents": [],
             "total": 0
         }
+
+
+# =============================================================================
+# Document Registry Synchronization Endpoints (Gossip Protocol)
+# =============================================================================
+
+class RegistrySyncRequest(BaseModel):
+    """Request to sync registry entries from another node."""
+    entries: list  # List of DocumentRegistryEntry dicts
+    source_node: str
+
+
+@router.post("/sync/registry")
+async def sync_registry_entries(request: RegistrySyncRequest) -> Dict[str, Any]:
+    """
+    Receive registry entries from another node (gossip receive).
+    
+    This endpoint is called by other nodes to propagate document registry
+    updates via the gossip protocol.
+    """
+    import os
+    from .dependencies import get_document_registry
+    from ..storage.user_document_registry import DocumentRegistryEntry
+    
+    try:
+        doc_registry = await get_document_registry()
+        node_id = os.environ.get("NODE_ID", "unknown")
+        
+        # Convert dicts to DocumentRegistryEntry objects
+        entries = [DocumentRegistryEntry.from_dict(e) for e in request.entries]
+        
+        # Merge with local registry
+        merged = await doc_registry.merge_entries(entries)
+        
+        logger.info(f"Received {len(entries)} registry entries from {request.source_node}, merged {merged}")
+        
+        return {
+            "status": "ok",
+            "merged": merged,
+            "node_id": node_id
+        }
+        
+    except Exception as e:
+        logger.error(f"Error syncing registry: {e}")
+        return {
+            "status": "error",
+            "message": str(e)
+        }
+
+
+@router.get("/sync/registry/all")
+async def get_all_registry_entries() -> Dict[str, Any]:
+    """
+    Get all registry entries from this node.
+    
+    Used for full sync during reconciliation after network partition.
+    """
+    import os
+    from .dependencies import get_document_registry
+    
+    try:
+        doc_registry = await get_document_registry()
+        node_id = os.environ.get("NODE_ID", "unknown")
+        
+        # Get all entries (including tombstones for proper sync)
+        entries = await doc_registry.get_all_entries(include_deleted=True)
+        
+        return {
+            "status": "ok",
+            "entries": [e.to_dict() for e in entries],
+            "count": len(entries),
+            "node_id": node_id
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting all registry entries: {e}")
+        return {
+            "status": "error",
+            "message": str(e),
+            "entries": [],
+            "count": 0
+        }
+
+
+# =============================================================================
+# Full Cluster Sync Endpoint (Post-Partition Reconciliation)
+# =============================================================================
+
+@router.post("/sync/full")
+async def trigger_full_sync() -> Dict[str, Any]:
+    """
+    Trigger a full synchronization of all data.
+    
+    This should be called after a network partition heals to ensure
+    all nodes have consistent data.
+    """
+    import os
+    from .dependencies import get_document_registry, get_user_repository, get_cluster_manager
+    
+    try:
+        node_id = os.environ.get("NODE_ID", "unknown")
+        results = {
+            "node_id": node_id,
+            "users_synced": 0,
+            "registry_entries_synced": 0,
+            "documents_verified": 0
+        }
+        
+        # 1. Get cluster manager to find peers
+        cluster_manager = await get_cluster_manager()
+        nodes = cluster_manager.get_all_nodes()
+        peers = [n for n in nodes if n.node_id != node_id]
+        
+        if not peers:
+            return {"status": "ok", "message": "No peers to sync with", **results}
+        
+        # 2. Sync users from all peers
+        user_repo = await get_user_repository()
+        for peer in peers:
+            try:
+                import aiohttp
+                address = peer.address
+                port = getattr(peer, 'port', 8000) or 8000
+                if ':' not in address:
+                    address = f"{address}:{port}"
+                
+                url = f"http://{address}/api/v1/internal/sync/users"
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            for user_data in data.get("users", []):
+                                try:
+                                    existing = await user_repo.find_by_email(user_data.get("email", ""))
+                                    if not existing:
+                                        from ..storage.models import UserModel, UserStatus
+                                        user = UserModel(
+                                            id=user_data["id"],
+                                            username=user_data["username"],
+                                            email=user_data["email"],
+                                            password_hash=user_data["password_hash"],
+                                            salt=user_data["salt"],
+                                            role=user_data.get("role", "user"),
+                                            status=UserStatus.ACTIVE,
+                                            full_name=user_data.get("full_name"),
+                                        )
+                                        await user_repo.create(user)
+                                        results["users_synced"] += 1
+                                except Exception as e:
+                                    logger.debug(f"Could not sync user: {e}")
+            except Exception as e:
+                logger.warning(f"Failed to sync users from {peer.node_id}: {e}")
+        
+        # 3. Sync document registry
+        doc_registry = await get_document_registry()
+        for peer in peers:
+            try:
+                import aiohttp
+                address = peer.address
+                port = getattr(peer, 'port', 8000) or 8000
+                if ':' not in address:
+                    address = f"{address}:{port}"
+                
+                url = f"http://{address}/api/v1/internal/sync/registry/all"
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            from ..storage.user_document_registry import DocumentRegistryEntry
+                            entries = [DocumentRegistryEntry.from_dict(e) for e in data.get("entries", [])]
+                            merged = await doc_registry.merge_entries(entries)
+                            results["registry_entries_synced"] += merged
+            except Exception as e:
+                logger.warning(f"Failed to sync registry from {peer.node_id}: {e}")
+        
+        logger.info(f"Full sync completed: {results}")
+        return {"status": "ok", **results}
+        
+    except Exception as e:
+        logger.error(f"Full sync error: {e}")
+        return {"status": "error", "message": str(e)}

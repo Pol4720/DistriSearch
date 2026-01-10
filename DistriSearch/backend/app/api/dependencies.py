@@ -176,6 +176,7 @@ async def init_dependencies(settings: Settings):
     # =========================================================================
     _document_registry = UserDocumentRegistry(client=_sqlite_client, node_id=node_id)
     
+    # Note: peers will be set after Bully election is configured
     logger.info("UserDocumentRegistry initialized for Gossip protocol")
     
     # =========================================================================
@@ -320,6 +321,15 @@ async def init_dependencies(settings: Settings):
         await _cluster_manager.handle_leader_elected(_bully_election.leader_id, None)
     
     # =========================================================================
+    # 5.2. Start UserDocumentRegistry with peers for Gossip
+    # =========================================================================
+    if _document_registry:
+        peer_addresses = list(_bully_peers.values())
+        _document_registry.set_peers(peer_addresses)
+        await _document_registry.start()
+        logger.info(f"UserDocumentRegistry started with {len(peer_addresses)} peers for gossip")
+    
+    # =========================================================================
     # 6. Initialize Search Engine
     # =========================================================================
     _search_engine = SearchEngine()
@@ -336,6 +346,11 @@ async def init_dependencies(settings: Settings):
     # Schedule a background task to sync users from peers after a delay
     # This ensures we have all users from other nodes when we start
     asyncio.create_task(_sync_users_from_peers_delayed(bully_peers, 10.0))
+    
+    # =========================================================================
+    # 9. Schedule periodic full sync for consistency
+    # =========================================================================
+    asyncio.create_task(_periodic_full_sync(bully_peers, interval=60.0))
     
     logger.info("Dependencies initialized successfully")
 
@@ -411,13 +426,51 @@ async def _sync_single_user(user_data: Dict[str, Any]) -> None:
         logger.debug(f"Could not sync user: {e}")
 
 
+async def _periodic_full_sync(peers: Dict[str, str], interval: float = 60.0):
+    """
+    Periodically perform full sync with peers.
+    
+    This ensures consistency even after network partitions heal.
+    """
+    await asyncio.sleep(interval)  # Initial delay
+    
+    while True:
+        try:
+            # Check if any peers are reachable that weren't before
+            # This indicates a network partition may have healed
+            for peer_id, peer_address in peers.items():
+                try:
+                    async with aiohttp.ClientSession() as session:
+                        url = f"http://{peer_address}/api/v1/health/live"
+                        async with session.get(url, timeout=aiohttp.ClientTimeout(total=3)) as resp:
+                            if resp.status == 200:
+                                # Peer is reachable, trigger sync
+                                sync_url = f"http://{peer_address}/api/v1/internal/sync/full"
+                                async with session.post(sync_url, timeout=aiohttp.ClientTimeout(total=30)) as sync_resp:
+                                    if sync_resp.status == 200:
+                                        logger.debug(f"Periodic sync with {peer_id} completed")
+                except Exception:
+                    pass  # Peer not reachable
+            
+        except Exception as e:
+            logger.debug(f"Periodic sync error: {e}")
+        
+        await asyncio.sleep(interval)
+
+
 async def shutdown_dependencies():
     """Cleanup dependencies at application shutdown."""
     global _sqlite_client, _local_mongodb_client
     global _cluster_manager, _bully_election
     global _heartbeat_service, _message_broker
+    global _document_registry
     
     logger.info("Shutting down dependencies...")
+    
+    # Stop document registry (gossip loop)
+    if _document_registry:
+        await _document_registry.stop()
+        _document_registry = None
     
     # Stop Bully election
     if _bully_election:

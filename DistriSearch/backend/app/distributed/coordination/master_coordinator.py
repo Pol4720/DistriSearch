@@ -45,7 +45,7 @@ class MasterConfig:
     # Rebalancing
     rebalance_interval: float = 300.0  # 5 minutes
     rebalance_threshold: float = 0.2   # 20% load imbalance
-    enable_auto_rebalance: bool = True
+    enable_auto_rebalance: bool = False  # DISABLED by default for stability
     
     # Replication
     replication_factor: int = 2

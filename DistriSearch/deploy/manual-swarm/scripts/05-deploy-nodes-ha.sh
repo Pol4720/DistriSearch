@@ -1,21 +1,39 @@
 #!/bin/bash
 # ============================================================================
-# 05-deploy-nodes-ha.sh - Despliega nodos HA con capacidad dual (master/slave)
+# 05-deploy-nodes-ha.sh - Despliega nodos HA con TOLERANCIA A PARTICIONES
 # ============================================================================
-# ARQUITECTURA HA:
-# - Todos los nodos usan la MISMA imagen (slave con capacidad dual)
-# - El algoritmo Raft decide dinámicamente quién es el líder
-# - Cada nodo tiene su propio MongoDB y Redis LOCAL
-# - Si el líder cae, Raft elige un nuevo líder automáticamente
+# ARQUITECTURA HA CON TOLERANCIA A PARTICIONES:
+# - Cada HOST tiene su propio stack completo (MongoDB + Redis + DistriSearch)
+# - Si hay partición de red, cada máquina puede funcionar independientemente
+# - El algoritmo BULLY elige el líder entre los nodos que se pueden comunicar
+# - Cuando se restaura la conectividad, el cluster se reconecta automáticamente
+#
+# IMPORTANTE: Para tolerancia a particiones real, el sistema se despliega así:
+# - Host A: node-1 (MongoDB-1, Redis-1, DistriSearch-1)
+# - Host B: node-2 (MongoDB-2, Redis-2, DistriSearch-2)  
+# - Host C: node-3 (MongoDB-3, Redis-3, DistriSearch-3)
+# - Load Balancer: GLOBAL (una instancia en cada host)
+#
+# Cuando Host A se desconecta de la red:
+# - Host A sigue funcionando con su stack local
+# - Host B y C siguen funcionando con sus stacks
+# - Cada partición tiene su propio líder Bully
 #
 # Ejecutar en el MANAGER
-# Uso: ./05-deploy-nodes-ha.sh [NUM_NODOS] [--clean] [--rebuild]
+# Uso: ./05-deploy-nodes-ha.sh [NUM_NODOS] [--clean] [--rebuild] [--local]
+#
+# Opciones:
+#   NUM_NODOS   Número de nodos a desplegar (default: número de hosts en swarm)
+#   --clean     Limpiar servicios existentes antes de desplegar
+#   --rebuild   Forzar reconstrucción de la imagen
+#   --local     Desplegar todos los nodos en la máquina local (para pruebas)
 # ============================================================================
 
 set -e
 
 echo "=============================================="
 echo "  DistriSearch - Desplegar Nodos HA"
+echo "  (Tolerancia a Particiones)"
 echo "=============================================="
 
 # Colores
@@ -36,6 +54,7 @@ log_skip() { echo -e "${CYAN}[SKIP]${NC} $1"; }
 # ============================================================================
 CLEAN_FIRST=false
 FORCE_REBUILD=false
+LOCAL_MODE=false
 NUM_NODES=""
 IMAGE_NAME="distrisearch/slave:latest"
 
@@ -47,6 +66,9 @@ for arg in "$@"; do
         --rebuild)
             FORCE_REBUILD=true
             ;;
+        --local)
+            LOCAL_MODE=true
+            ;;
         *)
             if [[ "$arg" =~ ^[0-9]+$ ]]; then
                 NUM_NODES=$arg
@@ -56,11 +78,16 @@ for arg in "$@"; do
 done
 
 echo ""
-echo -e "${CYAN}Arquitectura HA:${NC}"
-echo "  • Todos los nodos son IGUALES (imagen unificada)"
-echo "  • Raft decide dinámicamente quién es LEADER"
-echo "  • Sin master fijo: cualquier nodo puede ser líder"
-echo "  • Tolerante a fallos: si el líder cae, se elige otro"
+echo -e "${CYAN}Arquitectura HA con Tolerancia a Particiones:${NC}"
+echo "  • Cada HOST tiene un stack completo (MongoDB + Redis + DistriSearch)"
+echo "  • BULLY decide dinámicamente quién es LEADER (mayor ID gana)"
+echo "  • Si hay partición de red, cada host funciona independientemente"
+echo "  • Load Balancer en modo GLOBAL: una instancia por host"
+if [ "$LOCAL_MODE" = true ]; then
+    echo ""
+    echo -e "${YELLOW}  MODO LOCAL: Todos los nodos se despliegan en esta máquina${NC}"
+    echo -e "${YELLOW}  (No hay tolerancia a particiones real en este modo)${NC}"
+fi
 echo ""
 
 # ============================================================================
@@ -85,32 +112,40 @@ if [ "$CLEAN_FIRST" = true ]; then
 fi
 
 # ============================================================================
-# 3. Obtener lista de nodos disponibles
+# 3. Obtener lista de hosts disponibles
 # ============================================================================
-log_info "Obteniendo lista de nodos..."
+log_info "Obteniendo lista de hosts..."
 
-# Obtener todos los nodos activos
-mapfile -t ALL_NODES < <(docker node ls --format "{{.Hostname}} {{.Status}}" | grep "Ready" | awk '{print $1}' | sort -u)
-MANAGER_HOSTNAME=$(docker node ls --filter "role=manager" --format "{{.Hostname}}" | head -1)
+# Obtener todos los nodos activos con su hostname
+mapfile -t ALL_HOSTS < <(docker node ls --format "{{.Hostname}} {{.Status}}" | grep "Ready" | awk '{print $1}' | sort -u)
+LOCAL_HOSTNAME=$(hostname)
 
-TOTAL_NODES=${#ALL_NODES[@]}
+TOTAL_HOSTS=${#ALL_HOSTS[@]}
 
-if [ "$TOTAL_NODES" -eq 0 ]; then
+if [ "$TOTAL_HOSTS" -eq 0 ]; then
     log_error "No hay nodos disponibles en el cluster"
     exit 1
 fi
 
-# Si no se especificó número de nodos, usar todos los disponibles
-NUM_NODES=${NUM_NODES:-$TOTAL_NODES}
+log_info "Hosts disponibles: ${ALL_HOSTS[*]}"
 
-# No desplegar más nodos que los disponibles
-if [ "$NUM_NODES" -gt "$TOTAL_NODES" ]; then
-    log_warn "Ajustando número de nodos de $NUM_NODES a $TOTAL_NODES (nodos disponibles)"
-    NUM_NODES=$TOTAL_NODES
+# En modo local, podemos desplegar múltiples nodos en la misma máquina
+if [ "$LOCAL_MODE" = true ]; then
+    NUM_NODES=${NUM_NODES:-3}
+    log_info "Modo LOCAL: Desplegando $NUM_NODES nodo(s) en $LOCAL_HOSTNAME"
+else
+    # En modo distribuido con tolerancia a particiones:
+    # Desplegamos 1 nodo POR HOST para que cada host tenga stack completo
+    NUM_NODES=${NUM_NODES:-$TOTAL_HOSTS}
+    
+    if [ "$NUM_NODES" -gt "$TOTAL_HOSTS" ]; then
+        log_warn "Solo hay $TOTAL_HOSTS host(s). Cada host tendrá 1 nodo."
+        log_warn "Para múltiples nodos en un host, usa --local"
+        NUM_NODES=$TOTAL_HOSTS
+    fi
+    
+    log_info "Modo DISTRIBUIDO: 1 nodo por host para tolerancia a particiones"
 fi
-
-log_info "Nodos disponibles: ${ALL_NODES[*]}"
-log_info "Desplegando $NUM_NODES nodo(s) HA"
 
 # ============================================================================
 # 4. Verificar infraestructura
@@ -176,7 +211,6 @@ create_service_safe() {
     shift
     local SERVICE_ARGS=("$@")
     
-    # Verificar si ya existe
     if docker service inspect "$SERVICE_NAME" &>/dev/null; then
         local STATE=$(docker service ps "$SERVICE_NAME" --format "{{.CurrentState}}" 2>/dev/null | head -1)
         if echo "$STATE" | grep -q "Running"; then
@@ -189,7 +223,6 @@ create_service_safe() {
         fi
     fi
     
-    # Crear el servicio
     log_info "Creando $SERVICE_NAME..."
     if docker service create "${SERVICE_ARGS[@]}"; then
         local TRIES=0
@@ -215,7 +248,7 @@ create_service_safe() {
 }
 
 # ============================================================================
-# 7. Generar lista de peers para Raft
+# 7. Generar lista de peers para elección Bully
 # ============================================================================
 generate_peer_list() {
     local peers=""
@@ -228,79 +261,80 @@ generate_peer_list() {
     echo "$peers"
 }
 
-RAFT_PEERS=$(generate_peer_list)
-log_info "Peers Raft: $RAFT_PEERS"
+BULLY_PEERS=$(generate_peer_list)
+log_info "Peers Bully: $BULLY_PEERS"
 
-# Generar un JWT_SECRET compartido para todos los nodos (sesiones válidas en cualquier nodo)
-# Usar un secret fijo o generarlo una vez y almacenarlo en Redis/archivo
+# JWT_SECRET compartido
 JWT_SECRET="${JWT_SECRET:-distrisearch-cluster-shared-jwt-secret-$(date +%Y%m%d)}"
-log_info "JWT Secret compartido configurado (sesiones válidas en todos los nodos)"
+log_info "JWT Secret compartido configurado"
 
 # ============================================================================
-# 8. Desplegar nodos HA
+# 8. Desplegar nodos HA con tolerancia a particiones
 # ============================================================================
 log_info "Desplegando $NUM_NODES nodo(s) HA..."
 echo ""
 
 DEPLOYED=0
 for i in $(seq 1 $NUM_NODES); do
-    NODE_HOSTNAME="${ALL_NODES[$((i-1))]}"
+    # -----------------------------------------------------------------------
+    # Determinar en qué host desplegar
+    # En modo distribuido: cada host tiene exactamente 1 nodo
+    # En modo local: todos los nodos en el mismo host
+    # -----------------------------------------------------------------------
+    if [ "$LOCAL_MODE" = true ]; then
+        NODE_HOSTNAME="$LOCAL_HOSTNAME"
+    else
+        HOST_INDEX=$(( (i - 1) % TOTAL_HOSTS ))
+        NODE_HOSTNAME="${ALL_HOSTS[$HOST_INDEX]}"
+    fi
+    
+    CONSTRAINT_ARGS=(--constraint "node.hostname==$NODE_HOSTNAME")
     
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${BLUE}  Nodo $i en $NODE_HOSTNAME${NC}"
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     
     # -------------------------------------------------------------------
-    # MongoDB LOCAL para este nodo
+    # MongoDB LOCAL para este nodo (FIJADO al host)
     # -------------------------------------------------------------------
     create_service_safe "node${i}-mongodb" \
         --name "node${i}-mongodb" \
         --network distrisearch-network \
         --replicas 1 \
-        --constraint "node.hostname==$NODE_HOSTNAME" \
+        "${CONSTRAINT_ARGS[@]}" \
         --mount type=volume,source="node${i}-mongo-data",target=/data/db \
         mongo:4.4 \
         mongod --bind_ip_all
     
     # -------------------------------------------------------------------
-    # Redis LOCAL para este nodo
+    # Redis LOCAL para este nodo (FIJADO al host)
     # -------------------------------------------------------------------
     create_service_safe "node${i}-redis" \
         --name "node${i}-redis" \
         --network distrisearch-network \
         --replicas 1 \
-        --constraint "node.hostname==$NODE_HOSTNAME" \
+        "${CONSTRAINT_ARGS[@]}" \
         --mount type=volume,source="node${i}-redis-data",target=/data \
         redis:7-alpine
     
-    # Esperar un momento para que MongoDB y Redis estén listos
     sleep 3
     
     # -------------------------------------------------------------------
-    # Nodo DistriSearch (Backend + Frontend + Raft)
+    # Nodo DistriSearch (FIJADO al host)
+    # Puertos publicados globalmente para que el LB pueda alcanzarlos
     # -------------------------------------------------------------------
-    # Puertos: 
-    #   - HTTP Frontend: 8080 + i (8081, 8082, ...)
-    #   - HTTPS Frontend: 4430 + i (4431, 4432, ...)
-    #   - API Backend: 8000 + i (8001, 8002, ...)
     HTTP_PORT=$((8080 + i))
     HTTPS_PORT=$((4430 + i))
     API_PORT=$((8000 + i))
-    
-    # Determinar si es el primer nodo (candidato inicial a líder)
-    IS_INITIAL_LEADER="false"
-    if [ $i -eq 1 ]; then
-        IS_INITIAL_LEADER="true"
-    fi
     
     create_service_safe "distrisearch-node-$i" \
         --name "distrisearch-node-$i" \
         --network name=distrisearch-network,alias=distrisearch-node \
         --replicas 1 \
-        --constraint "node.hostname==$NODE_HOSTNAME" \
-        --publish published=$HTTP_PORT,target=80 \
-        --publish published=$HTTPS_PORT,target=443 \
-        --publish published=$API_PORT,target=8000 \
+        "${CONSTRAINT_ARGS[@]}" \
+        --publish published=$HTTP_PORT,target=80,mode=host \
+        --publish published=$HTTPS_PORT,target=443,mode=host \
+        --publish published=$API_PORT,target=8000,mode=host \
         --env NODE_ID="node-$i" \
         --env NODE_ROLE=slave \
         --env NODE_TYPE=slave \
@@ -313,18 +347,16 @@ for i in $(seq 1 $NUM_NODES); do
         --env COORDINATOR_REDIS_URL="redis://coordinator-redis:6379" \
         --env API_PORT=8000 \
         --env NODE_ADDRESS="distrisearch-node-$i" \
-        --env RAFT_ENABLED=true \
-        --env RAFT_PEERS="$RAFT_PEERS" \
-        --env RAFT_ELECTION_TIMEOUT_MIN=3000 \
-        --env RAFT_ELECTION_TIMEOUT_MAX=6000 \
-        --env RAFT_HEARTBEAT_INTERVAL=1000 \
+        --env BULLY_ENABLED=true \
+        --env BULLY_PEERS="$BULLY_PEERS" \
+        --env BULLY_ELECTION_TIMEOUT=5000 \
+        --env BULLY_HEARTBEAT_INTERVAL=2000 \
         --env CLUSTER_SIZE=$NUM_NODES \
         --env REPLICATION_FACTOR=2 \
         --env LOG_LEVEL=INFO \
-        --env IS_INITIAL_CANDIDATE="$IS_INITIAL_LEADER" \
         --env JWT_SECRET="$JWT_SECRET" \
         --mount type=volume,source="node${i}-sqlite",target=/app/data/sqlite \
-        --mount type=volume,source="node${i}-raft",target=/app/data/raft \
+        --mount type=volume,source="node${i}-data",target=/app/data \
         --mount type=volume,source="node${i}-docs",target=/app/data/documents \
         --health-cmd "curl -sf http://localhost:8000/api/v1/health/live || curl -sf http://localhost/health || exit 1" \
         --health-interval 30s \
@@ -333,6 +365,7 @@ for i in $(seq 1 $NUM_NODES); do
         --health-start-period 90s \
         "$IMAGE_NAME"
     
+    echo -e "  ${CYAN}Host:${NC} $NODE_HOSTNAME (stack completo fijado aquí)"
     echo -e "  ${CYAN}Puertos:${NC} HTTP=$HTTP_PORT, HTTPS=$HTTPS_PORT, API=$API_PORT"
     echo -e "  ${CYAN}MongoDB:${NC} node${i}-mongodb:27017"
     echo -e "  ${CYAN}Redis:${NC} node${i}-redis:6379"
@@ -342,10 +375,10 @@ for i in $(seq 1 $NUM_NODES); do
 done
 
 # ============================================================================
-# 9. Esperar estabilización y verificar estado
+# 9. Esperar estabilización
 # ============================================================================
 echo ""
-log_info "Esperando a que los nodos se estabilicen y Raft elija líder..."
+log_info "Esperando a que los nodos se estabilicen y Bully elija líder..."
 sleep 15
 
 echo ""
@@ -353,7 +386,26 @@ echo -e "${GREEN}Estado de servicios:${NC}"
 docker service ls --format "table {{.Name}}\t{{.Replicas}}\t{{.Image}}" | grep -E "node|distrisearch|NAME"
 
 # ============================================================================
-# 10. Resumen
+# 10. Mostrar distribución de servicios por host
+# ============================================================================
+echo ""
+echo -e "${CYAN}Distribución de servicios por HOST:${NC}"
+echo -e "${CYAN}(Para tolerancia a particiones, cada host debe tener su stack completo)${NC}"
+echo ""
+
+for HOST in "${ALL_HOSTS[@]}"; do
+    echo -e "${BLUE}Host: $HOST${NC}"
+    docker service ls --format "{{.Name}}" | while read svc; do
+        NODE_HOST=$(docker service ps "$svc" --format "{{.Node}}" 2>/dev/null | head -1)
+        if [ "$NODE_HOST" = "$HOST" ]; then
+            echo "  - $svc"
+        fi
+    done
+    echo ""
+done
+
+# ============================================================================
+# 11. Resumen
 # ============================================================================
 echo ""
 echo "=============================================="
@@ -361,6 +413,11 @@ echo -e "${GREEN}  Despliegue HA Completado${NC}"
 echo "=============================================="
 echo ""
 echo -e "${BLUE}Nodos desplegados: $DEPLOYED${NC}"
+if [ "$LOCAL_MODE" = true ]; then
+    echo -e "${YELLOW}Modo: LOCAL (todos en $LOCAL_HOSTNAME)${NC}"
+else
+    echo -e "${GREEN}Modo: DISTRIBUIDO con Tolerancia a Particiones${NC}"
+fi
 echo ""
 
 MANAGER_IP=$(docker node inspect self --format '{{.Status.Addr}}')
@@ -382,17 +439,32 @@ echo "  Frontend: http://$MANAGER_IP (puerto 80)"
 echo "  Frontend: https://$MANAGER_IP (puerto 443)"
 echo ""
 
-echo -e "${CYAN}Arquitectura Raft:${NC}"
-echo "  • Todos los nodos participan en elección de líder"
-echo "  • El líder coordina el cluster y mantiene el VP-Tree global"
-echo "  • Los seguidores procesan búsquedas y almacenan documentos"
-echo "  • Si el líder cae, se elige automáticamente un nuevo líder"
+echo -e "${CYAN}Algoritmo de Consenso - BULLY:${NC}"
+echo "  • El nodo con mayor ID (node-$NUM_NODES) será el líder inicial"
+echo "  • El líder coordina el cluster y federa las búsquedas"
+echo "  • Si el líder cae, el siguiente nodo activo con mayor ID toma el liderazgo"
+echo ""
+
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${GREEN}  TOLERANCIA A PARTICIONES${NC}"
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
+echo "  Cada host tiene su stack completo (MongoDB + Redis + DistriSearch)."
+echo "  Si hay partición de red:"
+echo ""
+echo "  1. Cada host puede funcionar independientemente"
+echo "  2. El Load Balancer local enruta al nodo local disponible"
+echo "  3. Bully elige líder en cada partición"
+echo "  4. Cuando se restaura la conectividad, el cluster se reconecta"
+echo ""
+echo "  Para probar: Desconecta un host de la red y verifica que"
+echo "  sigue funcionando accediendo a su IP directamente."
 echo ""
 
 echo -e "${YELLOW}Comandos útiles:${NC}"
 echo "  Ver logs nodo 1:    docker service logs -f distrisearch-node-1"
 echo "  Ver estado:         docker service ps distrisearch-node-1"
-echo "  Ver líder Raft:     curl http://$MANAGER_IP:8001/api/v1/cluster/status"
+echo "  Ver líder Bully:    curl http://$MANAGER_IP:8001/api/v1/cluster/status"
 echo "  Verificar cluster:  ./06-verify-ha-cluster.sh"
 echo "  Probar failover:    ./07-test-failover.sh"
 echo ""

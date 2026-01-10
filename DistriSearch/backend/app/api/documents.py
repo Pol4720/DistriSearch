@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 import logging
 import uuid
+import hashlib
 
 from .schemas import (
     DocumentCreate,
@@ -77,6 +78,33 @@ async def create_document(
     try:
         doc_id = str(uuid.uuid4())
         now = datetime.utcnow()
+        owner_id = auth_user.get("user_id") or auth_user.get("id") or auth_user.get("sub")
+        
+        # Calculate content hash for deduplication
+        content_hash = hashlib.sha256(
+            f"{document.title}:{document.content}".encode()
+        ).hexdigest()
+        
+        # Check for duplicate document (same owner, same content)
+        existing = await doc_repo.find_one({
+            "owner_id": owner_id,
+            "content_hash": content_hash
+        })
+        if existing:
+            # Return existing document instead of creating duplicate
+            logger.info(f"Document already exists with same content hash: {existing.get('_id')}")
+            return DocumentResponse(
+                id=str(existing["_id"]),
+                title=existing["title"],
+                content=existing["content"],
+                metadata=existing.get("metadata", {}),
+                tags=existing.get("tags", []),
+                node_id=existing.get("node_id"),
+                partition_id=existing.get("partition_id"),
+                vectors=DocumentVectors(**existing["vectors"]) if existing.get("vectors") else None,
+                created_at=existing["created_at"],
+                updated_at=existing["updated_at"]
+            )
         
         # Generate vectors for the document
         vectors = await search_engine.vectorize_document(document.content)
@@ -90,9 +118,10 @@ async def create_document(
             "_id": doc_id,
             "title": document.title,
             "content": document.content,
+            "content_hash": content_hash,
             "metadata": document.metadata or {},
             "tags": document.tags or [],
-            "owner_id": auth_user.get("user_id") or auth_user.get("id") or auth_user.get("sub"),
+            "owner_id": owner_id,
             "node_id": node_id,
             "partition_id": partition_id,
             "vectors": {
@@ -114,6 +143,21 @@ async def create_document(
             primary_node_id=node_id,
             document_data=doc_data
         )
+        
+        # Register document in user-document registry for eventual consistency queries
+        try:
+            from .dependencies import get_document_registry
+            doc_registry = await get_document_registry()
+            await doc_registry.register_document(
+                user_id=doc_data["owner_id"],
+                document_id=doc_id,
+                node_id=node_id,
+                title=document.title,
+                filename=None,
+            )
+            logger.debug(f"Registered document {doc_id} in user-document registry")
+        except Exception as e:
+            logger.warning(f"Failed to register document in registry: {e}")
         
         logger.info(f"Document created: {doc_id} on node {node_id}, replicated_to: {replication_result.get('replicated_to', [])}")
         
@@ -208,6 +252,31 @@ async def upload_document(
         now = datetime.utcnow()
         doc_title = title or extraction_result.title or file.filename or "Untitled Document"
         doc_tags = tags.split(",") if tags else []
+        owner_id = auth_user.get("user_id") or auth_user.get("id") or auth_user.get("sub")
+        
+        # Calculate content hash for deduplication (based on file content)
+        content_hash = hashlib.sha256(content).hexdigest()
+        
+        # Check for duplicate file (same owner, same content)
+        existing = await doc_repo.find_one({
+            "owner_id": owner_id,
+            "content_hash": content_hash
+        })
+        if existing:
+            # Return existing document instead of creating duplicate
+            logger.info(f"File already exists with same content hash: {existing.get('_id')}")
+            content_preview = existing.get("content", "")[:500] if existing.get("content") else f"[Binary file: {file.filename}]"
+            return DocumentUploadResponse(
+                id=str(existing["_id"]),
+                filename=existing.get("metadata", {}).get("filename", file.filename),
+                title=existing["title"],
+                content_preview=content_preview,
+                file_size=existing.get("metadata", {}).get("file_size", len(content)),
+                content_type=existing.get("metadata", {}).get("content_type", file.content_type),
+                node_id=existing.get("node_id"),
+                partition_id=existing.get("partition_id"),
+                created_at=existing["created_at"]
+            )
         
         # Determine searchable text: use extracted content or filename
         searchable_text = extracted_content.strip() if extracted_content else ""
@@ -233,6 +302,7 @@ async def upload_document(
             "_id": doc_id,
             "title": doc_title,
             "content": extracted_content if is_content_extracted else "",
+            "content_hash": content_hash,
             "metadata": {
                 "filename": file.filename,
                 "content_type": file.content_type,
@@ -242,7 +312,7 @@ async def upload_document(
                 "extraction_metadata": extraction_result.metadata,
             },
             "tags": doc_tags,
-            "owner_id": auth_user.get("user_id") or auth_user.get("id") or auth_user.get("sub"),
+            "owner_id": owner_id,
             "node_id": node_id,
             "partition_id": partition_id,
             "vectors": {
@@ -264,6 +334,21 @@ async def upload_document(
             primary_node_id=node_id,
             document_data=doc_data
         )
+        
+        # Register document in user-document registry for eventual consistency queries
+        try:
+            from .dependencies import get_document_registry
+            doc_registry = await get_document_registry()
+            await doc_registry.register_document(
+                user_id=doc_data["owner_id"],
+                document_id=doc_id,
+                node_id=node_id,
+                title=doc_title,
+                filename=file.filename,
+            )
+            logger.debug(f"Registered uploaded document {doc_id} in user-document registry")
+        except Exception as e:
+            logger.warning(f"Failed to register uploaded document in registry: {e}")
         
         logger.info(f"Document uploaded: {doc_id}, file: {file.filename}, content_extracted: {is_content_extracted}, replicated_to: {replication_result.get('replicated_to', [])}")
         
@@ -701,6 +786,15 @@ async def delete_document(
                 await file_handler.delete_file(doc["metadata"]["file_path"])
             except Exception as e:
                 logger.warning(f"Failed to delete file: {e}")
+        
+        # Mark document as deleted in user-document registry (tombstone)
+        try:
+            from .dependencies import get_document_registry
+            doc_registry = await get_document_registry()
+            await doc_registry.unregister_document(user_id=doc_owner, document_id=document_id)
+            logger.info(f"Unregistered document {document_id} from registry for user {doc_owner}")
+        except Exception as e:
+            logger.warning(f"Failed to unregister document from registry: {e}")
         
         logger.info(f"Document deleted: {document_id} by user {user_id}")
         

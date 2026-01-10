@@ -575,6 +575,19 @@ class ClusterManager:
         """Get all nodes in the cluster."""
         return list(self._nodes.values())
     
+    async def get_cluster_nodes(self) -> List[Dict[str, Any]]:
+        """Get all cluster nodes as dicts for API use."""
+        return [
+            {
+                "node_id": node.node_id,
+                "address": node.address.split(":")[0] if ":" in node.address else node.address,
+                "port": int(node.address.split(":")[1]) if ":" in node.address else 8000,
+                "status": node.status.value,
+                "role": node.role.value,
+            }
+            for node in self._nodes.values()
+        ]
+    
     def get_healthy_nodes(self) -> List[NodeMembership]:
         """Get all healthy nodes."""
         return [
@@ -776,7 +789,7 @@ class ClusterManager:
         
         return {"replicated_to": replicated_to, "failed": failed}
     
-    async def delete_document_replicas(self, doc_id: str):
+    async def delete_document_replicas(self, doc_id: str, retries: int = 3, backoff: float = 1.0, require_quorum: bool = True):
         """
         Delete document replicas from all other nodes via HTTP.
         
@@ -791,59 +804,103 @@ class ClusterManager:
         
         deleted_from = []
         failed = []
-        
+
         # Get all healthy nodes except ourselves
         other_nodes = [
             n for n in self.get_healthy_nodes()
             if n.node_id != self.node_id
         ]
-        
+
         if not other_nodes:
             logger.debug(f"No other nodes to delete replica {doc_id} from")
-            return {"deleted_from": [], "failed": []}
-        
-        async def delete_from_node(node):
-            try:
-                port = getattr(node, 'port', 8000) or 8000
-                address = node.address
-                if ':' not in address:
-                    address = f"{address}:{port}"
-                
-                url = f"http://{address}/api/v1/internal/document/delete"
-                
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(
-                        url,
-                        json={
-                            "document_id": doc_id,
-                            "propagate": False  # Don't propagate further
-                        },
-                        timeout=aiohttp.ClientTimeout(total=10)
-                    ) as resp:
-                        result = await resp.json()
-                        if resp.status == 200 and result.get("status") in ["deleted", "not_found"]:
-                            return ("success", node.node_id)
-                        else:
-                            return ("failed", node.node_id, result.get("message", "Unknown error"))
-                            
-            except Exception as e:
-                return ("failed", node.node_id, str(e))
-        
-        # Delete from all nodes in parallel
-        tasks = [delete_from_node(node) for node in other_nodes]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        for result in results:
-            if isinstance(result, Exception):
-                logger.error(f"Exception during replica deletion: {result}")
-            elif result[0] == "success":
-                deleted_from.append(result[1])
-                logger.info(f"Deleted replica {doc_id} from {result[1]}")
-            else:
-                failed.append({"node": result[1], "error": result[2] if len(result) > 2 else "Unknown"})
-                logger.warning(f"Failed to delete replica {doc_id} from {result[1]}: {result[2] if len(result) > 2 else 'Unknown'}")
-        
-        return {"deleted_from": deleted_from, "failed": failed}
+            return {"deleted_from": [], "failed": [], "success": True}
+
+        # Determine required successes (replication_factor - 1)
+        replication_factor = getattr(self, 'replication_factor', 2)
+        required_successes = max(0, replication_factor - 1)
+
+        # Helper to attempt deletion on a set of nodes
+        async def attempt_delete(nodes):
+            results = []
+            async def delete_from_node(node):
+                try:
+                    port = getattr(node, 'port', 8000) or 8000
+                    address = node.address
+                    if ':' not in address:
+                        address = f"{address}:{port}"
+
+                    url = f"http://{address}/api/v1/internal/document/delete"
+
+                    async with aiohttp.ClientSession() as session:
+                        async with session.post(
+                            url,
+                            json={
+                                "document_id": doc_id,
+                                "propagate": False  # Don't propagate further
+                            },
+                            timeout=aiohttp.ClientTimeout(total=10)
+                        ) as resp:
+                            try:
+                                result = await resp.json()
+                            except Exception:
+                                result = {}
+                            if resp.status == 200 and result.get("status") in ["deleted", "not_found"]:
+                                return (True, node.node_id, None)
+                            else:
+                                return (False, node.node_id, result.get("message", "Unknown error"))
+
+                except Exception as e:
+                    return (False, node.node_id, str(e))
+
+            tasks = [delete_from_node(n) for n in nodes]
+            res = await asyncio.gather(*tasks, return_exceptions=True)
+            for r in res:
+                if isinstance(r, Exception):
+                    logger.error(f"Exception during replica deletion attempt: {r}")
+                else:
+                    results.append(r)
+            return results
+
+        # Start attempts with retries and exponential backoff
+        remaining_nodes = other_nodes.copy()
+        attempt = 0
+        success_node_ids: Set[str] = set()
+
+        while attempt <= retries and remaining_nodes:
+            attempt += 1
+            logger.debug(f"Attempt {attempt} to delete {doc_id} from {len(remaining_nodes)} nodes")
+            results = await attempt_delete(remaining_nodes)
+
+            # Reset remaining list and collect failures
+            new_remaining = []
+            for ok, node_id, err in results:
+                if ok:
+                    success_node_ids.add(node_id)
+                    logger.info(f"Deleted replica {doc_id} from {node_id}")
+                else:
+                    new_remaining.append(node_id)
+                    failed.append({"node": node_id, "error": err})
+                    logger.warning(f"Failed to delete replica {doc_id} from {node_id}: {err}")
+
+            # If we've reached required successes, break
+            if len(success_node_ids) >= required_successes:
+                break
+
+            # Prepare for next retry only on nodes that failed
+            remaining_nodes = [n for n in remaining_nodes if n.node_id in new_remaining]
+
+            if remaining_nodes:
+                await asyncio.sleep(backoff * attempt)
+
+        deleted_from = list(success_node_ids)
+
+        # Determine overall success based on quorum requirement
+        if require_quorum:
+            success = len(deleted_from) >= required_successes
+        else:
+            success = True
+
+        return {"deleted_from": deleted_from, "failed": failed, "success": success}
     
     async def register_node(
         self,

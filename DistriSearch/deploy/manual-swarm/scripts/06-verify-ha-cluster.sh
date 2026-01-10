@@ -98,15 +98,15 @@ for NODE in $DISTRISEARCH_NODES; do
     if curl -sf "$HEALTH_URL" --max-time 5 &>/dev/null; then
         echo -e "  API Health:   ${GREEN}OK${NC} ($HEALTH_URL)"
         
-        # Intentar obtener rol Raft
+        # Intentar obtener rol Bully
         CLUSTER_STATUS=$(curl -sf "http://$MANAGER_IP:$API_PORT/api/v1/cluster/status" --max-time 5 2>/dev/null || echo "{}")
-        RAFT_ROLE=$(echo "$CLUSTER_STATUS" | grep -oP '"role"\s*:\s*"\K[^"]+' 2>/dev/null || echo "unknown")
+        BULLY_ROLE=$(echo "$CLUSTER_STATUS" | grep -oP '"role"\s*:\s*"\K[^"]+' 2>/dev/null || echo "unknown")
         IS_LEADER=$(echo "$CLUSTER_STATUS" | grep -oP '"is_leader"\s*:\s*\K(true|false)' 2>/dev/null || echo "unknown")
         
         if [ "$IS_LEADER" = "true" ]; then
-            echo -e "  Rol Raft:     ${GREEN}LEADER${NC} ★"
+            echo -e "  Rol Bully:     ${GREEN}LEADER${NC} ★"
         else
-            echo -e "  Rol Raft:     ${CYAN}$RAFT_ROLE${NC}"
+            echo -e "  Rol Bully:     ${CYAN}$BULLY_ROLE${NC}"
         fi
     else
         echo -e "  API Health:   ${YELLOW}No responde${NC}"

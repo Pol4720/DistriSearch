@@ -93,6 +93,24 @@ El algoritmo Bully elige dinámicamente quién es el líder del cluster.
 | `09-cleanup-ha.sh` | Cualquier Manager | Limpia servicios |
 | `10-full-cleanup.sh` | Cualquier Manager | Limpieza completa |
 
+## Modo Local (Pruebas en una sola máquina)
+
+Para probar el sistema distribuido en una sola máquina, usa el flag `--local`:
+
+```bash
+# Desplegar 3 nodos en la máquina local
+./05-deploy-nodes-ha.sh 3 --local
+
+# Desplegar con limpieza previa
+./05-deploy-nodes-ha.sh 3 --local --clean
+```
+
+Esto permite probar:
+- Elección de líder con algoritmo Bully
+- Federación de búsquedas
+- Replicación de documentos (k=2)
+- Tolerancia a fallos (detener un nodo y verificar reelección)
+
 ## Arquitectura de Almacenamiento
 
 ```

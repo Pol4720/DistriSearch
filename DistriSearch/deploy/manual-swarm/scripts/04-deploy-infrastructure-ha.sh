@@ -5,7 +5,7 @@
 # ARQUITECTURA HA:
 # - CoreDNS: DNS de respaldo para descubrimiento de servicios
 # - Redis Cluster: Cache distribuido con alta disponibilidad
-# - Todos los nodos pueden ser master o slave (Raft decide)
+# - Todos los nodos pueden ser master o slave (Bully decide)
 #
 # Ejecutar SOLO en el MANAGER
 # ============================================================================
@@ -32,7 +32,7 @@ log_skip() { echo -e "${CYAN}[SKIP]${NC} $1 (ya existe)"; }
 echo ""
 echo -e "${CYAN}Arquitectura HA (Alta Disponibilidad):${NC}"
 echo "  • Todos los nodos son iguales (imagen unificada)"
-echo "  • Raft decide dinámicamente quién es el líder"
+echo "  • Bully decide dinámicamente quién es el líder"
 echo "  • CoreDNS: Descubrimiento de servicios con fallback"
 echo "  • Load Balancer: Balanceo entre nodos disponibles"
 echo "  • Cada nodo: MongoDB local + Redis local + Backend + Frontend"
@@ -267,7 +267,7 @@ echo "         │                │                │"
 echo "         └────────────────┼────────────────┘"
 echo "                          ▼"
 echo "                  ┌───────────────┐"
-echo "                  │     RAFT      │"
+echo "                  │     BULLY     │"
 echo "                  │  (Consenso)   │"
 echo "                  │ Elige Líder   │"
 echo "                  └───────────────┘"

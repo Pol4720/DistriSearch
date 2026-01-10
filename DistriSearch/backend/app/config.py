@@ -72,6 +72,7 @@ class Settings(BaseSettings):
     rebalance_threshold: float = Field(default=0.8, alias="REBALANCE_THRESHOLD")
     rebalance_batch_size: int = Field(default=50, alias="REBALANCE_BATCH_SIZE")
     rebalance_delay_seconds: float = Field(default=1.0, alias="REBALANCE_DELAY_SECONDS")
+    enable_auto_rebalance: bool = Field(default=False, alias="AUTO_REBALANCE_ENABLED")  # Disabled by default
     
     # Search
     search_timeout: int = Field(default=30, alias="SEARCH_TIMEOUT")

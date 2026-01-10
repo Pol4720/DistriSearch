@@ -170,7 +170,7 @@ if [ "$KILL_LEADER" = true ]; then
     log_info "Líder detenido. Esperando elección de nuevo líder..."
     echo ""
     
-    # Esperar a que Raft elija nuevo líder
+    # Esperar a que Bully elija nuevo líder
     for i in {1..10}; do
         sleep 3
         echo -n "."

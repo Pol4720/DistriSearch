@@ -4,8 +4,9 @@ FROM coredns/coredns:1.11.1
 # Usamos alpine como base y copiamos el binario de CoreDNS
 FROM alpine:3.19
 
-# Instalar bind-tools para tener dig disponible
-RUN apk add --no-cache bind-tools
+# Instalar bind-tools para tener dig disponible (con reintentos para red inestable)
+RUN apk update --no-cache || apk update --no-cache || apk update --no-cache && \
+    apk add --no-cache bind-tools || apk add --no-cache bind-tools
 
 # Copiar el binario de CoreDNS desde la imagen oficial
 COPY --from=coredns/coredns:1.11.1 /coredns /coredns

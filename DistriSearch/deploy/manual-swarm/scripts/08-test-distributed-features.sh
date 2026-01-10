@@ -107,22 +107,22 @@ else
 fi
 
 # ============================================================================
-# TEST 3: CONSENSO RAFT - ELECCIÓN DE LÍDER
+# TEST 3: CONSENSO BULLY - ELECCIÓN DE LÍDER
 # ============================================================================
-log_test "Consenso Raft - Elección de Líder"
+log_test "Consenso Bully - Elección de Líder"
 
 log_step "Verificando que hay un líder electo..."
 
-RAFT=$(api_call GET "/cluster/raft/status")
-if [ -n "$RAFT" ]; then
-    HAS_LEADER=$(echo "$RAFT" | grep -o '"leader":"[^"]*"' | cut -d'"' -f4)
+BULLY=$(api_call GET "/cluster/bully/status")
+if [ -n "$BULLY" ]; then
+    HAS_LEADER=$(echo "$BULLY" | grep -o '"leader":"[^"]*"' | cut -d'"' -f4)
     
     if [ -n "$HAS_LEADER" ] && [ "$HAS_LEADER" != "null" ]; then
         echo -e "  $PASS - Líder: $HAS_LEADER"
         ((PASSED++))
         
         # Verificar term
-        TERM=$(echo "$RAFT" | grep -o '"term":[0-9]*' | grep -o '[0-9]*' || echo "0")
+        TERM=$(echo "$BULLY" | grep -o '"term":[0-9]*' | grep -o '[0-9]*' || echo "0")
         log_step "Term actual: $TERM"
         
         if [ "$TERM" -ge 1 ]; then
@@ -134,7 +134,7 @@ if [ -n "$RAFT" ]; then
         ((FAILED++))
     fi
 else
-    echo -e "  $SKIP - Endpoint Raft no disponible"
+    echo -e "  $SKIP - Endpoint Bully no disponible"
     ((SKIPPED++))
 fi
 
@@ -396,7 +396,7 @@ echo ""
 echo "Características verificadas:"
 echo "  • Disponibilidad (CAP: A)"
 echo "  • Tolerancia a Particiones (CAP: P)"
-echo "  • Consenso Raft"
+echo "  • Consenso Bully"
 echo "  • Elección de Líder"
 echo "  • Replicación de Datos"
 echo "  • Particionamiento VP-Tree"
