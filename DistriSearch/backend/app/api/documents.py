@@ -46,7 +46,7 @@ content_extractor = ContentExtractor()
 
 
 @router.post(
-    "/",
+    "",
     response_model=DocumentResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create a new document",
@@ -292,7 +292,7 @@ async def upload_document(
 
 
 @router.get(
-    "/",
+    "",
     response_model=DocumentListResponse,
     summary="List documents",
     responses={
@@ -307,11 +307,17 @@ async def list_documents(
     tag: Optional[str] = Query(default=None, description="Filter by tag"),
     node_id: Optional[str] = Query(default=None, description="Filter by node"),
     doc_repo: DocumentRepository = Depends(get_document_repository),
+    cluster_manager: ClusterManager = Depends(get_cluster_manager),
+    current_node: dict = Depends(get_current_node),
     auth_user: dict = Depends(require_auth)
 ):
     """
     List documents uploaded by the current authenticated user.
+    Federates query to all nodes to get complete view (documents are replicated with k=2).
     """
+    import aiohttp
+    import asyncio
+    
     try:
         # Build filter - only show user's own documents
         user_id = auth_user.get("user_id") or auth_user.get("id") or auth_user.get("sub")
@@ -323,30 +329,86 @@ async def list_documents(
         
         skip = (page - 1) * page_size
         
-        # Get documents and total count
-        documents = await doc_repo.find(
+        # Collect documents from all nodes to get complete view
+        all_documents = {}  # Use dict to deduplicate by document_id
+        my_node_id = current_node.get("node_id", "unknown")
+        
+        # Get local documents first
+        local_docs = await doc_repo.find(
             filters=filters,
-            skip=skip,
-            limit=page_size,
+            skip=0,
+            limit=1000,  # Get all for deduplication
             sort=[("created_at", -1)]
         )
-        total = await doc_repo.count(filters)
+        for doc in local_docs:
+            doc_id = str(doc["_id"])
+            all_documents[doc_id] = doc
+        
+        # Federate to other nodes if we have cluster_manager
+        if cluster_manager:
+            try:
+                nodes = await cluster_manager.get_cluster_nodes()
+                other_nodes = [n for n in nodes if n.get("node_id") != my_node_id and n.get("status") == "healthy"]
+                
+                async def fetch_from_node(node_info):
+                    try:
+                        node_address = node_info.get("address", "")
+                        port = node_info.get("port", 8000)
+                        url = f"http://{node_address}:{port}/api/v1/internal/documents/list"
+                        
+                        async with aiohttp.ClientSession() as session:
+                            async with session.post(
+                                url,
+                                json={"owner_id": user_id, "tag": tag},
+                                timeout=aiohttp.ClientTimeout(total=5)
+                            ) as response:
+                                if response.status == 200:
+                                    data = await response.json()
+                                    return data.get("documents", [])
+                    except Exception as e:
+                        logger.warning(f"Failed to fetch documents from {node_info.get('node_id')}: {e}")
+                    return []
+                
+                # Fetch from all other nodes in parallel
+                if other_nodes:
+                    tasks = [fetch_from_node(n) for n in other_nodes]
+                    results = await asyncio.gather(*tasks, return_exceptions=True)
+                    
+                    for result in results:
+                        if isinstance(result, list):
+                            for doc in result:
+                                doc_id = str(doc.get("_id") or doc.get("id", ""))
+                                if doc_id and doc_id not in all_documents:
+                                    all_documents[doc_id] = doc
+            except Exception as e:
+                logger.warning(f"Error federating document list: {e}")
+        
+        # Sort all documents by created_at descending
+        sorted_docs = sorted(
+            all_documents.values(),
+            key=lambda x: x.get("created_at", datetime.min),
+            reverse=True
+        )
+        
+        # Apply pagination
+        total = len(sorted_docs)
+        paginated_docs = sorted_docs[skip:skip + page_size]
         total_pages = (total + page_size - 1) // page_size
         
         # Convert to response models
         doc_responses = []
-        for doc in documents:
+        for doc in paginated_docs:
             doc_responses.append(DocumentResponse(
-                id=str(doc["_id"]),
-                title=doc["title"],
-                content=doc["content"],
+                id=str(doc.get("_id") or doc.get("id", "")),
+                title=doc.get("title", "Untitled"),
+                content=doc.get("content", ""),
                 metadata=doc.get("metadata", {}),
                 tags=doc.get("tags", []),
                 node_id=doc.get("node_id"),
                 partition_id=doc.get("partition_id"),
                 vectors=DocumentVectors(**doc["vectors"]) if doc.get("vectors") else None,
-                created_at=doc["created_at"],
-                updated_at=doc["updated_at"]
+                created_at=doc.get("created_at", datetime.utcnow()),
+                updated_at=doc.get("updated_at", datetime.utcnow())
             ))
         
         return DocumentListResponse(

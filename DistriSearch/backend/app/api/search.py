@@ -36,7 +36,7 @@ router = APIRouter(prefix="/search", tags=["search"])
 
 
 @router.post(
-    "/",
+    "",
     response_model=SearchResponse,
     summary="Search documents",
     dependencies=[Depends(rate_limit_search)],

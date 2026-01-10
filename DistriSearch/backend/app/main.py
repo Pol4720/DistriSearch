@@ -66,6 +66,7 @@ def create_application() -> FastAPI:
     
     app = FastAPI(
         title="DistriSearch API",
+        redirect_slashes=False,
         description="""
         DistriSearch is a distributed document search system that provides:
         

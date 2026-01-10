@@ -736,6 +736,13 @@ class SearchEngine:
                 all_results.sort(key=lambda x: x.get("score", 0), reverse=True)
                 all_results = all_results[:top_k]
                 
+                # Normalize scores to 0-1 range
+                if all_results:
+                    max_score = max(r.get("score", 0) for r in all_results)
+                    if max_score > 1.0:
+                        for r in all_results:
+                            r["score"] = round(r.get("score", 0) / max_score, 4)
+                
                 return {
                     "results": all_results,
                     "total": len(all_results),

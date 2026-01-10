@@ -401,6 +401,13 @@ async def internal_search(request: InternalSearchRequest) -> Dict[str, Any]:
         results.sort(key=lambda x: x.get("score", 0), reverse=True)
         results = results[:request.top_k]
         
+        # Normalize scores to 0-1 range
+        if results:
+            max_score = max(r.get("score", 0) for r in results)
+            if max_score > 1.0:
+                for r in results:
+                    r["score"] = round(r.get("score", 0) / max_score, 4)
+        
         logger.info(f"Internal search for '{request.query}' returned {len(results)} results")
         
         return {
@@ -571,4 +578,64 @@ async def get_document_for_replication(document_id: str) -> Dict[str, Any]:
             "status": "error",
             "message": str(e),
             "document_id": document_id
+        }
+
+
+class DocumentListRequest(BaseModel):
+    """Request to list documents by owner"""
+    owner_id: str
+    tag: Optional[str] = None
+
+
+@router.post("/documents/list")
+async def internal_list_documents(request: DocumentListRequest) -> Dict[str, Any]:
+    """
+    Internal endpoint to list documents by owner.
+    Used for federating document list queries across nodes.
+    """
+    import os
+    from .dependencies import get_document_repository
+    
+    try:
+        doc_repo = await get_document_repository()
+        node_id = os.environ.get("NODE_ID", "unknown")
+        
+        # Build filter
+        filters = {"owner_id": request.owner_id}
+        if request.tag:
+            filters["tags"] = request.tag
+        
+        # Get all matching documents
+        documents = await doc_repo.find(
+            filters=filters,
+            skip=0,
+            limit=1000,
+            sort=[("created_at", -1)]
+        )
+        
+        # Convert documents to dicts
+        doc_list = []
+        for doc in documents:
+            doc_dict = doc if isinstance(doc, dict) else doc.dict()
+            # Ensure _id is string
+            if "_id" in doc_dict:
+                doc_dict["_id"] = str(doc_dict["_id"])
+            doc_list.append(doc_dict)
+        
+        logger.info(f"Internal documents list for owner '{request.owner_id}' returned {len(doc_list)} documents")
+        
+        return {
+            "status": "ok",
+            "documents": doc_list,
+            "total": len(doc_list),
+            "node_id": node_id
+        }
+        
+    except Exception as e:
+        logger.error(f"Internal documents list error: {e}")
+        return {
+            "status": "error",
+            "message": str(e),
+            "documents": [],
+            "total": 0
         }

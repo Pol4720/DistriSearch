@@ -37,7 +37,7 @@ _version = os.getenv("APP_VERSION", "1.0.0")
 
 
 @router.get(
-    "/",
+    "",
     response_model=HealthResponse,
     summary="Health check",
     responses={

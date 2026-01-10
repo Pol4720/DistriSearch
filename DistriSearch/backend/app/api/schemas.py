@@ -113,7 +113,7 @@ class SearchResultItem(BaseModel):
     document_id: str
     title: str
     content_preview: str = Field(..., description="Snippet with highlighted matches")
-    score: float = Field(..., ge=0.0, le=1.0, description="Relevance score")
+    score: float = Field(..., ge=0.0, description="Relevance score (TF-IDF scores may exceed 1.0)")
     node_id: str
     metadata: Dict[str, Any] = Field(default_factory=dict)
     matched_terms: List[str] = Field(default_factory=list, description="Matched search terms")
