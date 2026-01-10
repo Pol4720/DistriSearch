@@ -86,7 +86,11 @@ class ScenarioTester:
         self.api_url = f"{self.base_url}{API_V1}"
         self.users: List[TestUser] = []
         self.results: List[TestResult] = []
-        self.client = httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=True)
+        self.client = httpx.AsyncClient(
+            timeout=TIMEOUT, 
+            follow_redirects=True,
+            verify=False  # Allow self-signed SSL certs
+        )
         
     async def close(self):
         await self.client.aclose()
@@ -342,6 +346,128 @@ class ScenarioTester:
         
         return results
     
+    async def test_document_get_and_download(self) -> Dict:
+        """Test document retrieval (GET by ID) and file download"""
+        results = {
+            "get_tests": [],
+            "download_tests": []
+        }
+        
+        for user in self.users:
+            headers = {"Authorization": f"Bearer {user.token}"}
+            
+            if user.documents:
+                doc = user.documents[0]  # Test with first document
+                doc_id = doc.get("id")
+                
+                # Test GET document by ID
+                response = await self.client.get(
+                    f"{self.api_url}/documents/{doc_id}",
+                    headers=headers
+                )
+                
+                get_passed = response.status_code == 200
+                if get_passed:
+                    doc_data = response.json()
+                    self.log(f"  - GET {user.username}: {doc_data.get('title', '')[:40]}...")
+                else:
+                    self.log(f"  ⚠ GET {user.username}: Error {response.status_code}", "WARN")
+                
+                results["get_tests"].append({
+                    "user": user.username,
+                    "doc_id": doc_id,
+                    "status": response.status_code,
+                    "passed": get_passed
+                })
+                
+                # Test download endpoint
+                download_response = await self.client.get(
+                    f"{self.api_url}/documents/{doc_id}/download",
+                    headers=headers
+                )
+                
+                # All documents should be downloadable now (text docs as .txt)
+                download_ok = download_response.status_code == 200
+                if download_response.status_code == 200:
+                    self.log(f"  - Download {user.username}: {len(download_response.content)} bytes")
+                else:
+                    self.log(f"  ⚠ Download {user.username}: Error {download_response.status_code}", "WARN")
+                
+                results["download_tests"].append({
+                    "user": user.username,
+                    "doc_id": doc_id,
+                    "status": download_response.status_code,
+                    "passed": download_ok
+                })
+        
+        # Check all tests passed
+        all_get_passed = all(t["passed"] for t in results["get_tests"])
+        all_download_passed = all(t["passed"] for t in results["download_tests"])
+        
+        if not all_get_passed:
+            raise Exception("Some GET document requests failed")
+        if not all_download_passed:
+            raise Exception("Some download requests returned unexpected errors")
+        
+        return results
+    
+    async def test_upload_and_download_file(self) -> Dict:
+        """Test file upload and download"""
+        user = self.users[0]
+        headers = {"Authorization": f"Bearer {user.token}"}
+        
+        # Create test file content
+        test_content = b"This is test file content for upload and download verification. 123456789"
+        test_filename = "test_upload_scenario1.txt"
+        
+        # Upload file
+        files = {"file": (test_filename, test_content, "text/plain")}
+        data = {"title": "Scenario1 Upload Test", "tags": "test,scenario1,upload"}
+        
+        response = await self.client.post(
+            f"{self.api_url}/documents/upload",
+            files=files,
+            data=data,
+            headers=headers
+        )
+        
+        if response.status_code not in [200, 201]:
+            raise Exception(f"Upload failed: {response.status_code} - {response.text}")
+        
+        upload_result = response.json()
+        uploaded_doc_id = upload_result.get("id")
+        self.log(f"  - Uploaded: {test_filename} (ID: {uploaded_doc_id})")
+        
+        # Save for cleanup
+        user.documents.append({"id": uploaded_doc_id})
+        
+        # Wait a bit for sync
+        await asyncio.sleep(2)
+        
+        # Download the file
+        download_response = await self.client.get(
+            f"{self.api_url}/documents/{uploaded_doc_id}/download",
+            headers=headers
+        )
+        
+        if download_response.status_code != 200:
+            raise Exception(f"Download failed: {download_response.status_code}")
+        
+        downloaded_content = download_response.content
+        content_matches = downloaded_content == test_content
+        
+        self.log(f"  - Downloaded: {len(downloaded_content)} bytes")
+        self.log(f"  - Content match: {'YES' if content_matches else 'NO'}")
+        
+        if not content_matches:
+            raise Exception(f"Downloaded content does not match! Original: {len(test_content)}, Downloaded: {len(downloaded_content)}")
+        
+        return {
+            "uploaded_doc_id": uploaded_doc_id,
+            "file_size": len(test_content),
+            "content_matches": content_matches
+        }
+    
     async def test_document_replication(self) -> Dict:
         """Verify documents are replicated to multiple nodes"""
         # Get cluster status to check replication
@@ -432,6 +558,8 @@ class ScenarioTester:
         await self.run_test("Document Listing Stability", self.test_document_listing_stability)
         await self.run_test("Search Functionality", self.test_search_functionality)
         await self.run_test("User Document Isolation", self.test_user_swap_document_access)
+        await self.run_test("Document GET and Download", self.test_document_get_and_download)
+        await self.run_test("Upload and Download File", self.test_upload_and_download_file)
         await self.run_test("Document Replication", self.test_document_replication)
         
         if cleanup:
@@ -464,6 +592,10 @@ async def main():
     parser.add_argument("--base-url", default=BASE_URL, help="Base URL of the API")
     parser.add_argument("--no-cleanup", action="store_true", help="Don't delete test documents")
     args = parser.parse_args()
+    
+    # Disable SSL warnings for self-signed certificates
+    import urllib3
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     
     tester = ScenarioTester(args.base_url)
     try:

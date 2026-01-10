@@ -439,6 +439,42 @@ class PartitionTester:
             await self.record_result(f"Doc Partición ({node_name})", found,
                                     "Encontrado (reconciliación OK)" if found else "NO ENCONTRADO")
         
+        # Verificar descarga de documentos (GET por ID)
+        self.log("\nVerificando descarga de documentos:")
+        if doc_list:
+            test_doc = doc_list[0]
+            test_doc_id = test_doc.get("id")
+            
+            try:
+                response = await self.client.get(
+                    f"{self.api_url}/documents/{test_doc_id}",
+                    headers=headers
+                )
+                if response.status_code == 200:
+                    doc_data = response.json()
+                    has_content = bool(doc_data.get("content") or doc_data.get("title"))
+                    await self.record_result("GET documento", True, 
+                                            f"OK ({doc_data.get('title', '')[:30]}...)")
+                else:
+                    await self.record_result("GET documento", False, f"Error: {response.status_code}")
+            except Exception as e:
+                await self.record_result("GET documento", False, str(e))
+            
+            # Probar download endpoint (todos los docs ahora son descargables)
+            try:
+                download_resp = await self.client.get(
+                    f"{self.api_url}/documents/{test_doc_id}/download",
+                    headers=headers
+                )
+                if download_resp.status_code == 200:
+                    await self.record_result("Download archivo", True, 
+                                            f"OK ({len(download_resp.content)} bytes)")
+                else:
+                    await self.record_result("Download archivo", False, 
+                                            f"Error: {download_resp.status_code}")
+            except Exception as e:
+                await self.record_result("Download archivo", False, str(e))
+        
         # Verificar DEDUPLICACIÓN
         identical_docs_found = [d for d in doc_list if "IDENTICAL" in d.get("title", "")]
         identical_count = len(identical_docs_found)
@@ -664,6 +700,7 @@ class PartitionTester:
             self.log("  ✓ Operación independiente durante aislamiento", "SUCCESS")
             self.log("  ✓ Reconciliación automática post-reconexión", "SUCCESS")
             self.log("  ✓ Deduplicación de documentos idénticos", "SUCCESS")
+            self.log("  ✓ Descarga de documentos funcional", "SUCCESS")
         else:
             self.log("❌ TEST COMPLETADO CON ERRORES", "ERROR")
             self.log("")

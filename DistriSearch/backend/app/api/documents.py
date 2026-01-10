@@ -568,22 +568,27 @@ async def get_document(
 
 @router.get(
     "/{document_id}/download",
-    summary="Download the original file",
+    summary="Download the document file",
     responses={
         200: {"description": "File content"},
-        404: {"model": ErrorResponse, "description": "Document or file not found"},
+        404: {"model": ErrorResponse, "description": "Document not found"},
         500: {"model": ErrorResponse, "description": "Internal server error"}
     }
 )
 async def download_document(
     document_id: str,
-    doc_repo: DocumentRepository = Depends(get_document_repository)
+    doc_repo: DocumentRepository = Depends(get_document_repository),
+    cluster_manager: ClusterManager = Depends(get_cluster_manager)
 ):
     """
-    Download the original uploaded file.
+    Download a document as a file.
     
-    Returns the file with proper content-type and filename headers.
+    For uploaded files: Returns the original file.
+    For text documents: Returns content as a .txt file.
+    If file is not local: Fetches from other nodes in the cluster.
     """
+    import aiohttp
+    
     try:
         doc = await doc_repo.find_by_id(document_id)
         
@@ -596,32 +601,95 @@ async def download_document(
         metadata = doc.get("metadata", {})
         file_path = metadata.get("file_path")
         
-        if not file_path:
+        # Case 1: Document has a file path (uploaded file)
+        if file_path:
+            # Try to read locally first
+            file_content = await file_handler.get_file(file_path)
+            
+            if file_content is not None:
+                # File found locally
+                original_filename = metadata.get("filename", "download")
+                content_type = metadata.get("content_type", "application/octet-stream")
+                
+                return Response(
+                    content=file_content,
+                    media_type=content_type,
+                    headers={
+                        "Content-Disposition": f'attachment; filename="{original_filename}"',
+                        "Content-Length": str(len(file_content)),
+                    }
+                )
+            
+            # File not found locally - try to fetch from other nodes
+            logger.info(f"File not found locally for {document_id}, trying other nodes...")
+            
+            if cluster_manager:
+                primary_node = doc.get("node_id") or doc.get("primary_node")
+                nodes = cluster_manager.get_healthy_nodes()
+                
+                for node in nodes:
+                    if node.node_id == cluster_manager.node_id:
+                        continue  # Skip self
+                    
+                    try:
+                        port = getattr(node, 'port', 8000) or 8000
+                        address = node.address
+                        if ':' not in address:
+                            address = f"{address}:{port}"
+                        
+                        url = f"http://{address}/api/v1/internal/document/{document_id}/file"
+                        
+                        async with aiohttp.ClientSession() as session:
+                            async with session.get(url, timeout=aiohttp.ClientTimeout(total=60)) as resp:
+                                if resp.status == 200:
+                                    remote_content = await resp.read()
+                                    original_filename = metadata.get("filename", "download")
+                                    content_type = metadata.get("content_type", "application/octet-stream")
+                                    
+                                    logger.info(f"Fetched file for {document_id} from {node.node_id}")
+                                    
+                                    return Response(
+                                        content=remote_content,
+                                        media_type=content_type,
+                                        headers={
+                                            "Content-Disposition": f'attachment; filename="{original_filename}"',
+                                            "Content-Length": str(len(remote_content)),
+                                        }
+                                    )
+                    except Exception as e:
+                        logger.debug(f"Could not fetch file from {node.node_id}: {e}")
+                        continue
+            
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="No file associated with this document"
+                detail="File not found on any node in the cluster"
             )
         
-        # Read file content
-        file_content = await file_handler.get_file(file_path)
+        # Case 2: Text document (no file_path) - generate .txt file from content
+        content = doc.get("content", "")
+        title = doc.get("title", "document")
         
-        if file_content is None:
+        if not content:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="File not found on storage"
+                detail="Document has no content to download"
             )
         
-        # Get original filename and content type
-        original_filename = metadata.get("filename", "download")
-        content_type = metadata.get("content_type", "application/octet-stream")
+        # Create text file content
+        text_content = f"Title: {title}\n\n{content}"
+        file_bytes = text_content.encode('utf-8')
         
-        # Return file with proper headers
+        # Generate safe filename from title
+        safe_title = "".join(c if c.isalnum() or c in (' ', '-', '_') else '_' for c in title)
+        safe_title = safe_title.strip()[:50] or "document"
+        filename = f"{safe_title}.txt"
+        
         return Response(
-            content=file_content,
-            media_type=content_type,
+            content=file_bytes,
+            media_type="text/plain; charset=utf-8",
             headers={
-                "Content-Disposition": f'attachment; filename="{original_filename}"',
-                "Content-Length": str(len(file_content)),
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Content-Length": str(len(file_bytes)),
             }
         )
         

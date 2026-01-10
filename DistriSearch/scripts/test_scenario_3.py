@@ -17,6 +17,8 @@ Del Escenario 1 (Operación Normal):
   ✓ Búsqueda funcional cross-node
   ✓ Estabilidad del listado de documentos
   ✓ Aislamiento de documentos por usuario
+  ✓ Descarga de documentos (GET por ID)
+  ✓ Upload y descarga de archivos
 
 Del Escenario 2 (Particiones):
   ✓ Tolerancia a partición de red
@@ -559,6 +561,138 @@ class ComprehensiveTester:
             details={"nodes": list(nodes_used)}
         )
         
+        # 2.6 Pruebas de descarga (GET documento por ID)
+        self.log("\n--- 2.6 Descarga de Documentos ---", "PHASE")
+        
+        for user in self.users:
+            headers = {"Authorization": f"Bearer {user.token}"}
+            
+            if user.documents:
+                # Probar descarga del primer documento del usuario
+                doc = user.documents[0]
+                doc_id = doc.get("id")
+                
+                # 2.6.1 GET documento (metadatos + contenido)
+                start = time.time()
+                try:
+                    response = await self.client.get(
+                        f"{self.api_url}/documents/{doc_id}",
+                        headers=headers
+                    )
+                    duration = (time.time() - start) * 1000
+                    
+                    if response.status_code == 200:
+                        doc_data = response.json()
+                        has_content = bool(doc_data.get("content"))
+                        has_title = bool(doc_data.get("title"))
+                        await self.record_result(
+                            f"GET doc {user.username}", True,
+                            f"OK (content: {has_content}, title: {has_title})",
+                            "descarga", duration_ms=duration
+                        )
+                    else:
+                        await self.record_result(
+                            f"GET doc {user.username}", False,
+                            f"Error: {response.status_code}", "descarga"
+                        )
+                except Exception as e:
+                    await self.record_result(
+                        f"GET doc {user.username}", False, str(e), "descarga"
+                    )
+                
+                # 2.6.2 Descargar documento (ahora todos son descargables)
+                try:
+                    response = await self.client.get(
+                        f"{self.api_url}/documents/{doc_id}/download",
+                        headers=headers
+                    )
+                    
+                    # Todos los documentos ahora son descargables (texto como .txt)
+                    if response.status_code == 200:
+                        content_len = len(response.content)
+                        await self.record_result(
+                            f"Download {user.username}", True,
+                            f"OK ({content_len} bytes)", "descarga"
+                        )
+                    else:
+                        await self.record_result(
+                            f"Download {user.username}", False,
+                            f"Error: {response.status_code}", "descarga"
+                        )
+                except Exception as e:
+                    await self.record_result(
+                        f"Download {user.username}", False, str(e), "descarga"
+                    )
+        
+        # 2.7 Prueba de upload y descarga de archivo
+        self.log("\n--- 2.7 Upload y Descarga de Archivo ---", "PHASE")
+        
+        user = self.users[0]
+        headers = {"Authorization": f"Bearer {user.token}"}
+        
+        # Crear archivo de prueba
+        test_file_content = b"Este es el contenido de un archivo de prueba para verificar upload y descarga."
+        test_filename = "test_upload_download.txt"
+        
+        try:
+            # Upload con multipart/form-data
+            files = {"file": (test_filename, test_file_content, "text/plain")}
+            data = {"title": "UPLOAD-TEST: Archivo para prueba de descarga", "tags": "upload-test,comprehensive-test"}
+            
+            start = time.time()
+            response = await self.client.post(
+                f"{self.api_url}/documents/upload",
+                files=files,
+                data=data,
+                headers=headers
+            )
+            duration = (time.time() - start) * 1000
+            
+            if response.status_code in [200, 201]:
+                upload_doc = response.json()
+                upload_doc_id = upload_doc.get("id")
+                await self.record_result(
+                    "Upload archivo", True,
+                    f"OK (ID: {upload_doc_id[:8]}...)", "descarga", duration_ms=duration
+                )
+                
+                # Guardar para cleanup
+                user.documents.append({"id": upload_doc_id, "tags": ["upload-test"]})
+                
+                # Esperar sincronización breve
+                await asyncio.sleep(2)
+                
+                # Descargar el archivo
+                start = time.time()
+                download_resp = await self.client.get(
+                    f"{self.api_url}/documents/{upload_doc_id}/download",
+                    headers=headers
+                )
+                duration = (time.time() - start) * 1000
+                
+                if download_resp.status_code == 200:
+                    downloaded_content = download_resp.content
+                    content_match = downloaded_content == test_file_content
+                    await self.record_result(
+                        "Descarga archivo", content_match,
+                        f"{'Contenido idéntico' if content_match else 'Contenido DIFERENTE'} ({len(downloaded_content)} bytes)",
+                        "descarga", duration_ms=duration
+                    )
+                else:
+                    await self.record_result(
+                        "Descarga archivo", False,
+                        f"Error: {download_resp.status_code}", "descarga"
+                    )
+            else:
+                await self.record_result(
+                    "Upload archivo", False,
+                    f"Error: {response.status_code} - {response.text[:100]}", "descarga"
+                )
+        except Exception as e:
+            await self.record_result(
+                "Upload/Descarga archivo", False, str(e), "descarga"
+            )
+        
         self.state["phase_normal_ops_completed"] = True
         self.save_state()
         return True
@@ -820,6 +954,39 @@ class ComprehensiveTester:
                 f"{len(results)} resultados encontrados", "final"
             )
         
+        # 5.3.1 Verificar descarga post-reconciliación
+        self.log("\n--- 5.3.1 Descarga Post-Reconciliación ---", "PHASE")
+        
+        # Probar GET de un documento cualquiera
+        if doc_list:
+            test_doc = doc_list[0]
+            test_doc_id = test_doc.get("id")
+            
+            try:
+                start = time.time()
+                response = await self.client.get(
+                    f"{self.api_url}/documents/{test_doc_id}",
+                    headers=headers
+                )
+                duration = (time.time() - start) * 1000
+                
+                if response.status_code == 200:
+                    doc_data = response.json()
+                    await self.record_result(
+                        "GET doc post-reconciliación", True,
+                        f"OK (título: {doc_data.get('title', '')[:30]}...)",
+                        "descarga", duration_ms=duration
+                    )
+                else:
+                    await self.record_result(
+                        "GET doc post-reconciliación", False,
+                        f"Error: {response.status_code}", "descarga"
+                    )
+            except Exception as e:
+                await self.record_result(
+                    "GET doc post-reconciliación", False, str(e), "descarga"
+                )
+        
         # 5.4 Verificar estabilidad final
         self.log("\n--- 5.4 Estabilidad Final ---", "PHASE")
         
@@ -1068,6 +1235,8 @@ class ComprehensiveTester:
             self.log("  ✓ Reconciliación automática", "SUCCESS")
             self.log("  ✓ Deduplicación de documentos", "SUCCESS")
             self.log("  ✓ Propagación de eliminaciones", "SUCCESS")
+            self.log("  ✓ Descarga de documentos", "SUCCESS")
+            self.log("  ✓ Upload y descarga de archivos", "SUCCESS")
         else:
             self.log(f"⚠️  SISTEMA CON PROBLEMAS", "ERROR")
             self.log(f"   {summary.passed}/{summary.total} tests pasaron ({success_rate:.1f}%)", "WARN")

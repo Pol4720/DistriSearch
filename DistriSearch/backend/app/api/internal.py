@@ -436,6 +436,7 @@ class ReplicateDocumentRequest(BaseModel):
     document_id: str
     source_node_id: str
     document_data: Dict[str, Any]  # Full document data including content
+    file_content_base64: Optional[str] = None  # Base64 encoded file content (for file replication)
 
 
 @router.post("/document/replicate")
@@ -444,10 +445,13 @@ async def replicate_document(request: ReplicateDocumentRequest) -> Dict[str, Any
     Replicate a document from another node to this node.
     
     This endpoint is called by the primary node to replicate documents
-    to maintain the replication factor.
+    to maintain the replication factor. If the document has an associated file,
+    the file content is also replicated.
     """
     import os
+    import base64
     from .dependencies import get_document_repository
+    from ..storage.file_handler import FileHandler
     
     try:
         doc_repo = await get_document_repository()
@@ -469,6 +473,32 @@ async def replicate_document(request: ReplicateDocumentRequest) -> Dict[str, Any
         doc_data["is_replica"] = True
         doc_data["primary_node"] = request.source_node_id
         
+        # If there's file content, save it locally
+        if request.file_content_base64:
+            try:
+                file_content = base64.b64decode(request.file_content_base64)
+                metadata = doc_data.get("metadata", {})
+                filename = metadata.get("filename", f"{request.document_id}.bin")
+                content_type = metadata.get("content_type", "application/octet-stream")
+                
+                file_handler = FileHandler()
+                uploaded_file = await file_handler.save_file(
+                    file_data=file_content,
+                    filename=filename,
+                    content_type=content_type
+                )
+                
+                # Update file_path to local path
+                if "metadata" not in doc_data:
+                    doc_data["metadata"] = {}
+                doc_data["metadata"]["file_path"] = uploaded_file.storage_path
+                doc_data["metadata"]["replica_file"] = True
+                
+                logger.info(f"Replicated file for {request.document_id} to {uploaded_file.storage_path}")
+            except Exception as e:
+                logger.warning(f"Could not replicate file for {request.document_id}: {e}")
+                # Continue without file - it can be fetched on demand
+        
         await doc_repo.create(doc_data)
         
         logger.info(f"Replicated document {request.document_id} from {request.source_node_id} to {node_id}")
@@ -476,7 +506,8 @@ async def replicate_document(request: ReplicateDocumentRequest) -> Dict[str, Any
         return {
             "status": "replicated",
             "document_id": request.document_id,
-            "node_id": node_id
+            "node_id": node_id,
+            "file_replicated": bool(request.file_content_base64)
         }
         
     except Exception as e:
@@ -579,6 +610,83 @@ async def get_document_for_replication(document_id: str) -> Dict[str, Any]:
             "message": str(e),
             "document_id": document_id
         }
+
+
+@router.get("/document/{document_id}/file")
+async def get_document_file(document_id: str):
+    """
+    Get a document's file content for distributed download.
+    
+    This endpoint is called by other nodes when they need to serve
+    a file that exists on this node but not on the requesting node.
+    """
+    import os
+    from fastapi.responses import Response
+    from .dependencies import get_document_repository
+    from ..storage.file_handler import FileHandler
+    
+    try:
+        doc_repo = await get_document_repository()
+        node_id = os.environ.get("NODE_ID", "unknown")
+        
+        doc = await doc_repo.find_by_id(document_id)
+        if not doc:
+            return Response(
+                content=b"Document not found",
+                status_code=404,
+                media_type="text/plain"
+            )
+        
+        metadata = doc.get("metadata", {})
+        file_path = metadata.get("file_path")
+        
+        if not file_path:
+            # No physical file - return content as text
+            content = doc.get("content", "")
+            if content:
+                title = doc.get("title", "document")
+                text_content = f"Title: {title}\n\n{content}"
+                file_bytes = text_content.encode('utf-8')
+                return Response(
+                    content=file_bytes,
+                    status_code=200,
+                    media_type="text/plain; charset=utf-8"
+                )
+            return Response(
+                content=b"No file or content",
+                status_code=404,
+                media_type="text/plain"
+            )
+        
+        # Read file from local storage
+        file_handler = FileHandler()
+        file_content = await file_handler.get_file(file_path)
+        
+        if file_content is None:
+            logger.warning(f"File not found locally: {file_path}")
+            return Response(
+                content=b"File not found on this node",
+                status_code=404,
+                media_type="text/plain"
+            )
+        
+        content_type = metadata.get("content_type", "application/octet-stream")
+        
+        logger.info(f"Serving file for document {document_id} from {node_id}")
+        
+        return Response(
+            content=file_content,
+            status_code=200,
+            media_type=content_type
+        )
+        
+    except Exception as e:
+        logger.error(f"Error fetching document file: {e}")
+        return Response(
+            content=f"Error: {str(e)}".encode(),
+            status_code=500,
+            media_type="text/plain"
+        )
 
 
 class DocumentListRequest(BaseModel):

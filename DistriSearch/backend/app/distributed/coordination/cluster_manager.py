@@ -736,6 +736,7 @@ class ClusterManager:
             document_data: Full document data to replicate (if None, will fetch from primary)
         """
         import aiohttp
+        import base64
         
         replication_factor = getattr(self, 'replication_factor', 2)
         healthy_nodes = [
@@ -755,6 +756,23 @@ class ClusterManager:
         replicated_to = []
         failed = []
         
+        # Check if document has a file and read it
+        file_content_base64 = None
+        if document_data:
+            metadata = document_data.get("metadata", {})
+            file_path = metadata.get("file_path")
+            
+            if file_path:
+                try:
+                    from ..storage.file_handler import FileHandler
+                    file_handler = FileHandler()
+                    file_content = await file_handler.get_file(file_path)
+                    if file_content:
+                        file_content_base64 = base64.b64encode(file_content).decode('utf-8')
+                        logger.info(f"Including file content ({len(file_content)} bytes) in replication for {doc_id}")
+                except Exception as e:
+                    logger.warning(f"Could not read file for replication: {e}")
+        
         for node in replica_nodes:
             try:
                 # Get port from node or use default
@@ -766,19 +784,26 @@ class ClusterManager:
                 url = f"http://{address}/api/v1/internal/document/replicate"
                 
                 async with aiohttp.ClientSession() as session:
+                    payload = {
+                        "document_id": doc_id,
+                        "source_node_id": primary_node_id,
+                        "document_data": document_data or {}
+                    }
+                    
+                    # Include file content if available
+                    if file_content_base64:
+                        payload["file_content_base64"] = file_content_base64
+                    
                     async with session.post(
                         url,
-                        json={
-                            "document_id": doc_id,
-                            "source_node_id": primary_node_id,
-                            "document_data": document_data or {}
-                        },
-                        timeout=aiohttp.ClientTimeout(total=30)
+                        json=payload,
+                        timeout=aiohttp.ClientTimeout(total=60)  # Longer timeout for large files
                     ) as resp:
                         result = await resp.json()
                         if resp.status == 200 and result.get("status") in ["replicated", "already_exists"]:
                             replicated_to.append(node.node_id)
-                            logger.info(f"Replicated {doc_id} to {node.node_id}")
+                            file_info = " (with file)" if file_content_base64 and result.get("file_replicated") else ""
+                            logger.info(f"Replicated {doc_id} to {node.node_id}{file_info}")
                         else:
                             failed.append({"node": node.node_id, "error": result.get("message", "Unknown error")})
                             logger.warning(f"Failed to replicate {doc_id} to {node.node_id}: {result}")
