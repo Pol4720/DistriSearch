@@ -135,7 +135,7 @@ class ScenarioTester:
                 json=user_data
             )
             
-            if response.status_code == 409:
+            if response.status_code in [400, 409] and "already exists" in response.text:
                 # User already exists, try to login instead
                 self.log(f"User {user_data['username']} already exists, logging in...")
             elif response.status_code not in [200, 201]:

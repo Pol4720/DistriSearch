@@ -504,9 +504,9 @@ class ClusterManager:
                         },
                     ))
                 
-                # Periodically check health of all nodes (if we are leader)
-                if self.is_leader:
-                    await self._check_all_nodes_health()
+                # Periodically check health of all nodes (ALL nodes do this, not just leader)
+                # This ensures each node has an accurate view of the cluster
+                await self._check_all_nodes_health()
                 
                 # Update cluster state
                 await self._update_cluster_state()

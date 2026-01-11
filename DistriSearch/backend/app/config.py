@@ -61,6 +61,7 @@ class Settings(BaseSettings):
     raft_election_timeout_max: int = Field(default=300, alias="RAFT_ELECTION_TIMEOUT_MAX")
     raft_heartbeat_interval: int = Field(default=50, alias="RAFT_HEARTBEAT_INTERVAL")
     raft_peers: str = Field(default="", alias="RAFT_PEERS")  # Comma-separated list: "node1:8000,node2:8000"
+    bully_peers: str = Field(default="", alias="BULLY_PEERS")  # Comma-separated list for Bully election
     raft_cluster_size: int = Field(default=1, alias="RAFT_CLUSTER_SIZE")
     
     # Heartbeat (seconds)
@@ -152,10 +153,15 @@ class Settings(BaseSettings):
     
     @property
     def raft_peers_list(self) -> List[str]:
-        """Parse RAFT_PEERS string into list of addresses."""
-        if not self.raft_peers:
+        """Parse RAFT_PEERS or BULLY_PEERS string into list of addresses.
+        
+        Prefers BULLY_PEERS if set, falls back to RAFT_PEERS for compatibility.
+        """
+        # Prefer BULLY_PEERS (new), fallback to RAFT_PEERS (legacy)
+        peers_str = self.bully_peers or self.raft_peers
+        if not peers_str:
             return []
-        return [peer.strip() for peer in self.raft_peers.split(",") if peer.strip()]
+        return [peer.strip() for peer in peers_str.split(",") if peer.strip()]
     
     @property
     def max_upload_size_bytes(self) -> int:
