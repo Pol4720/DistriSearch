@@ -74,40 +74,56 @@ class CascadeFailureTester:
         except Exception as e:
             return False, str(e)
     
-    def get_node_containers(self) -> Dict[str, str]:
-        """Obtener mapeo de nodo -> nombre de contenedor"""
-        success, output = self.run_docker_cmd([
-            "docker", "ps", "-a", "--format", "{{.Names}}", 
-            "--filter", "name=distrisearch-node"
-        ])
-        if not success:
-            return {}
-        
-        containers = {}
-        for line in output.strip().split("\n"):
-            if line:
-                if "node-1" in line:
-                    containers["node-1"] = line
-                elif "node-2" in line:
-                    containers["node-2"] = line
-                elif "node-3" in line:
-                    containers["node-3"] = line
-        return containers
+    def get_service_names(self) -> Dict[str, str]:
+        """Obtener mapeo de nodo -> nombre de servicio Docker Swarm"""
+        return {
+            "node-1": "distrisearch-node-1",
+            "node-2": "distrisearch-node-2",
+            "node-3": "distrisearch-node-3"
+        }
     
-    def stop_container(self, container_name: str) -> bool:
-        """Detener un contenedor"""
-        self.log(f"  Deteniendo: {container_name}", "WARN")
-        success, _ = self.run_docker_cmd(["docker", "stop", container_name])
+    def stop_container(self, service_or_container: str) -> bool:
+        """Detener un servicio escalando a 0 réplicas"""
+        # Extraer nombre del servicio
+        if "node-1" in service_or_container:
+            service = "distrisearch-node-1"
+        elif "node-2" in service_or_container:
+            service = "distrisearch-node-2"
+        elif "node-3" in service_or_container:
+            service = "distrisearch-node-3"
+        else:
+            service = service_or_container
+            
+        self.log(f"  Deteniendo servicio: {service}", "WARN")
+        success, output = self.run_docker_cmd([
+            "docker", "service", "scale", f"{service}=0"
+        ])
         if success:
-            self.stopped_containers.append(container_name)
+            self.stopped_containers.append(service)
+            time.sleep(3)
         return success
     
-    def start_container(self, container_name: str) -> bool:
-        """Iniciar un contenedor"""
-        self.log(f"  Iniciando: {container_name}")
-        success, _ = self.run_docker_cmd(["docker", "start", container_name])
-        if success and container_name in self.stopped_containers:
-            self.stopped_containers.remove(container_name)
+    def start_container(self, service_or_container: str) -> bool:
+        """Iniciar un servicio escalando a 1 réplica"""
+        # Extraer nombre del servicio
+        if "node-1" in service_or_container:
+            service = "distrisearch-node-1"
+        elif "node-2" in service_or_container:
+            service = "distrisearch-node-2"
+        elif "node-3" in service_or_container:
+            service = "distrisearch-node-3"
+        else:
+            service = service_or_container
+            
+        self.log(f"  Iniciando servicio: {service}")
+        success, output = self.run_docker_cmd([
+            "docker", "service", "scale", f"{service}=1"
+        ])
+        if success and service in self.stopped_containers:
+            self.stopped_containers.remove(service)
+            # Esperar a que el contenedor esté listo
+            self.log(f"  Esperando a que el servicio esté listo...")
+            time.sleep(15)
         return success
     
     async def check_system_health(self, session: aiohttp.ClientSession) -> Dict:
@@ -208,12 +224,12 @@ class CascadeFailureTester:
         self.log("=" * 70, "PHASE")
         self.log(f"Base URL: {self.base_url}")
         
-        containers = self.get_node_containers()
-        if len(containers) < 3:
-            self.log(f"Se necesitan 3 nodos, encontrados: {len(containers)}", "ERROR")
+        services = self.get_service_names()
+        if len(services) < 3:
+            self.log(f"Se necesitan 3 nodos, configurados: {len(services)}", "ERROR")
             return False
         
-        self.log(f"Contenedores: {list(containers.keys())}")
+        self.log(f"Servicios configurados: {list(services.keys())}")
         
         # Orden de fallo: node-3 primero, luego node-2 (dejar node-1 como único activo)
         cascade_order = ["node-3", "node-2"]

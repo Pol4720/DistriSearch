@@ -212,19 +212,19 @@ class ContainerPartitionTester:
         self.log("=" * 70, "PHASE")
         self.log(f"Base URL: {self.base_url}")
         
-        # Verificar contenedores disponibles
-        containers = self.get_node_containers()
-        if len(containers) < 3:
-            self.log(f"Se necesitan 3 nodos, encontrados: {len(containers)}", "ERROR")
+        # Verificar servicios disponibles
+        services = self.get_service_names()
+        if len(services) < 3:
+            self.log(f"Se necesitan 3 nodos, configurados: {len(services)}", "ERROR")
             return False
         
-        self.log(f"Contenedores encontrados: {list(containers.keys())}")
+        self.log(f"Servicios configurados: {list(services.keys())}")
         
         # Elegir el nodo a "particionar" (node-3)
         partition_node = "node-3"
-        partition_container = containers.get(partition_node)
-        if not partition_container:
-            self.log(f"No se encontró contenedor para {partition_node}", "ERROR")
+        partition_service = services.get(partition_node)
+        if not partition_service:
+            self.log(f"No se encontró servicio para {partition_node}", "ERROR")
             return False
         
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=TIMEOUT)) as session:
@@ -269,7 +269,7 @@ class ContainerPartitionTester:
             self.log("=" * 70, "PHASE")
             
             # Detener nodo
-            if not self.stop_container(partition_container):
+            if not self.stop_container(partition_service):
                 self.record_result("Detener nodo", False, f"No se pudo detener {partition_node}")
                 return False
             self.record_result("Detener nodo", True, f"{partition_node} detenido")
@@ -312,7 +312,7 @@ class ContainerPartitionTester:
             self.log("=" * 70, "PHASE")
             
             # Reiniciar nodo
-            if not self.start_container(partition_container):
+            if not self.start_container(partition_service):
                 self.record_result("Reiniciar nodo", False, f"No se pudo reiniciar {partition_node}")
                 # Intentar de todos modos continuar
             else:
