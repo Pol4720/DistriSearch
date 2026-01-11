@@ -260,8 +260,8 @@ async def init_dependencies(settings: Settings):
         """Callback when leader changes."""
         logger.info(f"New Bully leader: {new_leader_id}")
         if _cluster_manager:
-            # Pass peers so the new leader can register them
-            await _cluster_manager.handle_leader_elected(new_leader_id, bully_peers if new_leader_id == node_id else None)
+            # Pass peers so ALL nodes can register them (not just leader)
+            await _cluster_manager.handle_leader_elected(new_leader_id, bully_peers)
     
     _bully_election = BullyElection(
         node_id=node_id,

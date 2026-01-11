@@ -1004,29 +1004,42 @@ class ClusterManager:
                 else:
                     self._nodes[self.node_id].role = NodeRole.MASTER
                     self._nodes[self.node_id].status = NodeStatus.HEALTHY
-                
-                # Register all peers as nodes - check their actual health
-                if peers:
-                    for peer_id, peer_address in peers.items():
-                        # Check if peer is actually reachable
-                        is_healthy = await self._check_peer_health(peer_address)
-                        peer_status = NodeStatus.HEALTHY if is_healthy else NodeStatus.DEAD
-                        
-                        if peer_id not in self._nodes:
-                            membership = NodeMembership(
-                                node_id=peer_id,
-                                address=peer_address.split(":")[0],  # Remove port
-                                role=NodeRole.SLAVE,
-                                status=peer_status,
-                                metadata={},
-                            )
-                            self._nodes[peer_id] = membership
-                            logger.info(f"Registered peer {peer_id} as {peer_status.value}")
-                        else:
-                            self._nodes[peer_id].status = peer_status
             else:
                 self._role = NodeRole.SLAVE
                 logger.info(f"Node {leader_id} is now the MASTER, we are SLAVE")
+                
+                # Register ourselves if not yet registered
+                if self.node_id not in self._nodes:
+                    membership = NodeMembership(
+                        node_id=self.node_id,
+                        address=self._address,
+                        role=NodeRole.SLAVE,
+                        status=NodeStatus.HEALTHY,
+                        metadata={},
+                    )
+                    self._nodes[self.node_id] = membership
+            
+            # ALL nodes register peers (not just leader) to maintain consistent cluster view
+            if peers:
+                for peer_id, peer_address in peers.items():
+                    # Check if peer is actually reachable
+                    is_healthy = await self._check_peer_health(peer_address)
+                    peer_status = NodeStatus.HEALTHY if is_healthy else NodeStatus.DEAD
+                    peer_role = NodeRole.MASTER if peer_id == leader_id else NodeRole.SLAVE
+                    
+                    if peer_id not in self._nodes:
+                        membership = NodeMembership(
+                            node_id=peer_id,
+                            address=peer_address.split(":")[0],  # Remove port
+                            role=peer_role,
+                            status=peer_status,
+                            metadata={},
+                        )
+                        self._nodes[peer_id] = membership
+                        logger.info(f"Registered peer {peer_id} as {peer_status.value}")
+                    else:
+                        self._nodes[peer_id].status = peer_status
+                        self._nodes[peer_id].role = peer_role
             
             # Notify callbacks
             if old_leader != leader_id:
