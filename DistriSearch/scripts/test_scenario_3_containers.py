@@ -273,7 +273,7 @@ class CascadeFailureTester:
             
             # Paso 2a: Detener node-3
             self.log("\n--- Paso 2a: Detener node-3 ---", "CRITICAL")
-            if self.stop_container(containers["node-3"]):
+            if self.stop_container(services["node-3"]):
                 self.log("  ✓ node-3 detenido", "SUCCESS")
             else:
                 self.log("  ✗ Error deteniendo node-3", "ERROR")
@@ -293,7 +293,7 @@ class CascadeFailureTester:
             
             # Paso 2b: Detener node-2
             self.log("\n--- Paso 2b: Detener node-2 ---", "CRITICAL")
-            if self.stop_container(containers["node-2"]):
+            if self.stop_container(services["node-2"]):
                 self.log("  ✓ node-2 detenido", "SUCCESS")
             else:
                 self.log("  ✗ Error deteniendo node-2", "ERROR")
@@ -347,7 +347,7 @@ class CascadeFailureTester:
             
             # Paso 4a: Iniciar node-2
             self.log("\n--- Paso 4a: Iniciar node-2 ---")
-            if self.start_container(containers["node-2"]):
+            if self.start_container(services["node-2"]):
                 self.log("  ✓ node-2 iniciado", "SUCCESS")
             else:
                 self.log("  ✗ Error iniciando node-2", "ERROR")
@@ -360,7 +360,7 @@ class CascadeFailureTester:
             
             # Paso 4b: Iniciar node-3
             self.log("\n--- Paso 4b: Iniciar node-3 ---")
-            if self.start_container(containers["node-3"]):
+            if self.start_container(services["node-3"]):
                 self.log("  ✓ node-3 iniciado", "SUCCESS")
             else:
                 self.log("  ✗ Error iniciando node-3", "ERROR")
