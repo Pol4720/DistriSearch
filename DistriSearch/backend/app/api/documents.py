@@ -468,10 +468,25 @@ async def list_documents(
             except Exception as e:
                 logger.warning(f"Error federating document list: {e}")
         
+        # Helper to safely get created_at as datetime for sorting
+        def get_created_at(doc):
+            created = doc.get("created_at")
+            if created is None:
+                return datetime.min
+            if isinstance(created, datetime):
+                return created
+            if isinstance(created, str):
+                try:
+                    # Parse ISO format string
+                    return datetime.fromisoformat(created.replace('Z', '+00:00'))
+                except:
+                    return datetime.min
+            return datetime.min
+        
         # Sort all documents by created_at descending
         sorted_docs = sorted(
             all_documents.values(),
-            key=lambda x: x.get("created_at", datetime.min),
+            key=get_created_at,
             reverse=True
         )
         
