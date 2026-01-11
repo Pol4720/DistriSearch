@@ -66,47 +66,67 @@ class ContainerPartitionTester:
     def run_docker_cmd(self, cmd: List[str]) -> tuple:
         """Ejecutar comando docker y retornar (success, output)"""
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
             return result.returncode == 0, result.stdout + result.stderr
         except Exception as e:
             return False, str(e)
     
-    def get_node_containers(self) -> Dict[str, str]:
-        """Obtener mapeo de nodo -> nombre de contenedor"""
-        success, output = self.run_docker_cmd([
-            "docker", "ps", "--format", "{{.Names}}", 
-            "--filter", "name=distrisearch-node"
-        ])
-        if not success:
-            return {}
-        
-        containers = {}
-        for line in output.strip().split("\n"):
-            if line:
-                if "node-1" in line:
-                    containers["node-1"] = line
-                elif "node-2" in line:
-                    containers["node-2"] = line
-                elif "node-3" in line:
-                    containers["node-3"] = line
-        return containers
+    def get_service_names(self) -> Dict[str, str]:
+        """Obtener mapeo de nodo -> nombre de servicio Docker Swarm"""
+        return {
+            "node-1": "distrisearch-node-1",
+            "node-2": "distrisearch-node-2",
+            "node-3": "distrisearch-node-3"
+        }
     
-    def stop_container(self, container_name: str) -> bool:
-        """Detener un contenedor"""
-        self.log(f"Deteniendo contenedor: {container_name}", "WARN")
-        success, output = self.run_docker_cmd(["docker", "stop", container_name])
+    def get_node_containers(self) -> Dict[str, str]:
+        """Obtener mapeo de nodo -> nombre de servicio (para compatibilidad)"""
+        return self.get_service_names()
+    
+    def stop_container(self, service_or_container: str) -> bool:
+        """Detener un servicio escalando a 0 réplicas"""
+        # Extraer nombre del servicio
+        if "node-1" in service_or_container:
+            service = "distrisearch-node-1"
+        elif "node-2" in service_or_container:
+            service = "distrisearch-node-2"
+        elif "node-3" in service_or_container:
+            service = "distrisearch-node-3"
+        else:
+            service = service_or_container
+        
+        self.log(f"Escalando servicio {service} a 0 réplicas", "WARN")
+        success, output = self.run_docker_cmd([
+            "docker", "service", "scale", f"{service}=0"
+        ])
         if success:
-            self.log(f"  ✓ Contenedor detenido", "SUCCESS")
+            self.log(f"  ✓ Servicio detenido", "SUCCESS")
+            time.sleep(3)  # Esperar a que se detenga
         else:
             self.log(f"  ✗ Error: {output}", "ERROR")
         return success
     
-    def start_container(self, container_name: str) -> bool:
-        """Iniciar un contenedor"""
-        self.log(f"Iniciando contenedor: {container_name}")
-        success, output = self.run_docker_cmd(["docker", "start", container_name])
+    def start_container(self, service_or_container: str) -> bool:
+        """Iniciar un servicio escalando a 1 réplica"""
+        # Extraer nombre del servicio
+        if "node-1" in service_or_container:
+            service = "distrisearch-node-1"
+        elif "node-2" in service_or_container:
+            service = "distrisearch-node-2"
+        elif "node-3" in service_or_container:
+            service = "distrisearch-node-3"
+        else:
+            service = service_or_container
+            
+        self.log(f"Escalando servicio {service} a 1 réplica")
+        success, output = self.run_docker_cmd([
+            "docker", "service", "scale", f"{service}=1"
+        ])
         if success:
-            self.log(f"  ✓ Contenedor iniciado", "SUCCESS")
+            self.log(f"  ✓ Servicio iniciado", "SUCCESS")
+            # Esperar a que el contenedor esté listo
+            self.log(f"  Esperando a que el servicio esté listo...")
+            time.sleep(15)
         else:
             self.log(f"  ✗ Error: {output}", "ERROR")
         return success
