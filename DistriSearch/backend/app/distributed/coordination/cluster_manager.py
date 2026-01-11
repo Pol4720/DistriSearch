@@ -737,6 +737,18 @@ class ClusterManager:
         """
         import aiohttp
         import base64
+        import json
+        from datetime import datetime
+        
+        def serialize_for_json(obj):
+            """Convert datetime objects to ISO format strings for JSON serialization."""
+            if isinstance(obj, datetime):
+                return obj.isoformat()
+            elif isinstance(obj, dict):
+                return {k: serialize_for_json(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [serialize_for_json(item) for item in obj]
+            return obj
         
         replication_factor = getattr(self, 'replication_factor', 2)
         healthy_nodes = [
@@ -784,10 +796,13 @@ class ClusterManager:
                 url = f"http://{address}/api/v1/internal/document/replicate"
                 
                 async with aiohttp.ClientSession() as session:
+                    # Serialize document_data to handle datetime objects
+                    serialized_doc_data = serialize_for_json(document_data) if document_data else {}
+                    
                     payload = {
                         "document_id": doc_id,
                         "source_node_id": primary_node_id,
-                        "document_data": document_data or {}
+                        "document_data": serialized_doc_data
                     }
                     
                     # Include file content if available
