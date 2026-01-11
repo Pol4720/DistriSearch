@@ -144,7 +144,7 @@ class ScenarioTester:
             # Login to get token
             login_response = await self.client.post(
                 f"{self.api_url}/auth/login",
-                data={
+                json={
                     "username": user_data["username"],
                     "password": user_data["password"]
                 }
@@ -275,8 +275,8 @@ class ScenarioTester:
         results = []
         for test in search_tests:
             response = await self.client.get(
-                f"{self.api_url}/search",
-                params={"q": test["query"]},
+                f"{self.api_url}/search/quick",
+                params={"q": test["query"], "limit": 10},
                 headers=headers
             )
             

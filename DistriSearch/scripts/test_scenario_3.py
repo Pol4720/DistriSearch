@@ -345,7 +345,7 @@ class ComprehensiveTester:
                 # Login
                 login_resp = await self.client.post(
                     f"{self.api_url}/auth/login",
-                    data={"username": user_data["username"], "password": user_data["password"]}
+                    json={"username": user_data["username"], "password": user_data["password"]}
                 )
                 
                 if login_resp.status_code != 200:
@@ -521,7 +521,7 @@ class ComprehensiveTester:
             start = time.time()
             try:
                 response = await self.client.get(
-                    f"{self.api_url}/search",
+                    f"{self.api_url}/search/quick",
                     params={"q": query},
                     headers=headers
                 )
@@ -730,7 +730,7 @@ class ComprehensiveTester:
         try:
             login_resp = await self.client.post(
                 f"{self.api_url}/auth/login",
-                data={"username": test_user["username"], "password": test_user["password"]}
+                json={"username": test_user["username"], "password": test_user["password"]}
             )
             
             if login_resp.status_code != 200:
@@ -738,7 +738,7 @@ class ComprehensiveTester:
                 await self.client.post(f"{self.api_url}/auth/register", json=test_user)
                 login_resp = await self.client.post(
                     f"{self.api_url}/auth/login",
-                    data={"username": test_user["username"], "password": test_user["password"]}
+                    json={"username": test_user["username"], "password": test_user["password"]}
                 )
             
             token = login_resp.json().get("access_token")
@@ -876,7 +876,7 @@ class ComprehensiveTester:
         test_user = TEST_USERS[0]
         login_resp = await self.client.post(
             f"{self.api_url}/auth/login",
-            data={"username": test_user["username"], "password": test_user["password"]}
+            json={"username": test_user["username"], "password": test_user["password"]}
         )
         
         if login_resp.status_code != 200:
@@ -942,7 +942,7 @@ class ComprehensiveTester:
         self.log("\n--- 5.3 Búsqueda Post-Reconciliación ---", "PHASE")
         
         search_response = await self.client.get(
-            f"{self.api_url}/search",
+            f"{self.api_url}/search/quick",
             params={"q": "comprehensive-test"},
             headers=headers
         )
@@ -1066,7 +1066,7 @@ class ComprehensiveTester:
             try:
                 login_resp = await self.client.post(
                     f"{self.api_url}/auth/login",
-                    data={"username": user_data["username"], "password": user_data["password"]}
+                    json={"username": user_data["username"], "password": user_data["password"]}
                 )
                 if login_resp.status_code != 200:
                     continue

@@ -178,7 +178,7 @@ class PartitionTester:
             # Login
             login_resp = await self.client.post(
                 f"{self.api_url}/auth/login",
-                data={"username": TEST_USER["username"], "password": TEST_USER["password"]}
+                json={"username": TEST_USER["username"], "password": TEST_USER["password"]}
             )
             if login_resp.status_code != 200:
                 await self.record_result("Login", False, f"Error: {login_resp.text}")
@@ -269,7 +269,7 @@ class PartitionTester:
         try:
             login_resp = await self.client.post(
                 f"{self.api_url}/auth/login",
-                data={"username": TEST_USER["username"], "password": TEST_USER["password"]}
+                json={"username": TEST_USER["username"], "password": TEST_USER["password"]}
             )
             if login_resp.status_code != 200:
                 # Si el usuario no existe en este nodo (partición), crear
@@ -280,7 +280,7 @@ class PartitionTester:
                 )
                 login_resp = await self.client.post(
                     f"{self.api_url}/auth/login",
-                    data={"username": TEST_USER["username"], "password": TEST_USER["password"]}
+                    json={"username": TEST_USER["username"], "password": TEST_USER["password"]}
                 )
             
             token = login_resp.json().get("access_token")
@@ -396,7 +396,7 @@ class PartitionTester:
         try:
             login_resp = await self.client.post(
                 f"{self.api_url}/auth/login",
-                data={"username": TEST_USER["username"], "password": TEST_USER["password"]}
+                json={"username": TEST_USER["username"], "password": TEST_USER["password"]}
             )
             token = login_resp.json().get("access_token")
             await self.record_result("Login", True, "OK")
@@ -532,7 +532,7 @@ class PartitionTester:
         try:
             login_resp = await self.client.post(
                 f"{self.api_url}/auth/login",
-                data={"username": TEST_USER["username"], "password": TEST_USER["password"]}
+                json={"username": TEST_USER["username"], "password": TEST_USER["password"]}
             )
             if login_resp.status_code != 200:
                 self.log("No se pudo hacer login para cleanup", "WARN")

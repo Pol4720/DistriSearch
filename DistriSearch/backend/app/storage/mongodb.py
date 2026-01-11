@@ -284,6 +284,10 @@ class BaseRepository(Generic[T]):
         """Delete multiple documents."""
         result = await self.collection.delete_many(filter)
         return result.deleted_count
+    
+    async def find_one(self, filter: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Find a single document matching the filter."""
+        return await self.collection.find_one(filter)
 
 
 class DocumentRepository(BaseRepository[DocumentModel]):
