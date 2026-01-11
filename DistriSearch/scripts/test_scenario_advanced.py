@@ -302,6 +302,20 @@ class AdvancedTester:
         else:
             raise Exception(f"Authentication failed: {response.status_code} - {response.text}")
         
+        # Get user_id from /auth/me if not available
+        if not self.user_id:
+            me_response = await self.client.get(
+                f"{self.api_url}/auth/me",
+                headers=self.get_headers()
+            )
+            if me_response.status_code == 200:
+                me_data = me_response.json()
+                self.user_id = me_data.get("id") or me_data.get("user_id")
+                self.log(f"  - Got user_id from /auth/me: {self.user_id}")
+        
+        if not self.user_id:
+            raise Exception("Could not obtain user_id from authentication")
+        
         return {"token": self.token, "user_id": self.user_id}
     
     def get_headers(self) -> Dict[str, str]:
