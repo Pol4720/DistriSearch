@@ -643,14 +643,24 @@ class SearchEngine:
                 tasks = [query_node(node) for node in other_nodes]
                 node_results = await asyncio.gather(*tasks, return_exceptions=True)
                 
-                # Aggregate results from all nodes
+                # Track seen documents for deduplication (replicated docs appear on multiple nodes)
+                seen_docs = {}  # document_id -> best result dict
+                
+                # Aggregate results from all nodes with deduplication
                 for result in node_results:
                     if isinstance(result, tuple):
                         node_id, results = result
                         searched_nodes += 1
                         for r in results:
                             if isinstance(r, dict):
-                                all_results.append(r)
+                                doc_id = r.get("document_id")
+                                if doc_id:
+                                    # Keep the result with the highest score
+                                    if doc_id not in seen_docs or r.get("score", 0) > seen_docs[doc_id].get("score", 0):
+                                        seen_docs[doc_id] = r
+                                else:
+                                    # No document_id, add anyway
+                                    all_results.append(r)
                 
                 # ALSO search locally on this leader node
                 if document_repository:
@@ -720,7 +730,7 @@ class SearchEngine:
                         if hasattr(doc_id, '__str__'):
                             doc_id = str(doc_id)
                         
-                        all_results.append({
+                        local_result = {
                             "document_id": doc_id,
                             "title": doc_dict.get("title", "Untitled"),
                             "content": doc_dict.get("content", "")[:500],
@@ -728,9 +738,16 @@ class SearchEngine:
                             "node_id": my_node_id,
                             "matched_terms": list(matched_terms),
                             "metadata": doc_dict.get("metadata", {})
-                        })
+                        }
+                        
+                        # Deduplicate: only add if not seen or has better score
+                        if doc_id not in seen_docs or bm25_score > seen_docs[doc_id].get("score", 0):
+                            seen_docs[doc_id] = local_result
                     
                     searched_nodes += 1  # Count ourselves
+                
+                # Build final results: deduplicated docs + docs without ID
+                all_results.extend(seen_docs.values())
                 
                 # Sort by score and limit to top_k
                 all_results.sort(key=lambda x: x.get("score", 0), reverse=True)
