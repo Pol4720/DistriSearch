@@ -540,13 +540,20 @@ async def list_documents(
 async def get_document(
     document_id: str,
     include_vectors: bool = Query(default=False, description="Include vectors in response"),
-    doc_repo: DocumentRepository = Depends(get_document_repository)
+    doc_repo: DocumentRepository = Depends(get_document_repository),
+    cluster_manager: ClusterManager = Depends(get_cluster_manager)
 ):
     """
     Get a document by its ID.
+    If not found locally, searches across the cluster.
     """
     try:
         doc = await doc_repo.find_by_id(document_id)
+        
+        # If not found locally, try to fetch from other nodes in the cluster
+        if not doc and cluster_manager:
+            logger.info(f"Document {document_id} not found locally, searching in cluster...")
+            doc = await cluster_manager.fetch_document_from_cluster(document_id)
         
         if not doc:
             raise HTTPException(
@@ -606,6 +613,11 @@ async def download_document(
     
     try:
         doc = await doc_repo.find_by_id(document_id)
+        
+        # If not found locally, try to fetch from other nodes in the cluster
+        if not doc and cluster_manager:
+            logger.info(f"Document {document_id} not found locally for download, searching in cluster...")
+            doc = await cluster_manager.fetch_document_from_cluster(document_id)
         
         if not doc:
             raise HTTPException(
