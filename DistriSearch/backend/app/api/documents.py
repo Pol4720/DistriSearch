@@ -837,8 +837,15 @@ async def delete_document(
     Only the document owner or an admin can delete a document.
     """
     try:
-        # Check if document exists
+        # Check if document exists locally first
         doc = await doc_repo.find_by_id(document_id)
+        doc_found_locally = doc is not None
+        
+        # If not found locally, try to fetch from other nodes in the cluster
+        if not doc:
+            logger.info(f"Document {document_id} not found locally, searching in cluster...")
+            doc = await cluster_manager.fetch_document_from_cluster(document_id)
+        
         if not doc:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -860,8 +867,9 @@ async def delete_document(
         deletion_result = await cluster_manager.delete_document_replicas(document_id)
         logger.info(f"Replica deletion result for {document_id}: {deletion_result}")
         
-        # Delete from local database
-        await doc_repo.delete(document_id)
+        # Delete from local database (if it was here)
+        if doc_found_locally:
+            await doc_repo.delete(document_id)
         
         # Clean up file if exists
         if doc.get("metadata", {}).get("file_path"):

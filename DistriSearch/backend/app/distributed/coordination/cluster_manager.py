@@ -829,6 +829,59 @@ class ClusterManager:
         
         return {"replicated_to": replicated_to, "failed": failed}
     
+    async def fetch_document_from_cluster(self, doc_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Fetch a document from other nodes in the cluster.
+        
+        Used when a document is not found locally but may exist on other nodes.
+        This enables operations (like delete) to work from any node in the cluster.
+        
+        Args:
+            doc_id: Document ID to fetch
+            
+        Returns:
+            Document data if found, None otherwise
+        """
+        import aiohttp
+        
+        other_nodes = [
+            n for n in self.get_healthy_nodes()
+            if n.node_id != self.node_id
+        ]
+        
+        if not other_nodes:
+            logger.debug(f"No other nodes to fetch document {doc_id} from")
+            return None
+        
+        for node in other_nodes:
+            try:
+                port = getattr(node, 'port', 8000) or 8000
+                address = node.address
+                if ':' not in address:
+                    address = f"{address}:{port}"
+                
+                url = f"http://{address}/api/v1/internal/document/{doc_id}"
+                
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(
+                        url,
+                        timeout=aiohttp.ClientTimeout(total=10)
+                    ) as resp:
+                        if resp.status == 200:
+                            result = await resp.json()
+                            if result.get("status") == "ok":
+                                # Try different field names for document data
+                                doc_data = result.get("document") or result.get("document_data")
+                                if doc_data:
+                                    logger.info(f"Found document {doc_id} on {node.node_id}")
+                                    return doc_data
+            except Exception as e:
+                logger.debug(f"Failed to fetch document {doc_id} from {node.node_id}: {e}")
+                continue
+        
+        logger.debug(f"Document {doc_id} not found on any node in cluster")
+        return None
+    
     async def delete_document_replicas(self, doc_id: str, retries: int = 3, backoff: float = 1.0, require_quorum: bool = True):
         """
         Delete document replicas from all other nodes via HTTP.
