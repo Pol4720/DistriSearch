@@ -642,9 +642,79 @@ class PartitionTolerantConsensus:
             self._pending_sync.remove(item)
     
     async def _exchange_merkle_trees(self):
-        """Exchange Merkle trees for anti-entropy sync."""
-        # Implementation would compare data hashes between nodes
-        pass
+        """
+        Exchange Merkle trees for anti-entropy sync.
+        
+        This triggers a full synchronization with peer nodes to ensure
+        consistency after partition healing. It syncs:
+        1. User data
+        2. Document registry entries
+        3. Document metadata
+        """
+        import aiohttp
+        import os
+        
+        try:
+            # Get list of reachable peers
+            peers_to_sync = list(self._state.reachable_nodes - {self.node_id})
+            
+            if not peers_to_sync:
+                logger.debug("No peers available for anti-entropy sync")
+                return
+            
+            logger.info(f"Starting anti-entropy sync with {len(peers_to_sync)} peers")
+            
+            # Try to trigger full sync on each peer and locally
+            sync_results = []
+            
+            for peer_id in peers_to_sync:
+                # We need the peer's address - try common patterns
+                peer_addresses = [
+                    f"distrisearch-node-{peer_id.split('-')[-1]}:8000" if 'node' in peer_id else None,
+                    f"{peer_id}:8000",
+                ]
+                
+                for peer_address in peer_addresses:
+                    if not peer_address:
+                        continue
+                    try:
+                        url = f"http://{peer_address}/api/v1/internal/sync/full"
+                        async with aiohttp.ClientSession() as session:
+                            async with session.post(
+                                url, 
+                                timeout=aiohttp.ClientTimeout(total=30)
+                            ) as resp:
+                                if resp.status == 200:
+                                    result = await resp.json()
+                                    sync_results.append({
+                                        "peer": peer_id,
+                                        "status": "success",
+                                        "details": result
+                                    })
+                                    logger.info(f"Anti-entropy sync with {peer_id} successful: {result}")
+                                    break  # Success, no need to try other addresses
+                                else:
+                                    logger.debug(f"Sync with {peer_address} returned {resp.status}")
+                    except Exception as e:
+                        logger.debug(f"Could not sync with {peer_address}: {e}")
+                        continue
+            
+            # Also trigger local sync to pull from others
+            try:
+                # Import here to avoid circular imports
+                from ...api.internal import trigger_full_sync
+                local_result = await trigger_full_sync()
+                logger.info(f"Local anti-entropy sync completed: {local_result}")
+            except Exception as e:
+                logger.warning(f"Local sync failed: {e}")
+            
+            if sync_results:
+                logger.info(f"Anti-entropy completed with {len(sync_results)} peers")
+            else:
+                logger.debug("No successful peer syncs during anti-entropy")
+                
+        except Exception as e:
+            logger.error(f"Anti-entropy sync error: {e}")
     
     def merge_remote_data(self, key: str, remote_data: VersionedData) -> bool:
         """

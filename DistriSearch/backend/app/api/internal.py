@@ -922,6 +922,100 @@ async def trigger_full_sync() -> Dict[str, Any]:
             except Exception as e:
                 logger.warning(f"Failed to sync registry from {peer.node_id}: {e}")
         
+        # 4. Sync missing documents (replicate documents we don't have locally)
+        results["documents_replicated"] = 0
+        doc_repo = await get_document_repository()
+        
+        for peer in peers:
+            try:
+                import aiohttp
+                import base64
+                from ..storage.file_handler import FileHandler
+                
+                address = peer.address
+                port = getattr(peer, 'port', 8000) or 8000
+                if ':' not in address:
+                    address = f"{address}:{port}"
+                
+                # Get document IDs from peer's registry
+                registry_url = f"http://{address}/api/v1/internal/sync/registry/all"
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(registry_url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                        if resp.status != 200:
+                            continue
+                        registry_data = await resp.json()
+                        
+                    # Check each document from peer's registry
+                    for entry in registry_data.get("entries", []):
+                        doc_id = entry.get("document_id")
+                        if not doc_id:
+                            continue
+                            
+                        # Check if we have this document locally
+                        local_doc = await doc_repo.find_by_id(doc_id)
+                        if local_doc:
+                            continue  # Already have it
+                        
+                        # Fetch the document from peer
+                        doc_url = f"http://{address}/api/v1/internal/document/{doc_id}"
+                        try:
+                            async with session.get(doc_url, timeout=aiohttp.ClientTimeout(total=30)) as doc_resp:
+                                if doc_resp.status != 200:
+                                    continue
+                                doc_data = await doc_resp.json()
+                                
+                                if doc_data.get("status") != "ok":
+                                    continue
+                                
+                                document = doc_data.get("document", {})
+                                if not document:
+                                    continue
+                                
+                                # Check if document has a file and fetch it
+                                file_content = None
+                                metadata = document.get("metadata", {})
+                                if metadata.get("file_path"):
+                                    file_url = f"http://{address}/api/v1/internal/document/{doc_id}/file"
+                                    try:
+                                        async with session.get(file_url, timeout=aiohttp.ClientTimeout(total=60)) as file_resp:
+                                            if file_resp.status == 200:
+                                                file_content = await file_resp.read()
+                                    except Exception as e:
+                                        logger.debug(f"Could not fetch file for {doc_id}: {e}")
+                                
+                                # Save document locally
+                                document["_id"] = doc_id
+                                document["is_replica"] = True
+                                document["primary_node"] = entry.get("node_id", peer.node_id)
+                                
+                                # If we got file content, save it locally
+                                if file_content:
+                                    try:
+                                        file_handler = FileHandler()
+                                        filename = metadata.get("filename", f"{doc_id}.bin")
+                                        content_type = metadata.get("content_type", "application/octet-stream")
+                                        uploaded = await file_handler.save_file(
+                                            file_data=file_content,
+                                            filename=filename,
+                                            content_type=content_type
+                                        )
+                                        if "metadata" not in document:
+                                            document["metadata"] = {}
+                                        document["metadata"]["file_path"] = uploaded.storage_path
+                                        document["metadata"]["replica_file"] = True
+                                    except Exception as e:
+                                        logger.warning(f"Could not save file for {doc_id}: {e}")
+                                
+                                await doc_repo.create(document)
+                                results["documents_replicated"] += 1
+                                logger.info(f"Replicated missing document {doc_id} from {peer.node_id}")
+                                
+                        except Exception as e:
+                            logger.debug(f"Could not fetch document {doc_id}: {e}")
+                            
+            except Exception as e:
+                logger.warning(f"Failed to sync documents from {peer.node_id}: {e}")
+        
         logger.info(f"Full sync completed: {results}")
         return {"status": "ok", **results}
         

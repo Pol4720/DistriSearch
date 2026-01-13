@@ -19,3 +19,6 @@ Recuerda que el k de replicacion es 2 , que cada recurso si no esta local se va 
 ecuerda que el k de replicacion es 2 , que cada recurso si no esta local se va a buscar afuera , que la busqueda tiene que ser distribuida y que los documentos del usuario se le preguntan a quien siempre tenga  la bd de los documentos por usuario actualizada que debe ser el master. Esto es lo que debe de garantizar la consistencia del sistema . Puede que lo que pase sea que los nodos todavia no se estan comunicando y por eso falla la replicacion con gossip o lo que sea que lleva a cabo la replicacion. De igual forma debes garantizar que la eliminacion funcione correctamente .Continua con tus verificaciones 
 
 
+Ver el tema de los bully peers que como que no se actualizan bien cuando el despliegue de los nodos se hace separado 
+docker service update --env-add "BULLY_PEERS=distrisearch-node-1:8000,distrisearch-node-2:8000,distrisearch-node-3:8000" distrisearch-node-X
+
