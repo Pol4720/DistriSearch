@@ -504,8 +504,10 @@ class UltimateTestScenario:
         success, data = await self.api_request("POST", "/documents/upload", files=files)
         duration = (time.time() - start) * 1000
         
-        if success and "document_id" in data:
-            doc_id = data["document_id"]
+        # Aceptar 'id' o 'document_id' en la respuesta
+        doc_id = data.get("document_id") or data.get("id") if isinstance(data, dict) else None
+        
+        if success and doc_id:
             self.created_docs.append({"id": doc_id, "title": title})
             self.cluster.total_documents += 1
             self.record_result(f"Upload: {title[:30]}", "DOCUMENTS", True, 
@@ -518,7 +520,8 @@ class UltimateTestScenario:
     async def test_list_documents(self, node_url: Optional[str] = None) -> List[Dict]:
         """Lista documentos del usuario"""
         start = time.time()
-        success, data = await self.api_request("GET", "/documents/list", node_url=node_url)
+        # El endpoint correcto es GET /documents/ (no /documents/list)
+        success, data = await self.api_request("GET", "/documents/", node_url=node_url)
         duration = (time.time() - start) * 1000
         
         if success and isinstance(data, dict):
