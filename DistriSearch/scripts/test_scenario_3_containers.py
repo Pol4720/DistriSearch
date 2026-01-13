@@ -7,7 +7,12 @@ Simula múltiples fallos en cascada parando/iniciando contenedores Docker.
 NO requiere múltiples máquinas ni desconectar WiFi.
 
 Uso:
-    python scripts/test_scenario_3_containers.py --base-url http://192.168.61.32:8001
+    python scripts/test_scenario_3_containers.py [--base-url URL | --host HOST --port PORT]
+
+Ejemplos:
+    python scripts/test_scenario_3_containers.py
+    python scripts/test_scenario_3_containers.py --host 192.168.1.11 --port 8001
+    python scripts/test_scenario_3_containers.py --base-url http://192.168.1.11:8001
 
 Fases:
 1. Setup: Crear documentos iniciales con replicación
@@ -27,6 +32,9 @@ from typing import Dict, List, Optional, Tuple
 import aiohttp
 
 
+# Valores por defecto
+DEFAULT_HOST = "localhost"
+DEFAULT_PORT = "8001"
 API_V1 = "/api/v1"
 TIMEOUT = 30.0
 
@@ -471,11 +479,19 @@ async def main():
     parser = argparse.ArgumentParser(
         description="Test Scenario 3: Cascade Failure & Recovery using Docker containers"
     )
-    parser.add_argument("--base-url", required=True, help="Base URL (e.g., http://192.168.61.32:8001)")
+    parser.add_argument("--base-url", default=None, help="Base URL (e.g., http://192.168.1.11:8001)")
+    parser.add_argument("--host", default=DEFAULT_HOST, help=f"Host/IP del nodo (default: {DEFAULT_HOST})")
+    parser.add_argument("--port", default=DEFAULT_PORT, help=f"Puerto del nodo (default: {DEFAULT_PORT})")
     
     args = parser.parse_args()
     
-    tester = CascadeFailureTester(args.base_url)
+    # Construir URL base
+    if args.base_url:
+        base_url = args.base_url
+    else:
+        base_url = f"http://{args.host}:{args.port}"
+    
+    tester = CascadeFailureTester(base_url)
     success = await tester.run_test()
     sys.exit(0 if success else 1)
 

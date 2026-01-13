@@ -2,27 +2,48 @@
 """
 Replication Viewer - Ver archivos en cada nodo con sus dueños
 Usa el endpoint /api/v1/internal/search para ver documentos LOCALES de cada nodo
+
+Uso:
+    python scripts/view_replication.py [--host HOST] [--ports PORT1,PORT2,PORT3]
+    
+Ejemplos:
+    python scripts/view_replication.py
+    python scripts/view_replication.py --host 192.168.1.11
+    python scripts/view_replication.py --host 192.168.1.11 --ports 8001,8002,8003,8004,8005
 """
 
+import argparse
 import requests
 from collections import defaultdict
 from datetime import datetime
 
-BASE_URL = "http://localhost"
-PORTS = ["8001", "8002", "8003"]
+DEFAULT_HOST = "localhost"
+DEFAULT_PORTS = ["8001", "8002", "8003"]
 
 def main():
+    parser = argparse.ArgumentParser(description="Ver replicación de documentos en DistriSearch")
+    parser.add_argument("--host", default=DEFAULT_HOST, 
+                        help=f"Host/IP de los nodos (default: {DEFAULT_HOST})")
+    parser.add_argument("--ports", default=",".join(DEFAULT_PORTS),
+                        help=f"Puertos separados por coma (default: {','.join(DEFAULT_PORTS)})")
+    args = parser.parse_args()
+    
+    base_url = f"http://{args.host}"
+    ports = [p.strip() for p in args.ports.split(",")]
+    
     print("\n" + "="*70)
     print("  REPLICATION VIEWER - DistriSearch")
     print("="*70)
     print(f"  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"  Host: {args.host}")
+    print(f"  Puertos: {', '.join(ports)}")
     print("="*70)
     
     # Consultar CADA NODO usando endpoint INTERNO/LOCAL
     docs_by_node = {}
     queries = ["document", "test", "a", "e", "i", "o", "u", "the", "de", "la", "pdf", "report", "file"]
     
-    for port in PORTS:
+    for port in ports:
         node_id = f"node-{int(port) - 8000}"
         seen_ids = set()
         node_docs = []
@@ -31,7 +52,7 @@ def main():
             try:
                 # Usar endpoint INTERNO que solo busca en MongoDB local
                 resp = requests.post(
-                    f"{BASE_URL}:{port}/api/v1/internal/search",
+                    f"{base_url}:{port}/api/v1/internal/search",
                     json={"query": query, "top_k": 500},
                     timeout=10
                 )
@@ -47,14 +68,20 @@ def main():
         docs_by_node[node_id] = node_docs
     
     # Mostrar por nodo
-    colors = {"node-1": "\033[92m", "node-2": "\033[94m", "node-3": "\033[95m"}
+    colors = {
+        "node-1": "\033[92m", "node-2": "\033[94m", "node-3": "\033[95m",
+        "node-4": "\033[96m", "node-5": "\033[93m", "node-6": "\033[91m",
+        "node-7": "\033[92m", "node-8": "\033[94m", "node-9": "\033[95m",
+        "node-10": "\033[96m"
+    }
     reset = "\033[0m"
     
     total = 0
-    for node_id in ["node-1", "node-2", "node-3"]:
+    for port in ports:
+        node_id = f"node-{int(port) - 8000}"
         docs = docs_by_node.get(node_id, [])
         total += len(docs)
-        color = colors.get(node_id, "")
+        color = colors.get(node_id, "\033[0m")
         
         print(f"\n{color}{'─'*70}")
         print(f"  {node_id.upper()} ({len(docs)} documentos)")

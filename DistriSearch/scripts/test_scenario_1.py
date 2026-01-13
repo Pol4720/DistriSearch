@@ -16,7 +16,12 @@ Requirements:
 - All services running and healthy
 
 Usage:
-    python scripts/test_scenario_1.py [--base-url http://localhost:8000]
+    python scripts/test_scenario_1.py [--base-url http://localhost:8000] [--host HOST] [--port PORT]
+    
+Ejemplos:
+    python scripts/test_scenario_1.py
+    python scripts/test_scenario_1.py --host 192.168.1.11 --port 8001
+    python scripts/test_scenario_1.py --base-url http://192.168.1.11:8001
 """
 
 import asyncio
@@ -29,8 +34,9 @@ from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
 from datetime import datetime
 
-# Test configuration
-BASE_URL = "http://localhost:8000"
+# Test configuration - defaults
+DEFAULT_HOST = "localhost"
+DEFAULT_PORT = "8000"
 API_V1 = "/api/v1"
 TIMEOUT = 30.0
 
@@ -589,15 +595,23 @@ class ScenarioTester:
 
 async def main():
     parser = argparse.ArgumentParser(description="Test Scenario 1: 3 Nodes, 3 Users, 9 Documents")
-    parser.add_argument("--base-url", default=BASE_URL, help="Base URL of the API")
+    parser.add_argument("--base-url", default=None, help="Base URL of the API (overrides --host and --port)")
+    parser.add_argument("--host", default=DEFAULT_HOST, help=f"Host/IP del nodo (default: {DEFAULT_HOST})")
+    parser.add_argument("--port", default=DEFAULT_PORT, help=f"Puerto del nodo (default: {DEFAULT_PORT})")
     parser.add_argument("--no-cleanup", action="store_true", help="Don't delete test documents")
     args = parser.parse_args()
+    
+    # Construir URL base
+    if args.base_url:
+        base_url = args.base_url
+    else:
+        base_url = f"http://{args.host}:{args.port}"
     
     # Disable SSL warnings for self-signed certificates
     import urllib3
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     
-    tester = ScenarioTester(args.base_url)
+    tester = ScenarioTester(base_url)
     try:
         success = await tester.run_all_tests(cleanup=not args.no_cleanup)
         sys.exit(0 if success else 1)

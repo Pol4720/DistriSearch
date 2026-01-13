@@ -135,16 +135,17 @@ if [ "$LOCAL_MODE" = true ]; then
     log_info "Modo LOCAL: Desplegando $NUM_NODES nodo(s) en $LOCAL_HOSTNAME"
 else
     # En modo distribuido con tolerancia a particiones:
-    # Desplegamos 1 nodo POR HOST para que cada host tenga stack completo
+    # Permitimos más nodos que hosts, distribuyéndolos equitativamente
     NUM_NODES=${NUM_NODES:-$TOTAL_HOSTS}
     
     if [ "$NUM_NODES" -gt "$TOTAL_HOSTS" ]; then
-        log_warn "Solo hay $TOTAL_HOSTS host(s). Cada host tendrá 1 nodo."
-        log_warn "Para múltiples nodos en un host, usa --local"
-        NUM_NODES=$TOTAL_HOSTS
+        NODES_PER_HOST=$(( (NUM_NODES + TOTAL_HOSTS - 1) / TOTAL_HOSTS ))
+        log_info "Desplegando $NUM_NODES nodos en $TOTAL_HOSTS hosts (~$NODES_PER_HOST nodos/host)"
+        log_info "Los nodos se distribuirán equitativamente entre los hosts"
+        log_info "Cada host tendrá su stack completo para tolerancia a particiones"
+    else
+        log_info "Modo DISTRIBUIDO: 1 nodo por host para tolerancia a particiones"
     fi
-    
-    log_info "Modo DISTRIBUIDO: 1 nodo por host para tolerancia a particiones"
 fi
 
 # ============================================================================
