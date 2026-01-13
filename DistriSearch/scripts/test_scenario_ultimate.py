@@ -29,8 +29,10 @@ USO:
     python scripts/test_scenario_ultimate.py [OPCIONES]
 
 OPCIONES:
-    --host HOST             Host/IP del cluster (default: localhost)
-    --ports PORTS           Puertos de nodos separados por coma (default: auto-detectar 8001-8020)
+    --nodes NODE_LIST       Lista de nodos en formato IP:PORT separados por coma
+                            Ejemplo: 192.168.1.11:8001,192.168.1.13:8004,192.168.1.9:8005
+    --host HOST             Host/IP por defecto para auto-detección (default: localhost)
+    --ports PORTS           Puertos de nodos separados por coma (usa --host para todos)
     --base-url URL          URL base alternativa
     --skip-docker           No hacer pruebas de contenedores Docker
     --skip-wifi             No incluir pausas para pruebas WiFi manuales
@@ -40,10 +42,13 @@ OPCIONES:
     --verbose               Mostrar logs detallados
 
 EJEMPLOS:
-    # Test completo con detección automática
+    # Test completo con detección automática en localhost
     python scripts/test_scenario_ultimate.py
 
-    # Test en cluster remoto
+    # Test con nodos en múltiples máquinas (RECOMENDADO)
+    python scripts/test_scenario_ultimate.py --nodes 192.168.1.11:8001,192.168.1.13:8004,192.168.1.9:8005
+
+    # Test en cluster remoto (todos los nodos en el mismo host)
     python scripts/test_scenario_ultimate.py --host 192.168.1.100
 
     # Test rápido sin pruebas de WiFi
@@ -131,6 +136,7 @@ class UltimateTestScenario:
         self,
         host: str = DEFAULT_HOST,
         ports: Optional[List[int]] = None,
+        nodes: Optional[List[Tuple[str, int]]] = None,  # Lista de (host, port)
         skip_docker: bool = False,
         skip_wifi: bool = False,
         skip_cleanup: bool = False,
@@ -140,6 +146,7 @@ class UltimateTestScenario:
     ):
         self.host = host
         self.custom_ports = ports
+        self.custom_nodes = nodes  # Lista de (host, port) específicos
         self.skip_docker = skip_docker
         self.skip_wifi = skip_wifi
         self.skip_cleanup = skip_cleanup
@@ -300,16 +307,25 @@ class UltimateTestScenario:
         """Detecta automáticamente todos los nodos activos del cluster"""
         self.log_subphase("Detectando nodos del cluster")
         
-        if self.custom_ports:
-            ports_to_check = self.custom_ports
-        else:
-            ports_to_check = list(DEFAULT_PORT_RANGE)
-        
         self.cluster.nodes = []
         
+        # Construir lista de (host, port) a verificar
+        nodes_to_check: List[Tuple[str, int]] = []
+        
+        if self.custom_nodes:
+            # Si se especificaron nodos explícitamente, usarlos directamente
+            nodes_to_check = self.custom_nodes
+            self.log(f"Verificando {len(nodes_to_check)} nodos especificados...")
+        elif self.custom_ports:
+            # Si se especificaron puertos, usar el host por defecto
+            nodes_to_check = [(self.host, port) for port in self.custom_ports]
+        else:
+            # Auto-detectar en localhost
+            nodes_to_check = [(self.host, port) for port in DEFAULT_PORT_RANGE]
+        
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5)) as session:
-            for port in ports_to_check:
-                url = f"http://{self.host}:{port}"
+            for host, port in nodes_to_check:
+                url = f"http://{host}:{port}"
                 try:
                     async with session.get(f"{url}{API_V1}/health/live") as resp:
                         if resp.status == 200:
@@ -320,7 +336,7 @@ class UltimateTestScenario:
                                 node_id=node_id,
                                 url=url,
                                 port=port,
-                                host=self.host,
+                                host=host,
                                 is_healthy=data.get("alive", False)
                             )
                             
@@ -338,11 +354,11 @@ class UltimateTestScenario:
                             self.cluster.active_nodes.append(node_id)
                             
                             if self.verbose:
-                                self.log(f"  Encontrado: {node_id} en {url}", "DEBUG")
+                                self.log(f"  Encontrado: {node_id} en {url} ({host})", "DEBUG")
                                 
                 except Exception as e:
                     if self.verbose:
-                        self.log(f"  Puerto {port}: no responde", "DEBUG")
+                        self.log(f"  {host}:{port}: no responde ({e})", "DEBUG")
         
         if not self.cluster.nodes:
             self.log("No se encontraron nodos activos", "ERROR")
@@ -1042,10 +1058,13 @@ async def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Ejemplos:
-  # Test completo con detección automática
+  # Test completo con detección automática en localhost
   python scripts/test_scenario_ultimate.py
 
-  # Test en cluster remoto
+  # Test con nodos en múltiples máquinas (RECOMENDADO)
+  python scripts/test_scenario_ultimate.py --nodes 192.168.1.11:8001,192.168.1.13:8004,192.168.1.9:8005
+
+  # Test en cluster remoto (todos los nodos en el mismo host)
   python scripts/test_scenario_ultimate.py --host 192.168.1.100
 
   # Test rápido sin pruebas de WiFi
@@ -1056,10 +1075,12 @@ Ejemplos:
         """
     )
     
+    parser.add_argument("--nodes", default=None,
+                       help="Lista de nodos IP:PORT separados por coma (ej: 192.168.1.11:8001,192.168.1.13:8004)")
     parser.add_argument("--host", default=DEFAULT_HOST,
-                       help=f"Host/IP del cluster (default: {DEFAULT_HOST})")
+                       help=f"Host/IP por defecto para auto-detección (default: {DEFAULT_HOST})")
     parser.add_argument("--ports", default=None,
-                       help="Puertos de nodos separados por coma (default: auto-detectar)")
+                       help="Puertos de nodos separados por coma (usa --host para todos)")
     parser.add_argument("--base-url", default=None,
                        help="URL base alternativa (override)")
     parser.add_argument("--skip-docker", action="store_true",
@@ -1077,15 +1098,29 @@ Ejemplos:
     
     args = parser.parse_args()
     
-    # Parsear puertos si se especificaron
+    # Parsear nodos si se especificaron (formato IP:PORT,IP:PORT,...)
+    nodes = None
+    if args.nodes:
+        nodes = []
+        for node_str in args.nodes.split(","):
+            node_str = node_str.strip()
+            if ":" in node_str:
+                host, port = node_str.rsplit(":", 1)
+                nodes.append((host, int(port)))
+            else:
+                # Si solo se da el puerto, usar host por defecto
+                nodes.append((args.host, int(node_str)))
+    
+    # Parsear puertos si se especificaron (usa host por defecto para todos)
     ports = None
-    if args.ports:
+    if args.ports and not nodes:
         ports = [int(p.strip()) for p in args.ports.split(",")]
     
     # Crear y ejecutar test
     test = UltimateTestScenario(
         host=args.host,
         ports=ports,
+        nodes=nodes,
         skip_docker=args.skip_docker,
         skip_wifi=args.skip_wifi,
         skip_cleanup=args.skip_cleanup,
