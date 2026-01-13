@@ -994,6 +994,14 @@ class UltimateTestScenario:
             
         except KeyboardInterrupt:
             self.log("\n¡Test interrumpido por el usuario!", "WARN")
+        finally:
+            # SIEMPRE intentar limpiar, incluso si el test falló o fue interrumpido
+            if not self.skip_cleanup and self.created_docs:
+                self.log("Ejecutando limpieza de seguridad...", "INFO")
+                try:
+                    await self._emergency_cleanup()
+                except Exception as e:
+                    self.log(f"Error en limpieza de seguridad: {e}", "WARN")
         
         total_time = time.time() - start_time
         
@@ -1005,6 +1013,26 @@ class UltimateTestScenario:
         failed = sum(1 for r in self.results if not r.passed)
         
         return failed == 0
+    
+    async def _emergency_cleanup(self):
+        """Limpieza de emergencia que se ejecuta siempre"""
+        # Verificar qué documentos no fueron eliminados
+        cleaned_ids = set()
+        for r in self.results:
+            if "Eliminar:" in r.name and r.passed:
+                # Extraer ID del mensaje
+                parts = r.name.split(":")
+                if len(parts) > 1:
+                    cleaned_ids.add(parts[1].strip()[:8])
+        
+        # Intentar eliminar los que faltan
+        for doc in self.created_docs:
+            doc_id = doc.get("id")
+            if doc_id and doc_id[:8] not in cleaned_ids:
+                try:
+                    await self.test_delete_document(doc_id)
+                except Exception:
+                    pass
     
     def print_summary(self, total_time: float):
         """Imprime resumen de resultados"""
