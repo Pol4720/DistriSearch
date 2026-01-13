@@ -217,7 +217,11 @@ get_node_host() {
 }
 
 EXISTING_NODES=$(get_existing_nodes)
-EXISTING_COUNT=$(echo "$EXISTING_NODES" | grep -c "distrisearch-node" 2>/dev/null || echo 0)
+if [ -n "$EXISTING_NODES" ]; then
+    EXISTING_COUNT=$(echo "$EXISTING_NODES" | wc -l)
+else
+    EXISTING_COUNT=0
+fi
 HIGHEST_ID=$(get_highest_node_id)
 
 # ============================================================================
