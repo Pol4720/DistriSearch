@@ -8,7 +8,7 @@ import requests
 from collections import defaultdict
 from datetime import datetime
 
-BASE_URL = "http://192.168.61.32"
+BASE_URL = "http://localhost"
 PORTS = ["8001", "8002", "8003"]
 
 def main():

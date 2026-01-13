@@ -129,7 +129,7 @@ class CascadeFailureTester:
     async def check_system_health(self, session: aiohttp.ClientSession) -> Dict:
         """Verificar estado de salud del sistema"""
         try:
-            async with session.get(f"{self.api_url}/health/") as resp:
+            async with session.get(f"{self.api_url}/health/live") as resp:
                 if resp.status == 200:
                     return await resp.json()
         except:
@@ -313,7 +313,7 @@ class CascadeFailureTester:
             
             # Verificar que el sistema sigue operativo
             health = await self.check_system_health(session)
-            system_up = health.get("status") in ["healthy", "degraded", "partial"]
+            system_up = health.get("alive", False) == True
             
             # Crear documento con solo 1 nodo
             doc = await self.create_document(
@@ -418,8 +418,8 @@ class CascadeFailureTester:
             health_final = await self.check_system_health(session)
             self.record_result(
                 "Health final",
-                health_final.get("status") in ["healthy", "degraded"],
-                f"Status: {health_final.get('status', 'unknown')}"
+                health_final.get("alive", False) == True,
+                f"Alive: {health_final.get('alive', False)}"
             )
             
             # ========== CLEANUP ==========

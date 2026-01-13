@@ -33,11 +33,11 @@ from pathlib import Path
 
 
 # Default configuration
-DEFAULT_BASE_URL = "http://192.168.61.32:8001"
+DEFAULT_BASE_URL = "http://localhost:8001"
 DEFAULT_NODES = [
-    "http://192.168.61.32:8001",
-    "http://192.168.61.32:8002", 
-    "http://192.168.61.32:8003"
+    "http://localhost:8001",
+    "http://localhost:8002", 
+    "http://localhost:8003"
 ]
 API_V1 = "/api/v1"
 TIMEOUT = 60.0
