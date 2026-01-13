@@ -15,7 +15,13 @@ Requirements:
 - All services running and healthy
 
 Usage:
-    python scripts/test_scenario_advanced.py [--base-url http://localhost:8000] [--nodes node1_url,node2_url,node3_url]
+    python scripts/test_scenario_advanced.py [--host HOST] [--ports PORT1,PORT2,PORT3]
+
+Ejemplos:
+    python scripts/test_scenario_advanced.py
+    python scripts/test_scenario_advanced.py --host 192.168.1.11
+    python scripts/test_scenario_advanced.py --host 192.168.1.11 --ports 8001,8002,8003
+    python scripts/test_scenario_advanced.py --base-url http://localhost:8001 --nodes http://localhost:8001,http://localhost:8002
 """
 
 import asyncio
@@ -33,12 +39,8 @@ from pathlib import Path
 
 
 # Default configuration
-DEFAULT_BASE_URL = "http://localhost:8001"
-DEFAULT_NODES = [
-    "http://localhost:8001",
-    "http://localhost:8002", 
-    "http://localhost:8003"
-]
+DEFAULT_HOST = "localhost"
+DEFAULT_PORTS = ["8001", "8002", "8003"]
 API_V1 = "/api/v1"
 TIMEOUT = 60.0
 
@@ -817,13 +819,25 @@ class AdvancedTester:
 
 async def main():
     parser = argparse.ArgumentParser(description="Advanced DistriSearch Test Scenario")
-    parser.add_argument("--base-url", default=DEFAULT_BASE_URL, help="Base URL of the API")
-    parser.add_argument("--nodes", default=",".join(DEFAULT_NODES), help="Comma-separated list of node URLs")
+    parser.add_argument("--base-url", default=None, help="Base URL of the API (overrides --host/--port)")
+    parser.add_argument("--nodes", default=None, help="Comma-separated list of node URLs (overrides --host/--ports)")
+    parser.add_argument("--host", default=DEFAULT_HOST, help=f"Host/IP de los nodos (default: {DEFAULT_HOST})")
+    parser.add_argument("--ports", default=",".join(DEFAULT_PORTS), 
+                        help=f"Puertos separados por coma (default: {','.join(DEFAULT_PORTS)})")
     args = parser.parse_args()
     
-    node_urls = args.nodes.split(",")
+    # Construir URLs
+    if args.nodes:
+        node_urls = [n.strip() for n in args.nodes.split(",")]
+    else:
+        node_urls = [f"http://{args.host}:{p.strip()}" for p in args.ports.split(",")]
     
-    tester = AdvancedTester(args.base_url, node_urls)
+    if args.base_url:
+        base_url = args.base_url
+    else:
+        base_url = node_urls[0] if node_urls else f"http://{args.host}:{DEFAULT_PORTS[0]}"
+    
+    tester = AdvancedTester(base_url, node_urls)
     
     try:
         success = await tester.run_all_tests()
