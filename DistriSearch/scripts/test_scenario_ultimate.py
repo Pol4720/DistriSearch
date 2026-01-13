@@ -520,8 +520,8 @@ class UltimateTestScenario:
     async def test_list_documents(self, node_url: Optional[str] = None) -> List[Dict]:
         """Lista documentos del usuario"""
         start = time.time()
-        # El endpoint correcto es GET /documents/ (no /documents/list)
-        success, data = await self.api_request("GET", "/documents/", node_url=node_url)
+        # El endpoint correcto es GET /documents (sin trailing slash)
+        success, data = await self.api_request("GET", "/documents", node_url=node_url)
         duration = (time.time() - start) * 1000
         
         if success and isinstance(data, dict):
