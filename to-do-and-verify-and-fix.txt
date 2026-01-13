@@ -21,4 +21,5 @@ ecuerda que el k de replicacion es 2 , que cada recurso si no esta local se va a
 
 Ver el tema de los bully peers que como que no se actualizan bien cuando el despliegue de los nodos se hace separado 
 docker service update --env-add "BULLY_PEERS=distrisearch-node-1:8000,distrisearch-node-2:8000,distrisearch-node-3:8000" distrisearch-node-X
+Antes de que despliegues tienes que analizar y arreglar la forma de desplegar distrisearch pues ya viste que con dos computadoras al desconectarse de la wifi l maquina que era lider del swarm en la maquina que queda conectada a la red se cae completamente el sistema y esto es inadmisible. Soluciona este problema .
 
