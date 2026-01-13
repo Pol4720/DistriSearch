@@ -590,26 +590,48 @@ for idx in "${!NODES_TO_DEPLOY[@]}"; do
     HTTPS_PORT=$((4430 + i))
     API_PORT=$((8000 + i))
     
+    # Calcular CLUSTER_SIZE considerando nodos existentes + nuevos
+    TOTAL_CLUSTER_SIZE=$((EXISTING_COUNT + ${#NODES_TO_DEPLOY[@]}))
+    if [ "$CLEAN_FIRST" = true ]; then
+        TOTAL_CLUSTER_SIZE=${#NODES_TO_DEPLOY[@]}
+    fi
+    
     create_service_safe "distrisearch-node-$i" \
         --name "distrisearch-node-$i" \
-        --network distrisearch-network \
+        --network name=distrisearch-network,alias=distrisearch-node \
         --replicas 1 \
         "${CONSTRAINT_ARGS[@]}" \
+        --publish published=$HTTP_PORT,target=80,mode=host \
+        --publish published=$HTTPS_PORT,target=443,mode=host \
         --publish published=$API_PORT,target=8000,mode=host \
         --env NODE_ID="node-$i" \
-        --env NODE_TYPE="slave" \
-        --env ROLE="FOLLOWER" \
-        --env MONGODB_URI="mongodb://node${i}-mongodb:27017" \
-        --env REDIS_HOST="node${i}-redis" \
-        --env REDIS_PORT="6379" \
-        --env COORDINATOR_REDIS_HOST="coordinator-redis" \
-        --env COORDINATOR_REDIS_PORT="6379" \
-        --env BULLY_NODE_ID="$i" \
+        --env NODE_ROLE=slave \
+        --env NODE_TYPE=slave \
+        --env CLUSTER_ID=distrisearch-cluster \
+        --env LOCAL_MONGODB_URI="mongodb://node${i}-mongodb:27017" \
+        --env MONGODB_URI="mongodb://node${i}-mongodb:27017/distrisearch_node${i}" \
+        --env MONGODB_DATABASE="distrisearch_node${i}" \
+        --env LOCAL_REDIS_URL="redis://node${i}-redis:6379" \
+        --env REDIS_URL="redis://coordinator-redis:6379" \
+        --env COORDINATOR_REDIS_URL="redis://coordinator-redis:6379" \
+        --env API_PORT=8000 \
+        --env NODE_ADDRESS="distrisearch-node-$i" \
+        --env BULLY_ENABLED=true \
         --env BULLY_PEERS="$BULLY_PEERS" \
+        --env BULLY_ELECTION_TIMEOUT=5000 \
+        --env BULLY_HEARTBEAT_INTERVAL=2000 \
+        --env CLUSTER_SIZE=$TOTAL_CLUSTER_SIZE \
+        --env REPLICATION_FACTOR=2 \
+        --env LOG_LEVEL=INFO \
         --env JWT_SECRET="$JWT_SECRET" \
-        --env CLUSTER_MODE="true" \
-        --env LOG_LEVEL="INFO" \
-        --mount type=volume,source="node${i}-storage",target=/app/storage \
+        --mount type=volume,source="node${i}-sqlite",target=/app/data/sqlite \
+        --mount type=volume,source="node${i}-data",target=/app/data \
+        --mount type=volume,source="node${i}-docs",target=/app/data/documents \
+        --health-cmd "curl -sf http://localhost:8000/api/v1/health/live || curl -sf http://localhost/health || exit 1" \
+        --health-interval 30s \
+        --health-timeout 15s \
+        --health-retries 5 \
+        --health-start-period 90s \
         "$IMAGE_NAME"
     
     DEPLOYED=$((DEPLOYED + 1))
