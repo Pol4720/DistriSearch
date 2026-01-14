@@ -12,23 +12,7 @@
 # - La red overlay de Swarm se usa SOLO para comunicación entre nodos
 # - Cada nodo es completamente autónomo y sobrevive particiones de red
 # - El algoritmo BULLY maneja la elección de líder a nivel de aplicación
-#
-# OPTIMIZACIÓN:
-# - MongoDB y Redis se copian desde imágenes locales (no descarga)
-# - Usa multi-stage build para minimizar tamaño final
 # ============================================================================
-
-# ============================================================================
-# Stage 0: Extract MongoDB binaries from official image
-# ============================================================================
-FROM mongo:4.4 AS mongodb-source
-
-# ============================================================================
-# Stage 0b: Extract Redis binaries from official image
-# ============================================================================
-# Stage 0b: Extract Redis binaries from official image
-# Nota: usamos redis:latest para maximizar probabilidad de estar ya descargada.
-FROM redis:latest AS redis-source
 
 # ============================================================================
 # Stage 1: Build Frontend
@@ -81,7 +65,8 @@ LABEL maintainer="DistriSearch Team"
 LABEL description="DistriSearch Standalone Node - MongoDB + Redis + Backend + Frontend"
 LABEL version="2.0-standalone-optimized"
 
-# Install runtime dependencies (NO MongoDB, NO Redis - se copian desde stages)
+# Install runtime dependencies including MongoDB and Redis
+# Usamos instalación directa en lugar de copiar binarios para evitar problemas de librerías
 RUN apt-get update && apt-get install -y --no-install-recommends \
     nginx \
     supervisor \
@@ -90,29 +75,33 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     procps \
     net-tools \
     libcurl4 \
+    gnupg \
+    wget \
     && rm -rf /var/lib/apt/lists/*
 
 # ============================================================================
-# Copy MongoDB binaries from official image (FAST - no download)
+# Install MongoDB 7.0 (método moderno sin apt-key deprecated)
 # ============================================================================
-COPY --from=mongodb-source /usr/bin/mongod /usr/bin/mongod
-COPY --from=mongodb-source /usr/bin/mongo /usr/bin/mongo
-COPY --from=mongodb-source /usr/bin/mongos /usr/bin/mongos
+RUN curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | \
+    gpg --dearmor -o /usr/share/keyrings/mongodb-server-7.0.gpg \
+    && echo "deb [ signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] http://repo.mongodb.org/apt/debian bookworm/mongodb-org/7.0 main" | \
+    tee /etc/apt/sources.list.d/mongodb-org-7.0.list \
+    && apt-get update \
+    && apt-get install -y mongodb-org-server mongodb-mongosh \
+    && rm -rf /var/lib/apt/lists/*
 
-# Create MongoDB user and directories
-RUN groupadd -r mongodb && useradd -r -g mongodb mongodb \
-    && mkdir -p /data/db /var/log/mongodb \
+# Create MongoDB directories
+RUN mkdir -p /data/db /var/log/mongodb \
     && chown -R mongodb:mongodb /data/db /var/log/mongodb
 
 # ============================================================================
-# Copy Redis binaries from official image (FAST - no download)
+# Install Redis
 # ============================================================================
-COPY --from=redis-source /usr/local/bin/redis-server /usr/bin/redis-server
-COPY --from=redis-source /usr/local/bin/redis-cli /usr/bin/redis-cli
+RUN apt-get update && apt-get install -y --no-install-recommends redis-server redis-tools \
+    && rm -rf /var/lib/apt/lists/*
 
-# Create Redis user and directories
-RUN groupadd -r redis && useradd -r -g redis redis \
-    && mkdir -p /var/lib/redis /var/log/redis /etc/redis \
+# Create Redis directories
+RUN mkdir -p /var/lib/redis /var/log/redis /etc/redis \
     && chown -R redis:redis /var/lib/redis /var/log/redis
 
 WORKDIR /app
