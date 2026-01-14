@@ -481,11 +481,21 @@ async def replicate_document(request: ReplicateDocumentRequest) -> Dict[str, Any
                 filename = metadata.get("filename", f"{request.document_id}.bin")
                 content_type = metadata.get("content_type", "application/octet-stream")
                 
+                # Extract original file_id from file_path to maintain same filename across nodes
+                original_file_id = None
+                if metadata.get("file_path"):
+                    import re
+                    # file_path format: /data/uploads/xx/yy/uuid.ext
+                    match = re.search(r'/([a-f0-9-]{36})\.\w+$', metadata.get("file_path", ""))
+                    if match:
+                        original_file_id = match.group(1)
+                
                 file_handler = FileHandler()
                 uploaded_file = await file_handler.save_file(
                     file_data=file_content,
                     filename=filename,
-                    content_type=content_type
+                    content_type=content_type,
+                    file_id=original_file_id
                 )
                 
                 # Update file_path to local path
@@ -1050,10 +1060,20 @@ async def trigger_full_sync() -> Dict[str, Any]:
                                         file_handler = FileHandler()
                                         filename = metadata.get("filename", f"{doc_id}.bin")
                                         content_type = metadata.get("content_type", "application/octet-stream")
+                                        
+                                        # Extract original file_id from file_path
+                                        import re
+                                        original_file_id = None
+                                        if metadata.get("file_path"):
+                                            match = re.search(r'/([a-f0-9-]{36})\.\w+$', metadata.get("file_path", ""))
+                                            if match:
+                                                original_file_id = match.group(1)
+                                        
                                         uploaded = await file_handler.save_file(
                                             file_data=file_content,
                                             filename=filename,
-                                            content_type=content_type
+                                            content_type=content_type,
+                                            file_id=original_file_id
                                         )
                                         new_file_path = uploaded.storage_path
                                         logger.info(f"Saved replica file for {doc_id} at {new_file_path}")
@@ -1173,10 +1193,20 @@ async def trigger_full_sync() -> Dict[str, Any]:
                                         file_handler = FileHandler()
                                         filename = metadata.get("filename", f"{doc_id}.bin")
                                         content_type = metadata.get("content_type", "application/octet-stream")
+                                        
+                                        # Extract original file_id from file_path
+                                        import re
+                                        original_file_id = None
+                                        if metadata.get("file_path"):
+                                            match = re.search(r'/([a-f0-9-]{36})\.\w+$', metadata.get("file_path", ""))
+                                            if match:
+                                                original_file_id = match.group(1)
+                                        
                                         uploaded = await file_handler.save_file(
                                             file_data=file_content,
                                             filename=filename,
-                                            content_type=content_type
+                                            content_type=content_type,
+                                            file_id=original_file_id
                                         )
                                         new_file_path = uploaded.storage_path
                                     except Exception as e:
