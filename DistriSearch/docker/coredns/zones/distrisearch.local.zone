@@ -1,67 +1,70 @@
 ; ═══════════════════════════════════════════════════════════════════════════
-; DistriSearch Zone File
-; This file is auto-updated by the dns-sync daemon
+; DistriSearch Zone File - Generado automáticamente
+; Fecha: mié 14 ene 2026 09:45:52 CST
 ; ═══════════════════════════════════════════════════════════════════════════
 
 $ORIGIN distrisearch.local.
 $TTL 30
 
 @       IN      SOA     ns1.distrisearch.local. admin.distrisearch.local. (
-                        2024010101      ; Serial (YYYYMMDDNN)
-                        3600            ; Refresh (1 hour)
-                        600             ; Retry (10 minutes)
-                        86400           ; Expire (1 day)
-                        30              ; Minimum TTL
+                        2026011409   ; Serial
+                        3600                ; Refresh (1 hour)
+                        600                 ; Retry (10 minutes)
+                        86400               ; Expire (1 day)
+                        30                  ; Minimum TTL
                         )
 
 ; Name servers
 @       IN      NS      ns1.distrisearch.local.
-ns1     IN      A       10.0.10.2
+ns1     IN      A       192.168.61.32
 
 ; ═══════════════════════════════════════════════════════════════════════════
-; SERVICE RECORDS
-; These are updated dynamically by dns-sync daemon
+; NODOS - Direcciones de los nodos DistriSearch
 ; ═══════════════════════════════════════════════════════════════════════════
 
-; Master nodes (Raft consensus cluster)
-master          IN      A       10.0.10.10
-master-1        IN      A       10.0.10.10
-master-2        IN      A       10.0.10.11
-master-3        IN      A       10.0.10.12
+; Nodos en Máquina A (richard-VirtualBox)
+node-1          IN      A       192.168.1.11
+node-2          IN      A       192.168.1.11
 
-; Slave nodes (Worker nodes)
-slave           IN      A       10.0.10.20
-slave-1         IN      A       10.0.10.20
-slave-2         IN      A       10.0.10.21
-slave-3         IN      A       10.0.10.22
+; Nodo en Máquina B (abel-VirtualBox)
+node-3          IN      A       192.168.1.13
 
-; Database services
-mongodb         IN      A       10.0.10.30
-mongodb-1       IN      A       10.0.10.30
-mongodb-2       IN      A       10.0.10.31
-mongodb-3       IN      A       10.0.10.32
+; Alias genérico para nodos (round-robin)
+node            IN      A       192.168.1.11
+node            IN      A       192.168.1.11
+node            IN      A       192.168.1.13
 
-redis           IN      A       10.0.10.40
+; ═══════════════════════════════════════════════════════════════════════════
+; SERVICIOS - Load Balancer y DNS
+; ═══════════════════════════════════════════════════════════════════════════
 
-; CoreDNS backup
-coredns         IN      A       10.0.10.50
+; Load Balancers (uno en cada máquina)
+lb              IN      A       192.168.1.11
+lb              IN      A       192.168.1.13
+loadbalancer    IN      A       192.168.1.11
+loadbalancer    IN      A       192.168.1.13
 
-; Load balancer
-lb              IN      A       10.0.10.2
+; DNS (CoreDNS en cada máquina)
+dns             IN      A       192.168.1.11
+dns             IN      A       192.168.1.13
+coredns         IN      A       192.168.61.32
+
+; Entrada principal (apunta a load balancers)
 www             IN      CNAME   lb.distrisearch.local.
+@               IN      A       192.168.1.11
+@               IN      A       192.168.1.13
 
 ; ═══════════════════════════════════════════════════════════════════════════
-; SRV RECORDS for service discovery
+; SRV RECORDS para descubrimiento de servicios
 ; ═══════════════════════════════════════════════════════════════════════════
 
-; Master API service
-_master._tcp    IN      SRV     10 50 8001 master.distrisearch.local.
+; API de nodos (puerto específico de cada nodo)
+_api._tcp.node-1    IN      SRV     10 50 8001 node-1.distrisearch.local.
+_api._tcp.node-2    IN      SRV     10 50 8002 node-2.distrisearch.local.
+_api._tcp.node-3    IN      SRV     10 50 8003 node-3.distrisearch.local.
 
-; Slave API service  
-_api._tcp       IN      SRV     10 50 8000 slave.distrisearch.local.
+; Load Balancer HTTPS (puerto 443)
+_https._tcp         IN      SRV     10 50 443 lb.distrisearch.local.
 
-; MongoDB
-_mongodb._tcp   IN      SRV     10 50 27017 mongodb.distrisearch.local.
-
-; Redis
-_redis._tcp     IN      SRV     10 50 6379 redis.distrisearch.local.
+; DNS (puerto 5353)
+_dns._udp           IN      SRV     10 50 5353 coredns.distrisearch.local.

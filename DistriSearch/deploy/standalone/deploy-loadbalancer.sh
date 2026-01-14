@@ -26,8 +26,8 @@ HTTPS_PORT="443"
 NETWORK_NAME="distrisearch-network"  # Red overlay por defecto
 
 # IPs de las máquinas
-MACHINE_A_IP="192.168.1.11"
-MACHINE_B_IP="192.168.1.13"
+MACHINE_A_IP="192.168.61.32"
+MACHINE_B_IP="192.168.61.33"
 
 # Colores
 RED='\033[0;31m'
@@ -235,6 +235,12 @@ deploy_container() {
     DOCKER_CMD="$DOCKER_CMD -p ${HTTP_PORT}:80"
     DOCKER_CMD="$DOCKER_CMD -p ${HTTPS_PORT}:443"
     DOCKER_CMD="$DOCKER_CMD -p 8080:8080"  # Status endpoint
+    
+    # Variables de entorno para supervisord
+    DOCKER_CMD="$DOCKER_CMD -e HA_MODE=active"
+    DOCKER_CMD="$DOCKER_CMD -e NODE_SERVICE=distrisearch-node"
+    DOCKER_CMD="$DOCKER_CMD -e NODE_PORT=8000"
+    DOCKER_CMD="$DOCKER_CMD -e UPDATE_INTERVAL=30"
     
     # Montar configuraciones
     DOCKER_CMD="$DOCKER_CMD -v ${PROJECT_ROOT}/docker/load-balancer/conf.d/upstreams:/etc/nginx/conf.d/upstreams:ro"
