@@ -225,3 +225,7 @@ central_shared
 
 DistriSearch/frontend/node_modules/
 DistriSearch/deploy/manual-swarm/certs
+
+DistriSearch/docker/load-balancer/conf.d/upstreams/*.conf
+DistriSearch/docker/load-balancer/ssl/*.crt
+DistriSearch/docker/load-balancer/ssl/*.key
