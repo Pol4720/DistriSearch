@@ -6,6 +6,10 @@ Test Scenario 3: Comprehensive Distributed System Validation
 Este es el TEST DEFINITIVO que valida que el sistema distribuido está impecable.
 Combina todas las verificaciones de los escenarios 1 y 2, más pruebas adicionales.
 
+SISTEMA STANDALONE:
+  - Máquina A (192.168.1.11): Node-1 (:8001), Node-2 (:8002)
+  - Máquina B (192.168.1.13): Node-3 (:8003)
+
 ═══════════════════════════════════════════════════════════════════════════════
 VERIFICACIONES INCLUIDAS:
 ═══════════════════════════════════════════════════════════════════════════════
@@ -39,17 +43,17 @@ MODOS DE USO:
 ═══════════════════════════════════════════════════════════════════════════════
 
 MODO GUIADO (Recomendado para test completo):
-    python scripts/test_scenario_3.py --guided --base-url https://192.168.1.10:443
+    python scripts/test_scenario_3.py --guided --base-url http://192.168.1.11:8001
 
 MODO POR FASES (Control manual):
-    python scripts/test_scenario_3.py --phase setup --base-url https://...
-    python scripts/test_scenario_3.py --phase normal-ops --base-url https://...
-    python scripts/test_scenario_3.py --phase partition --base-url https://localhost:443 --node-name nodoX
-    python scripts/test_scenario_3.py --phase reconcile --base-url https://...
-    python scripts/test_scenario_3.py --phase final-verify --base-url https://...
+    python scripts/test_scenario_3.py --phase setup --base-url http://192.168.1.11:8001
+    python scripts/test_scenario_3.py --phase normal-ops --base-url http://192.168.1.11:8001
+    python scripts/test_scenario_3.py --phase partition --base-url http://192.168.1.13:8003 --node-name nodoB
+    python scripts/test_scenario_3.py --phase reconcile --base-url http://192.168.1.11:8001
+    python scripts/test_scenario_3.py --phase final-verify --base-url http://192.168.1.11:8001
 
 MODO RÁPIDO (Sin particiones, solo operaciones normales):
-    python scripts/test_scenario_3.py --quick --base-url https://...
+    python scripts/test_scenario_3.py --quick --base-url http://192.168.1.11:8001
 """
 
 import asyncio
@@ -66,6 +70,20 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from enum import Enum
+
+# Importar configuración standalone
+try:
+    from config_standalone import (
+        MACHINE_A_IP, MACHINE_B_IP, 
+        DEFAULT_HOST, DEFAULT_BASE_URL
+    )
+    USE_STANDALONE_CONFIG = True
+except ImportError:
+    MACHINE_A_IP = "192.168.1.11"
+    MACHINE_B_IP = "192.168.1.13"
+    DEFAULT_HOST = MACHINE_A_IP
+    DEFAULT_BASE_URL = f"http://{DEFAULT_HOST}:8001"
+    USE_STANDALONE_CONFIG = False
 
 # Configuración
 API_V1 = "/api/v1"
@@ -1301,8 +1319,8 @@ LIMPIEZA:
     mode_group.add_argument("--cleanup", action="store_true",
                            help="Limpiar documentos de prueba")
     
-    parser.add_argument("--base-url", required=True,
-                       help="URL base del nodo (ej: https://192.168.1.10:443)")
+    parser.add_argument("--base-url", default=DEFAULT_BASE_URL,
+                       help=f"URL base del nodo (default: {DEFAULT_BASE_URL})")
     parser.add_argument("--node-name", default="default",
                        help="Nombre del nodo (para fase partition)")
     parser.add_argument("--wait-time", type=int, default=10,

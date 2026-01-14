@@ -6,6 +6,10 @@ Test Scenario 2: Network Partition and Reconciliation
 Este script está diseñado para probar particiones de red REALES donde
 se desconecta físicamente una máquina de la WiFi.
 
+SISTEMA STANDALONE:
+  - Máquina A (192.168.1.11): Node-1 (:8001), Node-2 (:8002)
+  - Máquina B (192.168.1.13): Node-3 (:8003)
+
 HAY DOS MODOS DE USO:
 
 ═══════════════════════════════════════════════════════════════════════════════
@@ -14,7 +18,7 @@ MODO 1: GUIADO (--guided) - RECOMENDADO
 Ejecuta todo el test de forma interactiva con tiempos de espera para que
 el usuario realice las acciones manuales (desconectar WiFi, etc.)
 
-    python scripts/test_scenario_2.py --guided --base-url https://192.168.1.10:443
+    python scripts/test_scenario_2.py --guided --base-url http://192.168.1.11:8001
 
 El script:
 1. Crea usuario y documento inicial
@@ -40,17 +44,17 @@ Fase 3 (VERIFY): Ejecutar después de restaurar conectividad
   - Verifica que documentos idénticos fueron deduplicados
 
 Uso:
-    # Fase 1: Preparación (desde máquina con acceso a swarm)
-    python scripts/test_scenario_2.py --phase prepare --base-url https://192.168.1.10:443
+    # Fase 1: Preparación (desde máquina con acceso)
+    python scripts/test_scenario_2.py --phase prepare --base-url http://192.168.1.11:8001
     
-    # Fase 2: Durante partición - EN CADA NODO AISLADO
-    # En nodo A (con acceso): 
-    python scripts/test_scenario_2.py --phase partition --base-url https://192.168.1.10:443 --node-name nodoA
-    # En nodo B (aislado, acceder via localhost):
-    python scripts/test_scenario_2.py --phase partition --base-url https://localhost:443 --node-name nodoB
+    # Fase 2: Durante partición - EN CADA NODO
+    # En nodo Máquina A (con acceso): 
+    python scripts/test_scenario_2.py --phase partition --base-url http://192.168.1.11:8001 --node-name nodoA
+    # En nodo Máquina B (aislado):
+    python scripts/test_scenario_2.py --phase partition --base-url http://192.168.1.13:8003 --node-name nodoB
     
     # Fase 3: Verificación post-reconexión
-    python scripts/test_scenario_2.py --phase verify --base-url https://192.168.1.10:443
+    python scripts/test_scenario_2.py --phase verify --base-url http://192.168.1.11:8001
 """
 
 import asyncio
@@ -64,6 +68,20 @@ from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+
+# Importar configuración standalone
+try:
+    from config_standalone import (
+        MACHINE_A_IP, MACHINE_B_IP, 
+        DEFAULT_HOST, DEFAULT_BASE_URL
+    )
+    USE_STANDALONE_CONFIG = True
+except ImportError:
+    MACHINE_A_IP = "192.168.1.11"
+    MACHINE_B_IP = "192.168.1.13"
+    DEFAULT_HOST = MACHINE_A_IP
+    DEFAULT_BASE_URL = f"http://{DEFAULT_HOST}:8001"
+    USE_STANDALONE_CONFIG = False
 
 # Configuración
 API_V1 = "/api/v1"
@@ -731,7 +749,7 @@ async def main():
 MODO GUIADO (RECOMENDADO):
 ═══════════════════════════════════════════════════════════════════════════════
 
-  python scripts/test_scenario_2.py --guided --base-url https://192.168.1.10:443
+  python scripts/test_scenario_2.py --guided --base-url http://192.168.1.11:8001
 
   Opciones adicionales para modo guiado:
     --wait-time 5    # Cambiar tiempo de espera a 5 minutos (default: 10)
@@ -741,19 +759,19 @@ MODO MANUAL (FASES SEPARADAS):
 ═══════════════════════════════════════════════════════════════════════════════
 
   1. Preparación (desde máquina con acceso):
-     python scripts/test_scenario_2.py --phase prepare --base-url https://192.168.1.10:443
+     python scripts/test_scenario_2.py --phase prepare --base-url http://192.168.1.11:8001
 
-  2. Durante partición - en cada nodo:
-     # Nodo conectado:
-     python scripts/test_scenario_2.py --phase partition --base-url https://192.168.1.10:443 --node-name nodoA
-     # Nodo aislado (acceder via localhost):
-     python scripts/test_scenario_2.py --phase partition --base-url https://localhost:443 --node-name nodoB
+  2. Durante partición - en cada máquina:
+     # Máquina A (nodos conectados):
+     python scripts/test_scenario_2.py --phase partition --base-url http://192.168.1.11:8001 --node-name nodoA
+     # Máquina B (nodo aislado):
+     python scripts/test_scenario_2.py --phase partition --base-url http://192.168.1.13:8003 --node-name nodoB
 
   3. Verificación (después de reconectar):
-     python scripts/test_scenario_2.py --phase verify --base-url https://192.168.1.10:443
+     python scripts/test_scenario_2.py --phase verify --base-url http://192.168.1.11:8001
 
   4. Limpieza (opcional):
-     python scripts/test_scenario_2.py --cleanup --base-url https://192.168.1.10:443
+     python scripts/test_scenario_2.py --cleanup --base-url http://192.168.1.11:8001
         """
     )
     
@@ -767,8 +785,8 @@ MODO MANUAL (FASES SEPARADAS):
                            help="Limpiar documentos de prueba")
     
     # Parámetros comunes
-    parser.add_argument("--base-url", required=True, 
-                       help="URL base del nodo (ej: https://192.168.1.10:443)")
+    parser.add_argument("--base-url", default=DEFAULT_BASE_URL, 
+                       help=f"URL base del nodo (default: {DEFAULT_BASE_URL})")
     parser.add_argument("--node-name", default="default", 
                        help="Nombre identificador del nodo (para fase partition)")
     parser.add_argument("--wait-time", type=int, default=10,
