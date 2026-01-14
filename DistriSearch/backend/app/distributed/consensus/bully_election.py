@@ -120,6 +120,11 @@ class BullyElection:
         """Get current leader ID."""
         return self._leader_id
     
+    @property
+    def peers(self) -> Dict[str, str]:
+        """Get a copy of the current peers dictionary."""
+        return self._peers.copy()
+    
     def add_peer(self, peer_id: str, address: str):
         """Add a peer node."""
         self._peers[peer_id] = address

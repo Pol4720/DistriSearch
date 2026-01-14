@@ -844,7 +844,7 @@ async def trigger_full_sync() -> Dict[str, Any]:
     all nodes have consistent data.
     """
     import os
-    from .dependencies import get_document_registry, get_user_repository, get_cluster_manager
+    from .dependencies import get_document_registry, get_user_repository, get_cluster_manager, get_document_repository
     
     try:
         node_id = os.environ.get("NODE_ID", "unknown")
@@ -922,8 +922,9 @@ async def trigger_full_sync() -> Dict[str, Any]:
             except Exception as e:
                 logger.warning(f"Failed to sync registry from {peer.node_id}: {e}")
         
-        # 4. Sync missing documents (replicate documents we don't have locally)
+        # 4. Sync missing documents AND apply tombstones
         results["documents_replicated"] = 0
+        results["documents_deleted_by_tombstone"] = 0
         doc_repo = await get_document_repository()
         
         for peer in peers:
@@ -937,7 +938,7 @@ async def trigger_full_sync() -> Dict[str, Any]:
                 if ':' not in address:
                     address = f"{address}:{port}"
                 
-                # Get document IDs from peer's registry
+                # Get document IDs from peer's registry (including deleted entries)
                 registry_url = f"http://{address}/api/v1/internal/sync/registry/all"
                 async with aiohttp.ClientSession() as session:
                     async with session.get(registry_url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
@@ -950,6 +951,15 @@ async def trigger_full_sync() -> Dict[str, Any]:
                         doc_id = entry.get("document_id")
                         if not doc_id:
                             continue
+                        
+                        # Handle tombstones: if document is deleted in registry, delete it locally
+                        if entry.get("is_deleted", False):
+                            local_doc = await doc_repo.find_by_id(doc_id)
+                            if local_doc:
+                                await doc_repo.delete(doc_id)
+                                results["documents_deleted_by_tombstone"] += 1
+                                logger.info(f"Deleted local document {doc_id} due to tombstone from {peer.node_id}")
+                            continue  # Don't try to replicate a deleted document
                             
                         # Check if we have this document locally
                         local_doc = await doc_repo.find_by_id(doc_id)

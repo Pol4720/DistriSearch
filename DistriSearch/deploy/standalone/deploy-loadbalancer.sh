@@ -117,65 +117,60 @@ generate_upstreams() {
     UPSTREAM_DIR="${PROJECT_ROOT}/docker/load-balancer/conf.d/upstreams"
     mkdir -p "$UPSTREAM_DIR"
     
-    # Determinar qué nodos son locales vs remotos
-    if [ "$LOCAL_IP" = "$MACHINE_A_IP" ]; then
-        LOCAL_NODES="server ${MACHINE_A_IP}:8001; server ${MACHINE_A_IP}:8002;"
-        REMOTE_NODES="server ${MACHINE_B_IP}:8003 backup;"
-    elif [ "$LOCAL_IP" = "$MACHINE_B_IP" ]; then
-        LOCAL_NODES="server ${MACHINE_B_IP}:8003;"
-        REMOTE_NODES="server ${MACHINE_A_IP}:8001 backup; server ${MACHINE_A_IP}:8002 backup;"
-    else
-        # Si no coincide, usar todos como iguales
-        LOCAL_NODES="server ${MACHINE_A_IP}:8001; server ${MACHINE_A_IP}:8002; server ${MACHINE_B_IP}:8003;"
-        REMOTE_NODES=""
-    fi
+    # IMPORTANTE: El load balancer está en la red overlay de Docker
+    # Por lo tanto, debe usar los nombres DNS internos de Docker (node-X:8000)
+    # NO las IPs de host ni los puertos mapeados
     
-    cat > "${UPSTREAM_DIR}/nodes.conf" << EOF
-# Upstream generado automáticamente - $(date)
-# IP Local: $LOCAL_IP
+    cat > "${UPSTREAM_DIR}/nodes.conf" << 'EOF'
+# Upstream generado automáticamente
+# Usa nombres DNS internos de Docker (red overlay)
 
-# API endpoints - prioriza nodos locales
+# API endpoints - todos los nodos en la red overlay
 upstream node_api {
     least_conn;
-    ${LOCAL_NODES}
-    ${REMOTE_NODES}
+    # Nombres DNS internos de Docker - puerto interno 8000
+    server node-1:8000;
+    server node-2:8000;
+    server node-3:8000;
     keepalive 16;
 }
 
-# Frontend endpoints
+# Frontend endpoints - puerto interno 80
 upstream node_frontend {
     least_conn;
-    server ${MACHINE_A_IP}:8081;
-    server ${MACHINE_A_IP}:8082;
-    server ${MACHINE_B_IP}:8083;
+    server node-1:80;
+    server node-2:80;
+    server node-3:80;
     keepalive 8;
 }
 
 # Para compatibilidad con configuración existente
 upstream master_api {
     least_conn;
-    ${LOCAL_NODES}
-    ${REMOTE_NODES}
+    server node-1:8000;
+    server node-2:8000;
+    server node-3:8000;
     keepalive 16;
 }
 
 upstream slave_api {
     least_conn;
-    ${LOCAL_NODES}
-    ${REMOTE_NODES}
+    server node-1:8000;
+    server node-2:8000;
+    server node-3:8000;
     keepalive 16;
 }
 
 upstream slave_frontend {
     least_conn;
-    server ${MACHINE_A_IP}:8081;
-    server ${MACHINE_A_IP}:8082;
-    server ${MACHINE_B_IP}:8083;
+    server node-1:80;
+    server node-2:80;
+    server node-3:80;
     keepalive 8;
 }
 EOF
 
-    log_info "Configuración de upstreams generada"
+    log_info "Configuración de upstreams generada (usando DNS interno de Docker)"
 }
 
 # ============================================================================

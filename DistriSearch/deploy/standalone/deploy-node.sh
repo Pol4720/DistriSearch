@@ -133,10 +133,14 @@ LOCAL_IP=$(hostname -I | awk '{print $1}')
 
 # Si no se especificaron peers, usar configuración por defecto
 if [ -z "$PEERS" ]; then
-    # Crear lista de peers basada en la configuración estándar
-    # Nodo 1 y 2 en Máquina A, Nodo 3 en Máquina B
-    PEERS="${MACHINE_A_IP}:8001,${MACHINE_A_IP}:8002,${MACHINE_B_IP}:8003"
+    # Usar nombres DNS internos de Docker (NO IPs de host!)
+    # En la red overlay de Swarm, los contenedores se descubren por DNS
+    # Formato: node-X:8000 donde 8000 es el puerto INTERNO del contenedor
+    PEERS="node-1:8000,node-2:8000,node-3:8000"
 fi
+
+# Dirección interna del nodo (nombre DNS:puerto interno)
+NODE_INTERNAL_ADDRESS="${NODE_ID}:8000"
 
 CONTAINER_NAME="${CONTAINER_PREFIX}-${NODE_ID}"
 
@@ -150,11 +154,12 @@ echo ""
 log_info "Configuración:"
 echo "   Node ID:      $NODE_ID"
 echo "   Container:    $CONTAINER_NAME"
-echo "   API Port:     $API_PORT"
-echo "   HTTP Port:    $HTTP_PORT"
-echo "   HTTPS Port:   $HTTPS_PORT"
-echo "   Local IP:     $LOCAL_IP"
-echo "   Peers:        $PEERS"
+echo "   API Port:     $API_PORT (external) -> 8000 (internal)"
+echo "   HTTP Port:    $HTTP_PORT (external) -> 80 (internal)"
+echo "   HTTPS Port:   $HTTPS_PORT (external) -> 443 (internal)"
+echo "   Local IP:     $LOCAL_IP (host)"
+echo "   Node Address: $NODE_INTERNAL_ADDRESS (internal DNS)"
+echo "   Peers:        $PEERS (internal DNS names)"
 echo "   Network:      $NETWORK_NAME (overlay)"
 echo ""
 
@@ -206,6 +211,7 @@ docker run -d \
     --name "$CONTAINER_NAME" \
     --hostname "$NODE_ID" \
     --network "$NETWORK_NAME" \
+    --network-alias "$NODE_ID" \
     -p "${API_PORT}:8000" \
     -p "${HTTP_PORT}:80" \
     -p "${HTTPS_PORT}:443" \
@@ -213,7 +219,8 @@ docker run -d \
     -v "${NODE_DATA_DIR}/redis:/data/redis" \
     -v "${NODE_DATA_DIR}/uploads:/app/uploads" \
     -e "NODE_ID=${NODE_ID}" \
-    -e "NODE_ADDRESS=${LOCAL_IP}:${API_PORT}" \
+    -e "NODE_ADDRESS=${NODE_INTERNAL_ADDRESS}" \
+    -e "NODE_ROLE=slave" \
     -e "BULLY_PEERS=${PEERS}" \
     -e "BULLY_ENABLED=true" \
     -e "API_PORT=8000" \

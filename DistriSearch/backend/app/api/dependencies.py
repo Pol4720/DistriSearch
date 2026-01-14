@@ -67,7 +67,8 @@ _cluster_repository: Optional[Any] = None
 # _raft_node: Optional[RaftNode] = None
 # _persistent_state_machine: Optional[PersistentStateMachine] = None
 _bully_election: Optional[BullyElection] = None
-_bully_peers: Dict[str, str] = {}  # Peer ID -> address mapping
+_bully_peers: Dict[str, str] = {}  # Peer ID -> address mapping (active only)
+_all_configured_peers: Dict[str, str] = {}  # All peers from config (for rediscovery)
 _heartbeat_service: Optional[HeartbeatService] = None
 _message_broker: Optional[MessageBroker] = None
 _cluster_manager: Optional[ClusterManager] = None
@@ -98,6 +99,68 @@ def get_node_id() -> Optional[str]:
         return _settings.node_id
     return None
 
+
+async def _check_peer_available(address: str, timeout: float = 2.0) -> bool:
+    """Check if a peer is reachable and responding."""
+    try:
+        async with aiohttp.ClientSession() as session:
+            url = f"http://{address}/api/v1/health/live"
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=timeout)) as resp:
+                return resp.status == 200
+    except Exception:
+        return False
+
+
+async def _discover_peers_via_dns(
+    node_id: str, 
+    max_nodes: int = 10, 
+    port: int = 8000
+) -> Dict[str, str]:
+    """
+    Discover peers using Docker's internal DNS.
+    
+    In Docker Swarm with overlay networks, containers can be discovered
+    by their DNS names (e.g., node-1, node-2). The DNS resolver is at 127.0.0.11.
+    
+    Args:
+        node_id: This node's ID (to exclude from results)
+        max_nodes: Maximum number of nodes to check (node-1 to node-{max_nodes})
+        port: The internal port to use (default 8000)
+    
+    Returns:
+        Dict mapping peer_id -> address (e.g., {"node-2": "node-2:8000"})
+    """
+    import socket
+    
+    discovered_peers: Dict[str, str] = {}
+    
+    for i in range(1, max_nodes + 1):
+        peer_name = f"node-{i}"
+        
+        # Skip ourselves
+        if peer_name == node_id:
+            continue
+        
+        try:
+            # Try to resolve the DNS name
+            # In Docker, this uses the internal DNS at 127.0.0.11
+            ip_address = socket.gethostbyname(peer_name)
+            
+            # DNS resolved, now check if the peer is actually responding
+            peer_addr = f"{peer_name}:{port}"
+            if await _check_peer_available(peer_addr, timeout=1.0):
+                discovered_peers[peer_name] = peer_addr
+                logger.debug(f"Discovered peer via DNS: {peer_name} -> {ip_address}")
+            else:
+                logger.debug(f"Peer {peer_name} resolved but not responding")
+                
+        except socket.gaierror:
+            # DNS resolution failed - peer doesn't exist
+            logger.debug(f"Peer {peer_name} not found in DNS")
+        except Exception as e:
+            logger.debug(f"Error discovering peer {peer_name}: {e}")
+    
+    return discovered_peers
 
 
 # =============================================================================
@@ -232,13 +295,17 @@ async def init_dependencies(settings: Settings):
     # =========================================================================
     global _bully_election, _bully_peers
     
-    bully_peers: Dict[str, str] = {}
+    # Parse all configured peers
+    all_configured_peers: Dict[str, str] = {}  # All peers from config
+    bully_peers: Dict[str, str] = {}  # Active peers only
+    
     if raft_peers:
         for peer_address in raft_peers:
-            # Formato soportado:
-            # 1. "node-1@192.168.1.11:8001" -> peer_id = "node-1"
-            # 2. "192.168.1.11:8001" -> peer_id derivado del puerto (8001 -> node-1)
-            # 3. "distrisearch-node-1:8000" -> peer_id = "node-1"
+            # Formatos soportados (PREFERIR nombres DNS internos de Docker):
+            # 1. "node-1:8000" -> peer_id = "node-1" (DNS interno de Docker - PREFERIDO)
+            # 2. "node-1@host:port" -> peer_id = "node-1" (formato explícito)
+            # 3. "distrisearch-node-1:8000" -> peer_id = "node-1" (Swarm service name)
+            # 4. "192.168.1.11:8001" -> peer_id derivado del puerto (legacy)
             
             if "@" in peer_address:
                 # Formato explícito: node-id@host:port
@@ -248,11 +315,15 @@ async def init_dependencies(settings: Settings):
                 peer_host = peer_address.split(":")[0]
                 peer_port = peer_address.split(":")[1] if ":" in peer_address else "8000"
                 
-                if peer_host.startswith("distrisearch-"):
-                    # Docker Swarm service name format
+                if peer_host.startswith("node-"):
+                    # Docker internal DNS format: node-1:8000, node-2:8000, etc.
+                    # This is the PREFERRED format for overlay networks
+                    peer_id = peer_host
+                elif peer_host.startswith("distrisearch-"):
+                    # Docker Swarm service name format: distrisearch-node-1:8000
                     peer_id = peer_host.replace("distrisearch-", "")
                 elif peer_host.replace(".", "").isdigit():
-                    # IP address format - derive node_id from port
+                    # IP address format (legacy) - derive node_id from port
                     # Convention: 8001 -> node-1, 8002 -> node-2, etc.
                     try:
                         port_num = int(peer_port)
@@ -263,14 +334,27 @@ async def init_dependencies(settings: Settings):
                     except ValueError:
                         peer_id = peer_host
                 else:
+                    # Generic hostname
                     peer_id = peer_host
             
             if peer_id != node_id:
-                bully_peers[peer_id] = peer_address
-                logger.debug(f"Added Bully peer: {peer_id} -> {peer_address}")
+                all_configured_peers[peer_id] = peer_address
     
-    # Store globally for access by other modules
+    # Pre-check which peers are actually available
+    logger.info(f"Checking availability of {len(all_configured_peers)} configured peers...")
+    for peer_id, peer_addr in all_configured_peers.items():
+        if await _check_peer_available(peer_addr, timeout=2.0):
+            bully_peers[peer_id] = peer_addr
+            logger.info(f"Peer {peer_id} at {peer_addr} is AVAILABLE")
+        else:
+            logger.warning(f"Peer {peer_id} at {peer_addr} is NOT available (skipping for now)")
+    
+    logger.info(f"Active Bully peers: {len(bully_peers)} of {len(all_configured_peers)} configured")
+    
+    # Store globally for access by other modules and periodic rediscovery
+    global _all_configured_peers
     _bully_peers = bully_peers.copy()
+    _all_configured_peers = all_configured_peers.copy()
     
     bully_sender = await _create_bully_sender(settings)
     
@@ -377,7 +461,85 @@ async def init_dependencies(settings: Settings):
     # =========================================================================
     asyncio.create_task(_periodic_full_sync(bully_peers, interval=60.0))
     
+    # =========================================================================
+    # 10. Schedule periodic peer discovery (for nodes that come online later)
+    # =========================================================================
+    asyncio.create_task(_periodic_peer_discovery(interval=30.0))
+    
     logger.info("Dependencies initialized successfully")
+
+
+async def _periodic_peer_discovery(interval: float = 30.0):
+    """
+    Periodically check for new peers that might have come online.
+    
+    This uses Docker's internal DNS to discover peers dynamically,
+    in addition to checking configured peers.
+    """
+    global _bully_peers, _all_configured_peers, _bully_election, _cluster_manager
+    
+    # Get our own node_id from settings
+    from ..config import get_settings
+    settings = get_settings()
+    node_id = settings.node_id or "unknown"
+    
+    await asyncio.sleep(interval)  # Initial delay before first check
+    
+    while True:
+        try:
+            new_peers_found = False
+            
+            # Method 1: Check configured peers that were unavailable at startup
+            for peer_id, peer_addr in _all_configured_peers.items():
+                if peer_id not in _bully_peers:
+                    if await _check_peer_available(peer_addr, timeout=2.0):
+                        _bully_peers[peer_id] = peer_addr
+                        logger.info(f"Discovered configured peer: {peer_id} at {peer_addr}")
+                        new_peers_found = True
+            
+            # Method 2: Discover new peers via Docker DNS (for dynamic scaling)
+            dns_peers = await _discover_peers_via_dns(node_id, max_nodes=10, port=8000)
+            for peer_id, peer_addr in dns_peers.items():
+                if peer_id not in _bully_peers:
+                    _bully_peers[peer_id] = peer_addr
+                    _all_configured_peers[peer_id] = peer_addr  # Add to config too
+                    logger.info(f"Discovered peer via DNS: {peer_id} at {peer_addr}")
+                    new_peers_found = True
+            
+            # If new peers were found, update Bully election and cluster manager
+            if new_peers_found:
+                if _bully_election:
+                    # Update Bully election with new peers
+                    existing_peers = set(_bully_election.peers.keys())
+                    for peer_id, peer_addr in _bully_peers.items():
+                        if peer_id not in existing_peers:
+                            _bully_election.add_peer(peer_id, peer_addr)
+                    
+                    # Trigger re-election to include new peers
+                    await _bully_election.start_election()
+                
+                # Update cluster manager
+                if _cluster_manager and _bully_election and _bully_election.leader_id:
+                    await _cluster_manager.handle_leader_elected(
+                        _bully_election.leader_id, _bully_peers
+                    )
+            
+            # Also check for dead peers and update their status
+            for peer_id, peer_addr in list(_bully_peers.items()):
+                if not await _check_peer_available(peer_addr, timeout=2.0):
+                    # Peer is not responding - update cluster manager status
+                    if _cluster_manager and hasattr(_cluster_manager, '_nodes'):
+                        if peer_id in _cluster_manager._nodes:
+                            from ..distributed.communication.heartbeat import NodeStatus
+                            _cluster_manager._nodes[peer_id].status = NodeStatus.DEAD
+                            logger.warning(f"Peer {peer_id} is now DEAD")
+            
+            await asyncio.sleep(interval)
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Error in peer discovery: {e}")
+            await asyncio.sleep(interval)
 
 
 async def _sync_users_from_peers_delayed(peers: Dict[str, str], delay: float):
