@@ -235,14 +235,39 @@ async def init_dependencies(settings: Settings):
     bully_peers: Dict[str, str] = {}
     if raft_peers:
         for peer_address in raft_peers:
-            peer_host = peer_address.split(":")[0]
-            if peer_host.startswith("distrisearch-"):
-                peer_id = peer_host.replace("distrisearch-", "")
+            # Formato soportado:
+            # 1. "node-1@192.168.1.11:8001" -> peer_id = "node-1"
+            # 2. "192.168.1.11:8001" -> peer_id derivado del puerto (8001 -> node-1)
+            # 3. "distrisearch-node-1:8000" -> peer_id = "node-1"
+            
+            if "@" in peer_address:
+                # Formato explícito: node-id@host:port
+                peer_id, actual_address = peer_address.split("@", 1)
+                peer_address = actual_address
             else:
-                peer_id = peer_host
+                peer_host = peer_address.split(":")[0]
+                peer_port = peer_address.split(":")[1] if ":" in peer_address else "8000"
+                
+                if peer_host.startswith("distrisearch-"):
+                    # Docker Swarm service name format
+                    peer_id = peer_host.replace("distrisearch-", "")
+                elif peer_host.replace(".", "").isdigit():
+                    # IP address format - derive node_id from port
+                    # Convention: 8001 -> node-1, 8002 -> node-2, etc.
+                    try:
+                        port_num = int(peer_port)
+                        if port_num >= 8001 and port_num <= 8099:
+                            peer_id = f"node-{port_num - 8000}"
+                        else:
+                            peer_id = f"node-{peer_host.replace('.', '-')}-{peer_port}"
+                    except ValueError:
+                        peer_id = peer_host
+                else:
+                    peer_id = peer_host
             
             if peer_id != node_id:
                 bully_peers[peer_id] = peer_address
+                logger.debug(f"Added Bully peer: {peer_id} -> {peer_address}")
     
     # Store globally for access by other modules
     _bully_peers = bully_peers.copy()
