@@ -1098,14 +1098,16 @@ class ClusterManager:
                     if peer_id not in self._nodes:
                         membership = NodeMembership(
                             node_id=peer_id,
-                            address=peer_address.split(":")[0],  # Remove port
+                            address=peer_address,  # Keep full address with port (host:port)
                             role=peer_role,
                             status=peer_status,
                             metadata={},
                         )
                         self._nodes[peer_id] = membership
-                        logger.info(f"Registered peer {peer_id} as {peer_status.value}")
+                        logger.info(f"Registered peer {peer_id} at {peer_address} as {peer_status.value}")
                     else:
+                        # Update address in case it changed
+                        self._nodes[peer_id].address = peer_address
                         self._nodes[peer_id].status = peer_status
                         self._nodes[peer_id].role = peer_role
             

@@ -582,12 +582,12 @@ class UserDocumentRegistry:
             merged_vc[key] = max(merged_vc.get(key, 0), val)
         merged_vc[self.node_id] = merged_vc.get(self.node_id, 0) + 1
         
-        # Prefer non-deleted, or latest update
-        if e1.is_deleted and not e2.is_deleted:
-            base = e2
-        elif e2.is_deleted and not e1.is_deleted:
-            base = e1
-        elif e1.updated_at >= e2.updated_at:
+        # DELETE WINS: If either entry is deleted, the merged result is deleted
+        # This prevents "resurrection" of deleted documents during sync
+        is_deleted = e1.is_deleted or e2.is_deleted
+        
+        # Use the most recent entry as base for other fields
+        if e1.updated_at >= e2.updated_at:
             base = e1
         else:
             base = e2
@@ -600,6 +600,6 @@ class UserDocumentRegistry:
             filename=base.filename,
             created_at=min(e1.created_at, e2.created_at),
             updated_at=datetime.now(),
-            is_deleted=base.is_deleted,
+            is_deleted=is_deleted,  # DELETE WINS
             vector_clock=merged_vc,
         )

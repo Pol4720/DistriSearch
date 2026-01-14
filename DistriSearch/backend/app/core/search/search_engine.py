@@ -726,9 +726,8 @@ class SearchEngine:
                         if is_substring_match:
                             bm25_score += 5.0
                         
-                        doc_id = doc_dict.get("id") or doc_dict.get("_id", "")
-                        if hasattr(doc_id, '__str__'):
-                            doc_id = str(doc_id)
+                        # Use _id (MongoDB standard) or id as fallback
+                        doc_id = str(doc_dict.get("_id") or doc_dict.get("id", ""))
                         
                         local_result = {
                             "document_id": doc_id,

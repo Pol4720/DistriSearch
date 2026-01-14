@@ -26,8 +26,8 @@ HTTPS_PORT="443"
 NETWORK_NAME="distrisearch-network"  # Red overlay por defecto
 
 # IPs de las máquinas
-MACHINE_A_IP="192.168.1.11"
-MACHINE_B_IP="192.168.1.13"
+MACHINE_A_IP="192.168.61.32"
+MACHINE_B_IP="192.168.61.33"
 
 # Colores
 RED='\033[0;31m'
@@ -112,70 +112,72 @@ echo ""
 # Generar configuración de upstreams dinámicos
 # ============================================================================
 generate_upstreams() {
-    log_info "Generando configuración de upstreams..."
+    log_info "Detectando nodos activos en la red..."
     
     UPSTREAM_DIR="${PROJECT_ROOT}/docker/load-balancer/conf.d/upstreams"
     mkdir -p "$UPSTREAM_DIR"
     
-    # Determinar qué nodos son locales vs remotos
-    if [ "$LOCAL_IP" = "$MACHINE_A_IP" ]; then
-        LOCAL_NODES="server ${MACHINE_A_IP}:8001; server ${MACHINE_A_IP}:8002;"
-        REMOTE_NODES="server ${MACHINE_B_IP}:8003 backup;"
-    elif [ "$LOCAL_IP" = "$MACHINE_B_IP" ]; then
-        LOCAL_NODES="server ${MACHINE_B_IP}:8003;"
-        REMOTE_NODES="server ${MACHINE_A_IP}:8001 backup; server ${MACHINE_A_IP}:8002 backup;"
-    else
-        # Si no coincide, usar todos como iguales
-        LOCAL_NODES="server ${MACHINE_A_IP}:8001; server ${MACHINE_A_IP}:8002; server ${MACHINE_B_IP}:8003;"
-        REMOTE_NODES=""
+    # Detectar contenedores distrisearch-node-* activos
+    ACTIVE_NODES=$(docker ps --format '{{.Names}}' | grep "^distrisearch-node-node-" | sed 's/distrisearch-node-//' | sort)
+    
+    if [ -z "$ACTIVE_NODES" ]; then
+        log_warn "No se encontraron nodos activos. Usando configuración por defecto (node-1, node-2)"
+        ACTIVE_NODES="node-1
+node-2"
     fi
     
+    log_info "Nodos detectados:"
+    echo "$ACTIVE_NODES" | while read node; do
+        echo "   - $node"
+    done
+    
+    # Generar líneas de servidor para API (puerto 8000)
+    API_SERVERS=""
+    FRONTEND_SERVERS=""
+    while read node; do
+        if [ -n "$node" ]; then
+            API_SERVERS="${API_SERVERS}    server ${node}:8000 max_fails=3 fail_timeout=10s;
+"
+            FRONTEND_SERVERS="${FRONTEND_SERVERS}    server ${node}:80 max_fails=3 fail_timeout=10s;
+"
+        fi
+    done <<< "$ACTIVE_NODES"
+    
+    # Generar configuración de upstreams
     cat > "${UPSTREAM_DIR}/nodes.conf" << EOF
 # Upstream generado automáticamente - $(date)
-# IP Local: $LOCAL_IP
+# Nodos detectados: $(echo $ACTIVE_NODES | tr '\n' ' ')
 
-# API endpoints - prioriza nodos locales
+# API endpoints - todos los nodos activos
 upstream node_api {
     least_conn;
-    ${LOCAL_NODES}
-    ${REMOTE_NODES}
-    keepalive 16;
+${API_SERVERS}    keepalive 16;
 }
 
 # Frontend endpoints
 upstream node_frontend {
     least_conn;
-    server ${MACHINE_A_IP}:8081;
-    server ${MACHINE_A_IP}:8082;
-    server ${MACHINE_B_IP}:8083;
-    keepalive 8;
+${FRONTEND_SERVERS}    keepalive 8;
 }
 
 # Para compatibilidad con configuración existente
 upstream master_api {
     least_conn;
-    ${LOCAL_NODES}
-    ${REMOTE_NODES}
-    keepalive 16;
+${API_SERVERS}    keepalive 16;
 }
 
 upstream slave_api {
     least_conn;
-    ${LOCAL_NODES}
-    ${REMOTE_NODES}
-    keepalive 16;
+${API_SERVERS}    keepalive 16;
 }
 
 upstream slave_frontend {
     least_conn;
-    server ${MACHINE_A_IP}:8081;
-    server ${MACHINE_A_IP}:8082;
-    server ${MACHINE_B_IP}:8083;
-    keepalive 8;
+${FRONTEND_SERVERS}    keepalive 8;
 }
 EOF
 
-    log_info "Configuración de upstreams generada"
+    log_info "Configuración de upstreams generada con $(echo "$ACTIVE_NODES" | wc -l) nodos"
 }
 
 # ============================================================================
@@ -235,6 +237,12 @@ deploy_container() {
     DOCKER_CMD="$DOCKER_CMD -p ${HTTP_PORT}:80"
     DOCKER_CMD="$DOCKER_CMD -p ${HTTPS_PORT}:443"
     DOCKER_CMD="$DOCKER_CMD -p 8080:8080"  # Status endpoint
+    
+    # Variables de entorno para supervisord
+    DOCKER_CMD="$DOCKER_CMD -e HA_MODE=active"
+    DOCKER_CMD="$DOCKER_CMD -e NODE_SERVICE=distrisearch-node"
+    DOCKER_CMD="$DOCKER_CMD -e NODE_PORT=8000"
+    DOCKER_CMD="$DOCKER_CMD -e UPDATE_INTERVAL=30"
     
     # Montar configuraciones
     DOCKER_CMD="$DOCKER_CMD -v ${PROJECT_ROOT}/docker/load-balancer/conf.d/upstreams:/etc/nginx/conf.d/upstreams:ro"

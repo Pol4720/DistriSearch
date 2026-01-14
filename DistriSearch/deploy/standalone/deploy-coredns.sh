@@ -45,6 +45,7 @@ show_help() {
     echo "  $0 [opciones]"
     echo ""
     echo -e "${BLUE}OPCIONES:${NC}"
+    echo "  --port            Puerto DNS (default: 5353)"
     echo "  --network, -n     Red Docker a conectar (default: distrisearch-network)"
     echo "  --no-overlay      No conectar a red overlay"
     echo "  --rebuild         Reconstruir imagen antes de desplegar"
@@ -58,6 +59,10 @@ REBUILD=false
 USE_OVERLAY=true
 while [[ $# -gt 0 ]]; do
     case $1 in
+        --port)
+            DNS_PORT="$2"
+            shift 2
+            ;;
         --network|-n)
             NETWORK_NAME="$2"
             shift 2

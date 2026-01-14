@@ -166,6 +166,7 @@ class NodeRole(str, Enum):
     MASTER = "master"
     SLAVE = "slave"
     CANDIDATE = "candidate"
+    PEER = "peer"  # For Bully election - role determined dynamically
 
 
 class NodeInfo(BaseModel):
