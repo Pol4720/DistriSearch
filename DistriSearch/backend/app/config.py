@@ -53,7 +53,10 @@ class Settings(BaseSettings):
     grpc_max_workers: int = Field(default=10, alias="GRPC_MAX_WORKERS")
     
     # Replication
-    replication_factor: int = Field(default=2, alias="REPLICATION_FACTOR")
+    # Factor de replicación = 3 (igual al número de nodos standalone)
+    # Esto garantiza que cada documento esté en TODOS los nodos,
+    # evitando pérdida de datos ante cualquier partición de red.
+    replication_factor: int = Field(default=3, alias="REPLICATION_FACTOR")
     min_replicas_for_write: int = Field(default=1, alias="MIN_REPLICAS_FOR_WRITE")
     
     # Raft Consensus (milliseconds)

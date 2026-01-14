@@ -83,12 +83,12 @@ class ReplicaTracker:
     - Version tracking for consistency
     """
     
-    def __init__(self, default_replication_factor: int = 2):
+    def __init__(self, default_replication_factor: int = 3):
         """
         Initialize replica tracker.
         
         Args:
-            default_replication_factor: Default number of replicas
+            default_replication_factor: Default number of replicas (3 = all nodes for full replication)
         """
         self.default_replication_factor = default_replication_factor
         

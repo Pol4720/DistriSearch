@@ -56,7 +56,7 @@ class PartitionManager:
     def __init__(
         self,
         leaf_size: int = 50,
-        replication_factor: int = 2,
+        replication_factor: int = 3,
         distance_weights: Optional[DistanceWeights] = None,
         vp_selection: VantagePointSelection = VantagePointSelection.K_MEDOIDS
     ):
@@ -65,7 +65,7 @@ class PartitionManager:
         
         Args:
             leaf_size: Maximum documents per VP-Tree leaf
-            replication_factor: Number of replicas per document
+            replication_factor: Number of replicas per document (default=3 for full replication)
             distance_weights: Weights for distance calculation
             vp_selection: Vantage point selection strategy
         """

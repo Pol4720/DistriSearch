@@ -70,7 +70,7 @@ class NodeAssigner:
     def __init__(
         self,
         distance_calculator: Optional[DistanceCalculator] = None,
-        replication_factor: int = 2,
+        replication_factor: int = 3,
         default_strategy: AssignmentStrategy = AssignmentStrategy.SEMANTIC_AFFINITY
     ):
         """
@@ -78,7 +78,7 @@ class NodeAssigner:
         
         Args:
             distance_calculator: Calculator for document distances
-            replication_factor: Number of replicas per document
+            replication_factor: Number of replicas per document (default=3 for full replication)
             default_strategy: Default assignment strategy
         """
         self.distance_calc = distance_calculator or DistanceCalculator()
