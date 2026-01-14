@@ -1,0 +1,312 @@
+# ============================================================================
+# DistriSearch Standalone Node - Dockerfile Optimizado
+# ============================================================================
+# Imagen all-in-one que contiene:
+# - MongoDB 4.4 (desde imagen oficial)
+# - Redis (desde imagen oficial)
+# - Backend FastAPI
+# - Frontend React (servido por Nginx)
+#
+# OPTIMIZACIÓN: Usa multi-stage build copiando binarios de imágenes oficiales
+# en lugar de instalar desde repositorios (mucho más rápido)
+# ============================================================================
+
+# ═══════════════════════════════════════════════════════════════════════════
+# STAGE 1: Frontend Builder
+# ═══════════════════════════════════════════════════════════════════════════
+FROM node:18-alpine AS frontend-builder
+
+WORKDIR /frontend
+
+# Copiar archivos de dependencias primero (para cache)
+COPY frontend/package*.json ./
+
+# Instalar dependencias con reintentos
+RUN npm ci --legacy-peer-deps || npm ci --legacy-peer-deps || npm install --legacy-peer-deps
+
+# Copiar código fuente
+COPY frontend/ .
+
+# Build de producción
+RUN npm run build
+
+# ═══════════════════════════════════════════════════════════════════════════
+# STAGE 2: Backend Builder - Instalar dependencias Python
+# ═══════════════════════════════════════════════════════════════════════════
+FROM python:3.11-slim AS backend-builder
+
+WORKDIR /app
+
+# Instalar dependencias de build
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Crear virtualenv
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Copiar requirements y shared primero
+COPY backend/requirements.txt .
+COPY shared/ /app/shared/
+
+# Instalar dependencias Python
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# ═══════════════════════════════════════════════════════════════════════════
+# STAGE 3: Obtener MongoDB desde imagen oficial
+# ═══════════════════════════════════════════════════════════════════════════
+FROM mongo:4.4 AS mongodb-source
+
+# ═══════════════════════════════════════════════════════════════════════════
+# STAGE 4: Obtener Redis desde imagen oficial
+# ═══════════════════════════════════════════════════════════════════════════
+FROM redis:7-alpine AS redis-source
+
+# ═══════════════════════════════════════════════════════════════════════════
+# STAGE 5: Runtime Final
+# ═══════════════════════════════════════════════════════════════════════════
+FROM debian:bookworm-slim AS runtime
+
+LABEL maintainer="DistriSearch Team"
+LABEL description="DistriSearch Standalone Node - All-in-one container"
+LABEL version="2.0"
+
+# Evitar prompts interactivos
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Instalar dependencias del sistema mínimas
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-venv \
+    nginx \
+    supervisor \
+    curl \
+    procps \
+    openssl \
+    ca-certificates \
+    libcurl4 \
+    libssl3 \
+    libc6 \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Copiar MongoDB desde imagen oficial
+# ═══════════════════════════════════════════════════════════════════════════
+COPY --from=mongodb-source /usr/bin/mongod /usr/bin/mongod
+COPY --from=mongodb-source /usr/bin/mongo /usr/bin/mongo
+COPY --from=mongodb-source /usr/bin/mongos /usr/bin/mongos
+
+# Crear usuario y directorios para MongoDB
+RUN groupadd -r mongodb && useradd -r -g mongodb mongodb && \
+    mkdir -p /data/db /var/log/mongodb /var/run/mongodb && \
+    chown -R mongodb:mongodb /data/db /var/log/mongodb /var/run/mongodb
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Copiar Redis desde imagen oficial
+# ═══════════════════════════════════════════════════════════════════════════
+COPY --from=redis-source /usr/local/bin/redis-server /usr/bin/redis-server
+COPY --from=redis-source /usr/local/bin/redis-cli /usr/bin/redis-cli
+
+# Crear usuario y directorios para Redis
+RUN groupadd -r redis && useradd -r -g redis redis && \
+    mkdir -p /data/redis /var/log/redis /var/run/redis && \
+    chown -R redis:redis /data/redis /var/log/redis /var/run/redis
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Copiar virtualenv de Python con dependencias
+# ═══════════════════════════════════════════════════════════════════════════
+COPY --from=backend-builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Crear estructura de directorios
+RUN mkdir -p /app /var/log/supervisor /var/run/supervisor /etc/nginx/ssl
+
+# Copiar código del backend
+WORKDIR /app
+COPY backend/ /app/backend/
+COPY shared/ /app/shared/
+
+# Copiar frontend compilado a Nginx
+COPY --from=frontend-builder /frontend/dist /usr/share/nginx/html
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Configuración de MongoDB
+# ═══════════════════════════════════════════════════════════════════════════
+RUN echo 'storage:\n\
+  dbPath: /data/db\n\
+  journal:\n\
+    enabled: true\n\
+systemLog:\n\
+  destination: file\n\
+  path: /var/log/mongodb/mongod.log\n\
+  logAppend: true\n\
+net:\n\
+  port: 27017\n\
+  bindIp: 127.0.0.1\n\
+processManagement:\n\
+  fork: false' > /etc/mongod.conf
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Configuración de Redis
+# ═══════════════════════════════════════════════════════════════════════════
+RUN mkdir -p /etc/redis && echo '\
+bind 127.0.0.1\n\
+port 6379\n\
+dir /data/redis\n\
+daemonize no\n\
+logfile /var/log/redis/redis.log\n\
+loglevel notice\n\
+maxmemory 256mb\n\
+maxmemory-policy allkeys-lru\n\
+appendonly yes\n\
+appendfilename "appendonly.aof"' > /etc/redis/redis.conf
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Configuración de Nginx
+# ═══════════════════════════════════════════════════════════════════════════
+RUN rm -f /etc/nginx/sites-enabled/default && \
+    echo 'server {\n\
+    listen 80;\n\
+    listen [::]:80;\n\
+    server_name _;\n\
+\n\
+    # Frontend React\n\
+    root /usr/share/nginx/html;\n\
+    index index.html;\n\
+\n\
+    # API proxy - FastAPI backend\n\
+    location /api/ {\n\
+        proxy_pass http://127.0.0.1:8000;\n\
+        proxy_http_version 1.1;\n\
+        proxy_set_header Host $host;\n\
+        proxy_set_header X-Real-IP $remote_addr;\n\
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n\
+        proxy_set_header X-Forwarded-Proto $scheme;\n\
+        proxy_connect_timeout 60s;\n\
+        proxy_send_timeout 60s;\n\
+        proxy_read_timeout 60s;\n\
+        client_max_body_size 100M;\n\
+    }\n\
+\n\
+    # WebSocket support\n\
+    location /ws/ {\n\
+        proxy_pass http://127.0.0.1:8000;\n\
+        proxy_http_version 1.1;\n\
+        proxy_set_header Upgrade $http_upgrade;\n\
+        proxy_set_header Connection "upgrade";\n\
+        proxy_set_header Host $host;\n\
+        proxy_read_timeout 86400s;\n\
+    }\n\
+\n\
+    # Health check\n\
+    location /health {\n\
+        proxy_pass http://127.0.0.1:8000/api/v1/health/live;\n\
+        proxy_http_version 1.1;\n\
+    }\n\
+\n\
+    # React SPA - todas las rutas van al index.html\n\
+    location / {\n\
+        try_files $uri $uri/ /index.html;\n\
+    }\n\
+\n\
+    # Cache para assets estáticos\n\
+    location ~* \\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {\n\
+        expires 1y;\n\
+        add_header Cache-Control "public, immutable";\n\
+    }\n\
+}' > /etc/nginx/sites-available/distrisearch && \
+    ln -sf /etc/nginx/sites-available/distrisearch /etc/nginx/sites-enabled/
+
+# Generar certificado SSL auto-firmado (para desarrollo)
+RUN openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+    -keyout /etc/nginx/ssl/server.key \
+    -out /etc/nginx/ssl/server.crt \
+    -subj "/C=ES/ST=State/L=City/O=DistriSearch/CN=localhost"
+
+# Configuración HTTPS
+RUN echo 'server {\n\
+    listen 443 ssl http2;\n\
+    listen [::]:443 ssl http2;\n\
+    server_name _;\n\
+\n\
+    ssl_certificate /etc/nginx/ssl/server.crt;\n\
+    ssl_certificate_key /etc/nginx/ssl/server.key;\n\
+    ssl_protocols TLSv1.2 TLSv1.3;\n\
+\n\
+    root /usr/share/nginx/html;\n\
+    index index.html;\n\
+\n\
+    location /api/ {\n\
+        proxy_pass http://127.0.0.1:8000;\n\
+        proxy_http_version 1.1;\n\
+        proxy_set_header Host $host;\n\
+        proxy_set_header X-Real-IP $remote_addr;\n\
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n\
+        proxy_set_header X-Forwarded-Proto https;\n\
+        proxy_connect_timeout 60s;\n\
+        proxy_send_timeout 60s;\n\
+        proxy_read_timeout 60s;\n\
+        client_max_body_size 100M;\n\
+    }\n\
+\n\
+    location /ws/ {\n\
+        proxy_pass http://127.0.0.1:8000;\n\
+        proxy_http_version 1.1;\n\
+        proxy_set_header Upgrade $http_upgrade;\n\
+        proxy_set_header Connection "upgrade";\n\
+        proxy_set_header Host $host;\n\
+        proxy_read_timeout 86400s;\n\
+    }\n\
+\n\
+    location /health {\n\
+        proxy_pass http://127.0.0.1:8000/api/v1/health/live;\n\
+    }\n\
+\n\
+    location / {\n\
+        try_files $uri $uri/ /index.html;\n\
+    }\n\
+\n\
+    location ~* \\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {\n\
+        expires 1y;\n\
+        add_header Cache-Control "public, immutable";\n\
+    }\n\
+}' > /etc/nginx/sites-available/distrisearch-ssl && \
+    ln -sf /etc/nginx/sites-available/distrisearch-ssl /etc/nginx/sites-enabled/
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Copiar configuración de Supervisor
+# ═══════════════════════════════════════════════════════════════════════════
+COPY docker/node-standalone/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Variables de entorno por defecto
+# ═══════════════════════════════════════════════════════════════════════════
+ENV NODE_ID="node-1" \
+    NODE_ROLE="slave" \
+    NODE_ADDRESS="localhost:8000" \
+    API_PORT="8000" \
+    MONGODB_URI="mongodb://127.0.0.1:27017" \
+    MONGODB_DATABASE="distrisearch" \
+    REDIS_URL="redis://127.0.0.1:6379/0" \
+    LOCAL_REDIS_URL="redis://127.0.0.1:6379/0" \
+    COORDINATOR_REDIS_URL="redis://127.0.0.1:6379/0" \
+    JWT_SECRET="distrisearch-secret-key" \
+    BULLY_ENABLED="true" \
+    BULLY_PEERS="" \
+    CLUSTER_ID="distrisearch-cluster" \
+    PYTHONPATH="/app" \
+    PYTHONUNBUFFERED="1"
+
+# Exponer puertos
+EXPOSE 80 443 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=45s --retries=3 \
+    CMD curl -sf http://127.0.0.1:8000/api/v1/health/live || exit 1
+
+# Ejecutar supervisor
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
