@@ -112,65 +112,72 @@ echo ""
 # Generar configuración de upstreams dinámicos
 # ============================================================================
 generate_upstreams() {
-    log_info "Generando configuración de upstreams..."
+    log_info "Detectando nodos activos en la red..."
     
     UPSTREAM_DIR="${PROJECT_ROOT}/docker/load-balancer/conf.d/upstreams"
     mkdir -p "$UPSTREAM_DIR"
     
-    # IMPORTANTE: El load balancer está en la red overlay de Docker
-    # Por lo tanto, debe usar los nombres DNS internos de Docker (node-X:8000)
-    # NO las IPs de host ni los puertos mapeados
+    # Detectar contenedores distrisearch-node-* activos
+    ACTIVE_NODES=$(docker ps --format '{{.Names}}' | grep "^distrisearch-node-node-" | sed 's/distrisearch-node-//' | sort)
     
-    cat > "${UPSTREAM_DIR}/nodes.conf" << 'EOF'
-# Upstream generado automáticamente
-# Usa nombres DNS internos de Docker (red overlay)
+    if [ -z "$ACTIVE_NODES" ]; then
+        log_warn "No se encontraron nodos activos. Usando configuración por defecto (node-1, node-2)"
+        ACTIVE_NODES="node-1
+node-2"
+    fi
+    
+    log_info "Nodos detectados:"
+    echo "$ACTIVE_NODES" | while read node; do
+        echo "   - $node"
+    done
+    
+    # Generar líneas de servidor para API (puerto 8000)
+    API_SERVERS=""
+    FRONTEND_SERVERS=""
+    while read node; do
+        if [ -n "$node" ]; then
+            API_SERVERS="${API_SERVERS}    server ${node}:8000 max_fails=3 fail_timeout=10s;
+"
+            FRONTEND_SERVERS="${FRONTEND_SERVERS}    server ${node}:80 max_fails=3 fail_timeout=10s;
+"
+        fi
+    done <<< "$ACTIVE_NODES"
+    
+    # Generar configuración de upstreams
+    cat > "${UPSTREAM_DIR}/nodes.conf" << EOF
+# Upstream generado automáticamente - $(date)
+# Nodos detectados: $(echo $ACTIVE_NODES | tr '\n' ' ')
 
-# API endpoints - todos los nodos en la red overlay
+# API endpoints - todos los nodos activos
 upstream node_api {
     least_conn;
-    # Nombres DNS internos de Docker - puerto interno 8000
-    server node-1:8000;
-    server node-2:8000;
-    server node-3:8000;
-    keepalive 16;
+${API_SERVERS}    keepalive 16;
 }
 
-# Frontend endpoints - puerto interno 80
+# Frontend endpoints
 upstream node_frontend {
     least_conn;
-    server node-1:80;
-    server node-2:80;
-    server node-3:80;
-    keepalive 8;
+${FRONTEND_SERVERS}    keepalive 8;
 }
 
 # Para compatibilidad con configuración existente
 upstream master_api {
     least_conn;
-    server node-1:8000;
-    server node-2:8000;
-    server node-3:8000;
-    keepalive 16;
+${API_SERVERS}    keepalive 16;
 }
 
 upstream slave_api {
     least_conn;
-    server node-1:8000;
-    server node-2:8000;
-    server node-3:8000;
-    keepalive 16;
+${API_SERVERS}    keepalive 16;
 }
 
 upstream slave_frontend {
     least_conn;
-    server node-1:80;
-    server node-2:80;
-    server node-3:80;
-    keepalive 8;
+${FRONTEND_SERVERS}    keepalive 8;
 }
 EOF
 
-    log_info "Configuración de upstreams generada (usando DNS interno de Docker)"
+    log_info "Configuración de upstreams generada con $(echo "$ACTIVE_NODES" | wc -l) nodos"
 }
 
 # ============================================================================
