@@ -11,14 +11,11 @@ This script tests the basic functionality of the distributed system:
 5. Tests user swap (different user accessing documents)
 6. Verifies document listing stability
 
-Requirements:
-- DistriSearch deployed on Docker Swarm with 3 nodes
-- All services running and healthy
+Updated for Standalone Deployment:
+- Machine A (192.168.1.11): Node-1 (:8001), Node-2 (:8002)
+- Machine B (192.168.1.13): Node-3 (:8003)
 
 Usage:
-    python scripts/test_scenario_1.py [--base-url http://localhost:8000] [--host HOST] [--port PORT]
-    
-Ejemplos:
     python scripts/test_scenario_1.py
     python scripts/test_scenario_1.py --host 192.168.1.11 --port 8001
     python scripts/test_scenario_1.py --base-url http://192.168.1.11:8001
@@ -34,9 +31,18 @@ from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
 from datetime import datetime
 
+# Importar configuración standalone
+try:
+    from config_standalone import DEFAULT_HOST, DEFAULT_BASE_URL, MACHINE_A_IP
+    USE_STANDALONE_CONFIG = True
+except ImportError:
+    DEFAULT_HOST = "192.168.1.11"
+    DEFAULT_BASE_URL = f"http://{DEFAULT_HOST}:8001"
+    MACHINE_A_IP = DEFAULT_HOST
+    USE_STANDALONE_CONFIG = False
+
 # Test configuration - defaults
-DEFAULT_HOST = "localhost"
-DEFAULT_PORT = "8000"
+DEFAULT_PORT = "8001"
 API_V1 = "/api/v1"
 TIMEOUT = 30.0
 

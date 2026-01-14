@@ -3,13 +3,15 @@
 Replication Viewer - Ver archivos en cada nodo con sus dueños
 Usa el endpoint /api/v1/internal/search para ver documentos LOCALES de cada nodo
 
+Actualizado para sistema Standalone:
+  - Máquina A (192.168.1.11): Node-1 (:8001), Node-2 (:8002)
+  - Máquina B (192.168.1.13): Node-3 (:8003)
+
 Uso:
-    python scripts/view_replication.py [--host HOST] [--ports PORT1,PORT2,PORT3]
-    
-Ejemplos:
     python scripts/view_replication.py
-    python scripts/view_replication.py --host 192.168.1.11
-    python scripts/view_replication.py --host 192.168.1.11 --ports 8001,8002,8003,8004,8005
+    python scripts/view_replication.py --host 192.168.1.11 --ports 8001,8002,8003
+    python scripts/view_replication.py --machine A   # Solo nodos de Máquina A
+    python scripts/view_replication.py --machine B   # Solo nodos de Máquina B
 """
 
 import argparse
@@ -17,8 +19,21 @@ import requests
 from collections import defaultdict
 from datetime import datetime
 
-DEFAULT_HOST = "localhost"
-DEFAULT_PORTS = ["8001", "8002", "8003"]
+# Importar configuración standalone
+try:
+    from config_standalone import (
+        MACHINE_A_IP, MACHINE_B_IP, 
+        DEFAULT_HOST, DEFAULT_PORTS,
+        STANDALONE_CONFIG, get_nodes_by_machine
+    )
+except ImportError:
+    # Fallback si no se puede importar
+    MACHINE_A_IP = "192.168.1.11"
+    MACHINE_B_IP = "192.168.1.13"
+    DEFAULT_HOST = MACHINE_A_IP
+    DEFAULT_PORTS = ["8001", "8002", "8003"]
+    STANDALONE_CONFIG = None
+    get_nodes_by_machine = None
 
 def main():
     parser = argparse.ArgumentParser(description="Ver replicación de documentos en DistriSearch")
@@ -26,25 +41,52 @@ def main():
                         help=f"Host/IP de los nodos (default: {DEFAULT_HOST})")
     parser.add_argument("--ports", default=",".join(DEFAULT_PORTS),
                         help=f"Puertos separados por coma (default: {','.join(DEFAULT_PORTS)})")
+    parser.add_argument("--machine", choices=["A", "B", "all"], default="all",
+                        help="Filtrar por máquina: A (192.168.1.11), B (192.168.1.13), o all")
     args = parser.parse_args()
     
-    base_url = f"http://{args.host}"
-    ports = [p.strip() for p in args.ports.split(",")]
+    # Determinar nodos a consultar
+    if args.machine == "all":
+        # Consultar todos los nodos en ambas IPs
+        nodes_to_query = []
+        if STANDALONE_CONFIG:
+            for node in STANDALONE_CONFIG["nodes"]:
+                nodes_to_query.append((node["ip"], node["api_port"], node["id"]))
+        else:
+            # Fallback: usar host único con múltiples puertos
+            ports = [p.strip() for p in args.ports.split(",")]
+            for port in ports:
+                node_id = f"node-{int(port) - 8000}"
+                nodes_to_query.append((args.host, port, node_id))
+    elif args.machine in ["A", "B"]:
+        # Solo nodos de una máquina específica
+        if get_nodes_by_machine:
+            nodes = get_nodes_by_machine(args.machine)
+            nodes_to_query = [(n["ip"], n["api_port"], n["id"]) for n in nodes]
+        else:
+            ip = MACHINE_A_IP if args.machine == "A" else MACHINE_B_IP
+            if args.machine == "A":
+                nodes_to_query = [(ip, 8001, "node-1"), (ip, 8002, "node-2")]
+            else:
+                nodes_to_query = [(ip, 8003, "node-3")]
+    else:
+        ports = [p.strip() for p in args.ports.split(",")]
+        nodes_to_query = [(args.host, p, f"node-{int(p) - 8000}") for p in ports]
     
     print("\n" + "="*70)
-    print("  REPLICATION VIEWER - DistriSearch")
+    print("  REPLICATION VIEWER - DistriSearch Standalone")
     print("="*70)
     print(f"  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"  Host: {args.host}")
-    print(f"  Puertos: {', '.join(ports)}")
+    print(f"  Máquina A: {MACHINE_A_IP} (node-1, node-2)")
+    print(f"  Máquina B: {MACHINE_B_IP} (node-3)")
+    print(f"  Consultando: {len(nodes_to_query)} nodos")
     print("="*70)
     
     # Consultar CADA NODO usando endpoint INTERNO/LOCAL
     docs_by_node = {}
     queries = ["document", "test", "a", "e", "i", "o", "u", "the", "de", "la", "pdf", "report", "file"]
     
-    for port in ports:
-        node_id = f"node-{int(port) - 8000}"
+    for ip, port, node_id in nodes_to_query:
         seen_ids = set()
         node_docs = []
         
@@ -52,7 +94,7 @@ def main():
             try:
                 # Usar endpoint INTERNO que solo busca en MongoDB local
                 resp = requests.post(
-                    f"{base_url}:{port}/api/v1/internal/search",
+                    f"http://{ip}:{port}/api/v1/internal/search",
                     json={"query": query, "top_k": 500},
                     timeout=10
                 )
@@ -71,20 +113,19 @@ def main():
     colors = {
         "node-1": "\033[92m", "node-2": "\033[94m", "node-3": "\033[95m",
         "node-4": "\033[96m", "node-5": "\033[93m", "node-6": "\033[91m",
-        "node-7": "\033[92m", "node-8": "\033[94m", "node-9": "\033[95m",
-        "node-10": "\033[96m"
     }
     reset = "\033[0m"
     
     total = 0
-    for port in ports:
-        node_id = f"node-{int(port) - 8000}"
+    for ip, port, node_id in nodes_to_query:
         docs = docs_by_node.get(node_id, [])
         total += len(docs)
         color = colors.get(node_id, "\033[0m")
         
+        machine_label = "Máquina A" if ip == MACHINE_A_IP else "Máquina B"
+        
         print(f"\n{color}{'─'*70}")
-        print(f"  {node_id.upper()} ({len(docs)} documentos)")
+        print(f"  {node_id.upper()} ({machine_label} - {ip}:{port}) - {len(docs)} documentos")
         print(f"{'─'*70}{reset}")
         
         if not docs:
