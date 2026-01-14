@@ -29,12 +29,10 @@ fi
 # ============================================================================
 echo "[2/5] Configurando MongoDB..."
 
-# Create MongoDB config
+# Create MongoDB config (compatible con MongoDB 7.0+)
 cat > /etc/mongod.conf << EOF
 storage:
   dbPath: /data/db
-  journal:
-    enabled: true
 
 systemLog:
   destination: file
