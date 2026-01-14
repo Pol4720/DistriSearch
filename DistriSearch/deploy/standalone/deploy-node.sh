@@ -38,9 +38,9 @@ NETWORK_NAME="distrisearch-network"
 
 # IPs de las máquinas (cambiar según tu entorno)
 # Máquina A: richard-VirtualBox
-MACHINE_A_IP="192.168.1.11"
+MACHINE_A_IP="192.168.61.32"
 # Máquina B: abel-VirtualBox
-MACHINE_B_IP="192.168.1.13"
+MACHINE_B_IP="192.168.61.33"
 
 # Colores
 RED='\033[0;31m'

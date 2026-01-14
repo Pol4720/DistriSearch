@@ -22,8 +22,8 @@ Uso:
 # CONFIGURACIÓN DE MÁQUINAS
 # ============================================================================
 
-MACHINE_A_IP = "192.168.1.11"  # richard-VirtualBox
-MACHINE_B_IP = "192.168.1.13"  # abel-VirtualBox
+MACHINE_A_IP = "192.168.61.32"  # richard-VirtualBox (actual)
+MACHINE_B_IP = "192.168.61.33"  # abel-VirtualBox (pendiente)
 
 # ============================================================================
 # CONFIGURACIÓN DE NODOS

@@ -43,8 +43,8 @@ echo -e "${BLUE}╚════════════════════�
 echo ""
 
 # Configuración de red
-MACHINE_A_IP="192.168.1.11"
-MACHINE_B_IP="192.168.1.13"
+MACHINE_A_IP="192.168.61.32"
+MACHINE_B_IP="192.168.61.33"
 PEERS="${MACHINE_A_IP}:8001,${MACHINE_A_IP}:8002,${MACHINE_B_IP}:8003"
 NETWORK_NAME="distrisearch-network"
 

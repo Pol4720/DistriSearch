@@ -322,7 +322,7 @@ def parse_args():
     parser.add_argument(
         "--nodes", 
         type=str, 
-        default="192.168.1.11:8001,192.168.1.11:8002,192.168.1.13:8003",
+        default="192.168.61.32:8001,192.168.61.32:8002,192.168.61.33:8003",
         help="Nodos en formato host:port,host:port,..."
     )
     parser.add_argument("--user", type=str, default="testuser", help="Usuario")

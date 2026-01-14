@@ -47,8 +47,8 @@ docker ps -a --filter "name=distrisearch-" --format "table {{.Names}}\t{{.Status
 echo ""
 
 # IPs
-MACHINE_A_IP="192.168.1.11"
-MACHINE_B_IP="192.168.1.13"
+MACHINE_A_IP="192.168.61.32"
+MACHINE_B_IP="192.168.61.33"
 
 # Estado de servicios de infraestructura
 echo -e "${GREEN}Servicios de Infraestructura:${NC}"
