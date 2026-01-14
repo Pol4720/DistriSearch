@@ -26,7 +26,9 @@ FROM mongo:4.4 AS mongodb-source
 # ============================================================================
 # Stage 0b: Extract Redis binaries from official image
 # ============================================================================
-FROM redis:7-alpine AS redis-source
+# Stage 0b: Extract Redis binaries from official image
+# Nota: usamos redis:latest para maximizar probabilidad de estar ya descargada.
+FROM redis:latest AS redis-source
 
 # ============================================================================
 # Stage 1: Build Frontend

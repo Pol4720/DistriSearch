@@ -129,6 +129,35 @@ ping 192.168.1.11
 
 ## Guía Rápida
 
+### Últimos pasos (copy/paste)
+
+En Máquina A (manager):
+
+```bash
+cd ~/Escritorio/DistriSearch/DistriSearch/deploy/standalone
+chmod +x *.sh
+
+docker swarm init --advertise-addr 192.168.1.11
+./init-swarm-network.sh
+
+./build-image.sh
+./transfer-image.sh richard@192.168.1.13
+
+./deploy-machine-a.sh
+./status.sh
+```
+
+En Máquina B:
+
+```bash
+docker swarm join --token <TOKEN> 192.168.1.11:2377
+docker load -i ~/distrisearch-node-standalone.tar
+
+cd ~/Escritorio/DistriSearch/DistriSearch/deploy/standalone
+./deploy-machine-b.sh
+./status.sh
+```
+
 ### 1. Inicializar Swarm y crear red overlay (Máquina A - Manager)
 
 ```bash
