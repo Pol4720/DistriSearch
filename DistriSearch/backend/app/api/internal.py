@@ -831,6 +831,42 @@ async def get_all_registry_entries() -> Dict[str, Any]:
         }
 
 
+@router.get("/sync/documents/ids")
+async def get_all_document_ids() -> Dict[str, Any]:
+    """
+    Get all document IDs from this node's MongoDB.
+    
+    This is used for direct document sync, independent of the registry.
+    Returns only the IDs to minimize response size.
+    """
+    import os
+    from .dependencies import get_document_repository
+    
+    try:
+        node_id = os.environ.get("NODE_ID", "unknown")
+        doc_repo = await get_document_repository()
+        
+        # Get all documents from MongoDB (just IDs)
+        all_docs = await doc_repo.find_many({}, limit=10000)  # Reasonable limit
+        doc_ids = [str(doc.get("_id") or doc.get("id", "")) for doc in all_docs if doc]
+        
+        return {
+            "status": "ok",
+            "document_ids": doc_ids,
+            "count": len(doc_ids),
+            "node_id": node_id
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting document IDs: {e}")
+        return {
+            "status": "error",
+            "message": str(e),
+            "document_ids": [],
+            "count": 0
+        }
+
+
 # =============================================================================
 # Full Cluster Sync Endpoint (Post-Partition Reconciliation)
 # =============================================================================
@@ -963,8 +999,22 @@ async def trigger_full_sync() -> Dict[str, Any]:
                             
                         # Check if we have this document locally
                         local_doc = await doc_repo.find_by_id(doc_id)
+                        
+                        # Even if doc exists, check if file is missing and needs to be fetched
+                        needs_file_replication = False
                         if local_doc:
-                            continue  # Already have it
+                            local_metadata = local_doc.get("metadata", {})
+                            local_file_path = local_metadata.get("file_path")
+                            if local_file_path:
+                                # Check if file actually exists on disk
+                                import os
+                                if not os.path.exists(local_file_path):
+                                    needs_file_replication = True
+                                    logger.info(f"Document {doc_id} exists but file missing at {local_file_path}")
+                                else:
+                                    continue  # Document and file both exist
+                            else:
+                                continue  # Document exists and has no file (text-only)
                         
                         # Fetch the document from peer
                         doc_url = f"http://{address}/api/v1/internal/document/{doc_id}"
@@ -993,12 +1043,8 @@ async def trigger_full_sync() -> Dict[str, Any]:
                                     except Exception as e:
                                         logger.debug(f"Could not fetch file for {doc_id}: {e}")
                                 
-                                # Save document locally
-                                document["_id"] = doc_id
-                                document["is_replica"] = True
-                                document["primary_node"] = entry.get("node_id", peer.node_id)
-                                
                                 # If we got file content, save it locally
+                                new_file_path = None
                                 if file_content:
                                     try:
                                         file_handler = FileHandler()
@@ -1009,22 +1055,166 @@ async def trigger_full_sync() -> Dict[str, Any]:
                                             filename=filename,
                                             content_type=content_type
                                         )
-                                        if "metadata" not in document:
-                                            document["metadata"] = {}
-                                        document["metadata"]["file_path"] = uploaded.storage_path
-                                        document["metadata"]["replica_file"] = True
+                                        new_file_path = uploaded.storage_path
+                                        logger.info(f"Saved replica file for {doc_id} at {new_file_path}")
                                     except Exception as e:
                                         logger.warning(f"Could not save file for {doc_id}: {e}")
                                 
-                                await doc_repo.create(document)
-                                results["documents_replicated"] += 1
-                                logger.info(f"Replicated missing document {doc_id} from {peer.node_id}")
+                                # Handle file-only replication (document exists but file missing)
+                                if needs_file_replication and local_doc:
+                                    if new_file_path:
+                                        # Update existing document with new file path
+                                        await doc_repo.update_one(
+                                            doc_id,
+                                            {
+                                                "metadata.file_path": new_file_path,
+                                                "metadata.replica_file": True
+                                            }
+                                        )
+                                        results["documents_replicated"] += 1
+                                        logger.info(f"Replicated missing file for existing document {doc_id}")
+                                else:
+                                    # Save new document locally
+                                    document["_id"] = doc_id
+                                    document["is_replica"] = True
+                                    document["primary_node"] = entry.get("node_id", peer.node_id)
+                                    
+                                    if new_file_path:
+                                        if "metadata" not in document:
+                                            document["metadata"] = {}
+                                        document["metadata"]["file_path"] = new_file_path
+                                        document["metadata"]["replica_file"] = True
+                                    
+                                    await doc_repo.create(document)
+                                    results["documents_replicated"] += 1
+                                    logger.info(f"Replicated missing document {doc_id} from {peer.node_id}")
                                 
                         except Exception as e:
                             logger.debug(f"Could not fetch document {doc_id}: {e}")
                             
             except Exception as e:
                 logger.warning(f"Failed to sync documents from {peer.node_id}: {e}")
+        
+        # =====================================================================
+        # 5. ADDITIONAL: Sync documents directly from peer's MongoDB
+        # This catches documents that might not be in the registry yet
+        # =====================================================================
+        for peer in peers:
+            try:
+                import aiohttp
+                import base64
+                from ..storage.file_handler import FileHandler
+                
+                address = peer.address
+                port = getattr(peer, 'port', 8000) or 8000
+                if ':' not in address:
+                    address = f"{address}:{port}"
+                
+                # Get all document IDs from peer's MongoDB directly
+                ids_url = f"http://{address}/api/v1/internal/sync/documents/ids"
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(ids_url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                        if resp.status != 200:
+                            continue
+                        ids_data = await resp.json()
+                    
+                    for doc_id in ids_data.get("document_ids", []):
+                        if not doc_id:
+                            continue
+                        
+                        # Check if we already have this document
+                        local_doc = await doc_repo.find_by_id(doc_id)
+                        
+                        # Even if doc exists, check if file is missing
+                        needs_file_only = False
+                        if local_doc:
+                            local_metadata = local_doc.get("metadata", {})
+                            local_file_path = local_metadata.get("file_path")
+                            if local_file_path:
+                                import os
+                                if not os.path.exists(local_file_path):
+                                    needs_file_only = True
+                                else:
+                                    continue  # Document and file both exist
+                            else:
+                                continue  # No file needed
+                        
+                        # Fetch the document
+                        doc_url = f"http://{address}/api/v1/internal/document/{doc_id}"
+                        try:
+                            async with session.get(doc_url, timeout=aiohttp.ClientTimeout(total=30)) as doc_resp:
+                                if doc_resp.status != 200:
+                                    continue
+                                doc_data = await doc_resp.json()
+                                
+                                if doc_data.get("status") != "ok":
+                                    continue
+                                
+                                document = doc_data.get("document", {})
+                                if not document:
+                                    continue
+                                
+                                # Fetch file if exists
+                                file_content = None
+                                metadata = document.get("metadata", {})
+                                if metadata.get("file_path"):
+                                    file_url = f"http://{address}/api/v1/internal/document/{doc_id}/file"
+                                    try:
+                                        async with session.get(file_url, timeout=aiohttp.ClientTimeout(total=60)) as file_resp:
+                                            if file_resp.status == 200:
+                                                file_content = await file_resp.read()
+                                    except Exception:
+                                        pass
+                                
+                                # Save file locally
+                                new_file_path = None
+                                if file_content:
+                                    try:
+                                        file_handler = FileHandler()
+                                        filename = metadata.get("filename", f"{doc_id}.bin")
+                                        content_type = metadata.get("content_type", "application/octet-stream")
+                                        uploaded = await file_handler.save_file(
+                                            file_data=file_content,
+                                            filename=filename,
+                                            content_type=content_type
+                                        )
+                                        new_file_path = uploaded.storage_path
+                                    except Exception as e:
+                                        logger.debug(f"Could not save file for {doc_id}: {e}")
+                                
+                                if needs_file_only and local_doc:
+                                    # Just update file path in existing document
+                                    if new_file_path:
+                                        await doc_repo.update_one(
+                                            doc_id,
+                                            {
+                                                "metadata.file_path": new_file_path,
+                                                "metadata.replica_file": True
+                                            }
+                                        )
+                                        results["documents_replicated"] += 1
+                                        logger.info(f"Replicated missing file for {doc_id} (MongoDB sync)")
+                                else:
+                                    # Save new document
+                                    document["_id"] = doc_id
+                                    document["is_replica"] = True
+                                    document["primary_node"] = peer.node_id
+                                    
+                                    if new_file_path:
+                                        if "metadata" not in document:
+                                            document["metadata"] = {}
+                                        document["metadata"]["file_path"] = new_file_path
+                                        document["metadata"]["replica_file"] = True
+                                    
+                                    await doc_repo.create(document)
+                                    results["documents_replicated"] += 1
+                                logger.info(f"Replicated document {doc_id} from {peer.node_id} (direct MongoDB sync)")
+                                
+                        except Exception as e:
+                            logger.debug(f"Could not fetch document {doc_id} from MongoDB sync: {e}")
+                            
+            except Exception as e:
+                logger.debug(f"MongoDB direct sync with {peer.node_id} failed: {e}")
         
         logger.info(f"Full sync completed: {results}")
         return {"status": "ok", **results}

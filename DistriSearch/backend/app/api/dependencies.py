@@ -459,7 +459,12 @@ async def init_dependencies(settings: Settings):
     # =========================================================================
     # 9. Schedule periodic full sync for consistency
     # =========================================================================
-    asyncio.create_task(_periodic_full_sync(bully_peers, interval=60.0))
+    # Sync every 30 seconds to ensure all documents are replicated to all nodes
+    # With k=3, every document should be on every node for partition tolerance
+    asyncio.create_task(_periodic_full_sync(bully_peers, interval=30.0))
+    
+    # Also do an immediate sync after 15 seconds (after initial setup)
+    asyncio.create_task(_initial_document_sync(bully_peers, delay=15.0))
     
     # =========================================================================
     # 10. Schedule periodic peer discovery (for nodes that come online later)
@@ -613,29 +618,59 @@ async def _sync_single_user(user_data: Dict[str, Any]) -> None:
         logger.debug(f"Could not sync user: {e}")
 
 
+async def _initial_document_sync(peers: Dict[str, str], delay: float = 15.0):
+    """
+    Do a one-time document sync shortly after startup.
+    
+    This ensures that when a node starts, it immediately gets all documents
+    from the cluster, making it partition-tolerant from the start.
+    """
+    await asyncio.sleep(delay)
+    
+    try:
+        from .internal import trigger_full_sync
+        result = await trigger_full_sync()
+        logger.info(f"Initial document sync completed: {result}")
+    except Exception as e:
+        logger.warning(f"Initial document sync failed: {e}")
+
+
 async def _periodic_full_sync(peers: Dict[str, str], interval: float = 60.0):
     """
     Periodically perform full sync with peers.
     
     This ensures consistency even after network partitions heal.
+    CRITICAL: With replication_factor=3, EVERY document should be on EVERY node.
+    This function proactively replicates missing documents to ensure partition tolerance.
     """
     await asyncio.sleep(interval)  # Initial delay
     
     while True:
         try:
-            # Check if any peers are reachable that weren't before
-            # This indicates a network partition may have healed
+            # STEP 1: Trigger LOCAL sync to fetch documents from peers
+            # This is the KEY fix - we need to pull documents TO this node, not just push
+            try:
+                from .internal import trigger_full_sync
+                local_result = await trigger_full_sync()
+                if local_result.get("documents_replicated", 0) > 0:
+                    logger.info(f"Local sync: replicated {local_result.get('documents_replicated', 0)} documents")
+            except Exception as e:
+                logger.debug(f"Local sync error: {e}")
+            
+            # STEP 2: Also trigger sync on peers (bidirectional)
             for peer_id, peer_address in peers.items():
                 try:
                     async with aiohttp.ClientSession() as session:
                         url = f"http://{peer_address}/api/v1/health/live"
                         async with session.get(url, timeout=aiohttp.ClientTimeout(total=3)) as resp:
                             if resp.status == 200:
-                                # Peer is reachable, trigger sync
+                                # Peer is reachable, trigger their sync
                                 sync_url = f"http://{peer_address}/api/v1/internal/sync/full"
                                 async with session.post(sync_url, timeout=aiohttp.ClientTimeout(total=30)) as sync_resp:
                                     if sync_resp.status == 200:
-                                        logger.debug(f"Periodic sync with {peer_id} completed")
+                                        result = await sync_resp.json()
+                                        if result.get("documents_replicated", 0) > 0:
+                                            logger.info(f"Peer {peer_id} sync: replicated {result.get('documents_replicated', 0)} documents")
                 except Exception:
                     pass  # Peer not reachable
             
