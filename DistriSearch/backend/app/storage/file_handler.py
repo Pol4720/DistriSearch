@@ -166,6 +166,7 @@ class FileHandler:
         filename: str,
         content_type: str,
         metadata: Optional[Dict[str, Any]] = None,
+        file_id: Optional[str] = None,
     ) -> UploadedFile:
         """
         Save an uploaded file.
@@ -175,6 +176,7 @@ class FileHandler:
             filename: Original filename
             content_type: MIME type
             metadata: Additional metadata
+            file_id: Optional file ID to use (for replication). If not provided, generates new UUID.
             
         Returns:
             UploadedFile object
@@ -189,8 +191,8 @@ class FileHandler:
                 f"(max: {self.max_file_size})"
             )
         
-        # Generate file ID and hash
-        file_id = str(uuid.uuid4())
+        # Use provided file_id or generate new one
+        file_id = file_id or str(uuid.uuid4())
         file_hash = hashlib.sha256(file_data).hexdigest()
         
         # Determine storage path

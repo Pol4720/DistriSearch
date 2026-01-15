@@ -1,0 +1,12 @@
+Comando para ver que hay en fisico: 
+docker exec distrisearch-node-node-2 ls -la /data/uploads/55/87/
+docker exec distrisearch-node-node-1 ls -la /data/uploads/55/87/
+
+- Lamento decirte que las modifiaciones que hiciste para garantizar que un fichero replicado 
+tuviera el mismo file path (sobre todo el UUID) para garantizar que al querer descargarlo de otro nodo que no fue el original funcione ante las particiones o indisponibilidad del nodo original no funciono . Ya probe desplegando los nodos con la nueva imagen y sigue 
+la misma situacion. Por favor revisa detalladamente las zonas del codigo involucradas con el guardado de los ficheros por replicacion para garantizar la correccion de este problema. No divagues y se rigursos yendo directo al asunto de lo que esta pasando. A lo mejor el arreglo hecho del captar el UUID real en file handler o no se esta pasando o no se esta tomando correctamente. Me causa duda porque para guardar el fichero se toma ese id que llega original y ese id se le pasa a una funcion de hash para crear la ruta y mi pregunta es si dicha funcion siempre garantiza que dado un id se obtiene el mismo hash.
+Adjuntar file_handler.py de storage etc asi como el internal ese. 
+
+
+Se hace necesario implementar un condicional que desde la interfaz impida eliminar ficheros durante particion de red . Esto es para evitar conflictos 
+
