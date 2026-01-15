@@ -529,15 +529,37 @@ async def _periodic_peer_discovery(interval: float = 30.0):
                         _bully_election.leader_id, _bully_peers
                     )
             
-            # Also check for dead peers and update their status
+            # Check ALL peers (not just _bully_peers) and update their health status
+            from ..distributed.communication.heartbeat import NodeStatus
+            
             for peer_id, peer_addr in list(_bully_peers.items()):
-                if not await _check_peer_available(peer_addr, timeout=2.0):
-                    # Peer is not responding - update cluster manager status
-                    if _cluster_manager and hasattr(_cluster_manager, '_nodes'):
-                        if peer_id in _cluster_manager._nodes:
-                            from ..distributed.communication.heartbeat import NodeStatus
+                is_available = await _check_peer_available(peer_addr, timeout=2.0)
+                
+                if _cluster_manager and hasattr(_cluster_manager, '_nodes'):
+                    if peer_id in _cluster_manager._nodes:
+                        current_status = _cluster_manager._nodes[peer_id].status
+                        
+                        if is_available and current_status == NodeStatus.DEAD:
+                            # Peer was DEAD but is now back - mark as HEALTHY
+                            _cluster_manager._nodes[peer_id].status = NodeStatus.HEALTHY
+                            logger.info(f"Peer {peer_id} is back HEALTHY")
+                            
+                            # Trigger sync from recovered peer
+                            if _bully_election and _bully_election.leader_id:
+                                await _cluster_manager.handle_leader_elected(
+                                    _bully_election.leader_id, _bully_peers
+                                )
+                        elif not is_available and current_status == NodeStatus.HEALTHY:
+                            # Peer was HEALTHY but is now down
                             _cluster_manager._nodes[peer_id].status = NodeStatus.DEAD
                             logger.warning(f"Peer {peer_id} is now DEAD")
+                    elif is_available:
+                        # Peer not in cluster manager but is available - register it
+                        logger.info(f"Registering recovered peer {peer_id} in cluster manager")
+                        if _bully_election and _bully_election.leader_id:
+                            await _cluster_manager.handle_leader_elected(
+                                _bully_election.leader_id, _bully_peers
+                            )
             
             await asyncio.sleep(interval)
         except asyncio.CancelledError:
