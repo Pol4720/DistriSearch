@@ -459,7 +459,64 @@ async def replicate_document(request: ReplicateDocumentRequest) -> Dict[str, Any
         
         # Check if document already exists locally
         existing = await doc_repo.find_by_id(request.document_id)
-        if existing:
+        
+        # If document exists but we have file content, check if file needs to be saved
+        if existing and request.file_content_base64:
+            existing_metadata = existing.get("metadata", {})
+            existing_file_path = existing_metadata.get("file_path")
+            
+            # Check if file already exists on disk
+            file_exists_on_disk = False
+            if existing_file_path:
+                file_exists_on_disk = os.path.exists(existing_file_path)
+            
+            if not file_exists_on_disk:
+                # File missing - save it now
+                try:
+                    file_content = base64.b64decode(request.file_content_base64)
+                    metadata = request.document_data.get("metadata", {})
+                    filename = metadata.get("filename", f"{request.document_id}.bin")
+                    content_type = metadata.get("content_type", "application/octet-stream")
+                    
+                    # Extract original file_id from file_path
+                    original_file_id = None
+                    if metadata.get("file_path"):
+                        import re
+                        match = re.search(r'/([a-f0-9-]{36})\.\w+$', metadata.get("file_path", ""))
+                        if match:
+                            original_file_id = match.group(1)
+                    
+                    file_handler = FileHandler()
+                    uploaded_file = await file_handler.save_file(
+                        file_data=file_content,
+                        filename=filename,
+                        content_type=content_type,
+                        file_id=original_file_id
+                    )
+                    
+                    # Update document with local file_path
+                    await doc_repo.update_one(request.document_id, {
+                        "metadata.file_path": uploaded_file.storage_path,
+                        "metadata.replica_file": True
+                    })
+                    
+                    logger.info(f"Saved missing file for existing document {request.document_id} at {uploaded_file.storage_path}")
+                    return {
+                        "status": "file_replicated",
+                        "document_id": request.document_id,
+                        "node_id": node_id,
+                        "file_path": uploaded_file.storage_path
+                    }
+                except Exception as e:
+                    logger.warning(f"Could not save file for existing document {request.document_id}: {e}")
+            
+            logger.info(f"Document {request.document_id} already exists on {node_id} with file")
+            return {
+                "status": "already_exists",
+                "document_id": request.document_id,
+                "node_id": node_id
+            }
+        elif existing:
             logger.info(f"Document {request.document_id} already exists on {node_id}")
             return {
                 "status": "already_exists",
@@ -509,7 +566,21 @@ async def replicate_document(request: ReplicateDocumentRequest) -> Dict[str, Any
                 logger.warning(f"Could not replicate file for {request.document_id}: {e}")
                 # Continue without file - it can be fetched on demand
         
-        await doc_repo.create(doc_data)
+        # Use upsert to ensure file_path is updated even if document already exists
+        existing_doc = await doc_repo.find_by_id(request.document_id)
+        if existing_doc:
+            # Document exists - update file_path if we have it
+            update_fields = {}
+            if doc_data.get("metadata", {}).get("file_path"):
+                update_fields["metadata.file_path"] = doc_data["metadata"]["file_path"]
+                update_fields["metadata.replica_file"] = True
+            update_fields["is_replica"] = True
+            update_fields["primary_node"] = request.source_node_id
+            if update_fields:
+                await doc_repo.update_one(request.document_id, update_fields)
+                logger.info(f"Updated existing document {request.document_id} with local file_path")
+        else:
+            await doc_repo.create(doc_data)
         
         logger.info(f"Replicated document {request.document_id} from {request.source_node_id} to {node_id}")
         
@@ -1037,7 +1108,7 @@ async def trigger_full_sync() -> Dict[str, Any]:
                                 if doc_data.get("status") != "ok":
                                     continue
                                 
-                                document = doc_data.get("document", {})
+                                document = doc_data.get("document_data", doc_data.get("document", {}))
                                 if not document:
                                     continue
                                 
@@ -1170,7 +1241,7 @@ async def trigger_full_sync() -> Dict[str, Any]:
                                 if doc_data.get("status") != "ok":
                                     continue
                                 
-                                document = doc_data.get("document", {})
+                                document = doc_data.get("document_data", doc_data.get("document", {}))
                                 if not document:
                                     continue
                                 
